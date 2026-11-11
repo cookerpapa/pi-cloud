@@ -1,5 +1,8 @@
 import { Readable } from "node:stream";
 import {
+  RESOURCE_RETENTION_PATH,
+  parseResourceRetention,
+  type PhysicalResourceUse,
   PREPARE_ENVIRONMENT_IMAGES_PATH,
   RECOVER_TOOL_ENVIRONMENT_PATH,
   parseToolEnvironmentRequest,
@@ -55,6 +58,7 @@ const MAXIMUM_TERMINAL_PENDING_INPUT_FRAMES = 128;
 export { SANDBOX_CONTROL_TERMINAL_PATH };
 
 export type SandboxControlServerOptions = {
+  retainResources?(uses: readonly PhysicalResourceUse[]): Promise<number>;
   environmentRecovery?: {
     route(sessionId: string): Promise<string | undefined>;
     recover(
@@ -264,6 +268,23 @@ export class SandboxControlServer {
       requestTimeout: 0,
       keepAliveTimeout: 5_000,
     });
+    if (options.retainResources)
+      this.#server.post(
+        RESOURCE_RETENTION_PATH,
+        { bodyLimit: 64 * 1024 },
+        async (request, reply) => {
+          if (!this.#authorized(request.headers.authorization)) return reply.code(401).send();
+          if (!this.#ready || (options.readiness && !options.readiness()))
+            return reply.code(503).send();
+          let uses;
+          try {
+            uses = parseResourceRetention(request.body).uses;
+          } catch {
+            return reply.code(400).send();
+          }
+          return { updated: await options.retainResources!(uses) };
+        },
+      );
     // Let @fastify/websocket's onRequest mark upgrades before rejecting them.
     // Its onResponse then owns closing a refused upgrade's detached socket.
     this.#server.addHook("preValidation", async (request, reply) => {

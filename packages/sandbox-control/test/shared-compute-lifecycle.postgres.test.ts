@@ -655,7 +655,7 @@ it("does not adopt terminal-owned compute again or place it in the warm pool", a
         destroyCallsAfterLastTerminalClosed: c.closed.length,
         realPostgres: true,
         realVM: false,
-        controllerDoesNotExpireCompute: true,
+        noExpiryWithoutDeadlineClaim: true,
       }) + "\n",
     );
   } finally {

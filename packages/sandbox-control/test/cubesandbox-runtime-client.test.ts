@@ -59,23 +59,6 @@ beforeEach(() => {
   retainedConnection.mockClear();
 });
 
-it("renews through the native timeout API without an allocation journal endpoint", async () => {
-  const client = executionClient();
-  try {
-    await expect(client.setTimeout(executionTarget.sandboxId, 1790)).resolves.toBeUndefined();
-    expect(observed.at(-1)).toMatchObject({
-      method: "POST",
-      path: `/sandboxes/${executionTarget.sandboxId}/timeout`,
-      body: { timeout: 1790 },
-    });
-    for (const timeout of [0, -2, 1.5, 2_147_483_648])
-      await expect(client.setTimeout(executionTarget.sandboxId, timeout)).rejects.toThrow();
-    expect(observed).toHaveLength(1);
-  } finally {
-    await client.close();
-  }
-});
-
 it("uses the ordinary process API and fixed Guest service for direct guest evidence and asynchronous mailbox delivery", async () => {
   const client = executionClient();
   const probeId = "10000000-0000-4000-8000-000000000099",
@@ -470,7 +453,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
       });
       expect(created.nodeId).toBeUndefined();
       expect((await client.read(created.sandboxId))?.nodeId).toBe("cube-node-1");
-      expect((await client.connect(created.sandboxId, -1)).nodeId).toBeUndefined();
+      expect((await client.connect(created.sandboxId)).nodeId).toBeUndefined();
     } finally {
       await client.close();
     }
@@ -780,7 +763,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
     await expect(client.list()).resolves.toHaveLength(1);
     await client.pause(instance.sandboxId);
     await expect(client.read(instance.sandboxId)).resolves.toMatchObject({ state: "paused" });
-    await expect(client.connect(instance.sandboxId, -1)).resolves.toMatchObject({
+    await expect(client.connect(instance.sandboxId)).resolves.toMatchObject({
       sandboxId: instance.sandboxId,
       state: "running",
       trafficAccessToken: "private-traffic-token-resumed",

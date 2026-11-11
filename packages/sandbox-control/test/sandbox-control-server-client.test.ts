@@ -5,6 +5,7 @@ import type {
 } from "@pi-cloud/protocol";
 import {
   createExecutionReference,
+  RESOURCE_RETENTION_PATH,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
 } from "@pi-cloud/protocol";
@@ -32,6 +33,52 @@ import {
 } from "../src/index.ts";
 
 const SERVICE_TOKEN = `service-${"s".repeat(48)}`;
+
+it("routes bounded resource usage to management without invoking a provider operation", async () => {
+  const retainResources = vi.fn(async () => 1),
+    broker = backend();
+  const create = vi.spyOn(broker, "create");
+  const server = new SandboxControlServer({
+    host: "127.0.0.1",
+    port: 0,
+    serviceToken: SERVICE_TOKEN,
+    broker,
+    retainResources,
+  });
+  servers.push(server);
+  const baseUrl = await server.listen();
+  const client = new SandboxControlClient({
+    baseUrl,
+    serviceToken: SERVICE_TOKEN,
+    allowInsecureHttp: true,
+  });
+  const uses = [
+    {
+      kind: "workspace" as const,
+      tenantId: "10000000-0000-4000-8000-000000000001",
+      id: "10000000-0000-4000-8000-000000000002",
+      observedAt: Date.now(),
+    },
+  ];
+  await client.retainResources(uses);
+  expect(retainResources).toHaveBeenCalledWith(uses);
+  expect(create).not.toHaveBeenCalled();
+  const denied = await fetch(new URL(RESOURCE_RETENTION_PATH, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer incorrect" },
+    body: JSON.stringify({ uses }),
+  });
+  expect(denied.status).toBe(401);
+  await denied.body?.cancel();
+  const invalid = await fetch(new URL(RESOURCE_RETENTION_PATH, baseUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${SERVICE_TOKEN}` },
+    body: JSON.stringify({ uses: Array.from({ length: 257 }, () => uses[0]) }),
+  });
+  expect(invalid.status).toBe(400);
+  await invalid.body?.cancel();
+  expect(retainResources).toHaveBeenCalledTimes(1);
+});
 const WORKSPACE_SERVICE_TOKEN = `workspace-service-${"m".repeat(48)}`;
 const TERMINAL_TOKEN = `terminal-${"t".repeat(48)}`;
 const CAPABILITY = `pcer2_${"1".repeat(32)}_${"2".repeat(32)}_1`;

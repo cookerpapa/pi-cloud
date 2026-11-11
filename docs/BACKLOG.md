@@ -1,5 +1,17 @@
 # Maintained backlog
 
+## Platform-owned elastic idle expiry — active prerequisite
+
+- [x] #29 source: durable, indexed deadlines on existing elastic resource records.
+- [x] #29 source: coalesced Session/interactive usage updates PG without native timeout calls.
+- [x] #29 source: conditional expiry admission, existing physical cleanup and outage recovery.
+- [x] #29 source: disable Cube native expiry and remove native renewal/capsule timer fields.
+- [ ] #29: publish the matched schema-218/resource-capsule-v4 release.
+- [ ] #29: serial failure/live acceptance and original-asset preservation.
+
+[ADR-0314](adr/0314-platform-owned-elastic-expiry.md). #27 production integration
+is explicitly sequenced after this prerequisite; its unfinished source is parked.
+
 ## Resource admission and stock sandbox boundaries — deployed
 
 - [x] #26 source: one unresolved machine application per user; exact retries retain it.

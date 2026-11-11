@@ -7,7 +7,6 @@ const SANDBOX = "sandbox-123";
 describe("Cube API authorizer", () => {
   it.each([
     ["POST", "/sandboxes"],
-    ["POST", `/sandboxes/${SANDBOX}/timeout`],
     ["GET", `/sandboxes/${SANDBOX}`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],
@@ -34,6 +33,7 @@ describe("Cube API authorizer", () => {
   });
 
   it.each([
+    ["POST", `/sandboxes/${SANDBOX}/timeout`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/capabilities`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/submit`],
     ["POST", `/sandboxes/${"a".repeat(32)}/execution/cancel`],

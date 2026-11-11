@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0314](0314-platform-owned-elastic-expiry.md) moves elastic idle expiry to
+the existing PG-backed resource manager in #29, before #27 provider integration.
+It supersedes the native expiry portion of ADR-0309 after matched cutover.
+
 [ADR-0312](0312-unmodified-alternate-sandbox-validation.md) permits explicitly
 owned BoxLite/Android validation while retaining Cube as the production default.
 

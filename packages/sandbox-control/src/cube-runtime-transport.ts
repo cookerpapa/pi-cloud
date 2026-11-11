@@ -43,7 +43,6 @@ export async function createCubeRuntimeTransport(
     });
 
     const provider = new CubeSandboxProvider({
-      retentionWindowMs: config.elasticRetentionMs,
       templateId: cube.templateId,
       developmentTemplateIds: cube.developmentTemplateIds,
       imageRevision: config.imageRevision,

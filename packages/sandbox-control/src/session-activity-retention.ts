@@ -40,7 +40,7 @@ export class SessionActivityRetention {
     return entry;
   }
   remember(binding: SandboxBindingRecord): void {
-    if (this.#closed || binding.dispatchClosed || !binding.descriptor.dataCapsule) return;
+    if (this.#closed || binding.dispatchClosed) return;
     if (binding.snapshot.developmentEnvironmentId && !binding.snapshot.computeSessionId) return;
     const use = {
       workspaceId: binding.snapshot.assignment.workspaceId,
@@ -53,7 +53,8 @@ export class SessionActivityRetention {
     entry.loaded = true;
     entry.target = {
       id: binding.snapshot.physicalActivationId,
-      capsule: binding.descriptor.dataCapsule,
+      tenantId: binding.tenantId,
+      kind: "workspace",
     };
   }
   consume(fact: SessionActivity, current: () => boolean): void {

@@ -155,17 +155,21 @@ never a conversation or Workspace durability dependency. User-owned development
 machines use the separate pause/resume/release lifecycle and never enter the
 elastic warm pool.
 
-The native Cube lifecycle manager owns elastic expiry through the stock timeout API (ADR-0309).
-The Worker outer runtime declares logical family resource use through its single
-fenced Session Kafka writer, including model/child waits. Execution renews from its
-resource view without querying Worker ownership or leases. Cold metadata reads
-and binding updates populate the view; missing compute is a no-op. The default
-is one declaration per minute and thirty minutes of finite retention. Stale replay
-keeps its original timestamp. When renewal stops, expiry may reclaim even an
-unfinished Tool. Control Plane has no competing deadline scanner; management still
-requires positive provider deletion evidence before releasing allocation/quota records.
-Management health reads native status only: periodic Guest probes would refresh
-CubeProxy activity and prevent idle expiry.
+PiCloud's resource manager owns elastic expiry under
+[ADR-0314](adr/0314-platform-owned-elastic-expiry.md). Managed Cube creation and
+resume explicitly disable native idle expiry. The Worker outer runtime declares
+logical family resource use through its fenced Session writer, including model
+and child waits. Execution resolves the physical allocation from its resource
+view and sends coalesced batches to management; management updates the existing
+PG deadline only. No Worker-lease lookup or provider timeout renewal is added.
+The default remains one Session declaration per minute and a thirty-minute idle
+window. Stale activity keeps its original time and cannot renew from replay time.
+Terminal/preview connection use follows the same provider-neutral policy.
+The resource cleanup loop claims due records, closes admission and invokes the
+ordinary Cube delete API. Physical confirmation still gates quota release.
+Controller restart does not reset a deadline; its bounded startup grace lets
+fresh declarations arrive before overdue records are claimed. Management or
+closure-path downtime can delay reclamation. Passive health probes do not renew.
 A user owns an exclusive machine's
 lifecycle through authenticated pause/resume/release operations. Controller
 restart adopts both elastic and user-owned VMs without changing their physical

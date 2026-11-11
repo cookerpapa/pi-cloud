@@ -19,16 +19,16 @@ export async function elasticRetentionAcceptance({
   progress,
   save,
 }) {
-  assert.equal(
-    process.env.PI_CLOUD_RETENTION_CONTROL_OUTAGE,
-    undefined,
-    "Use PI_CLOUD_RETENTION_SESSION_RUNTIME_OUTAGE to stop the keepalive delivery path explicitly",
-  );
-  assert(
-    [undefined, "0", "1"].includes(process.env.PI_CLOUD_RETENTION_SESSION_RUNTIME_OUTAGE),
-    "Invalid Session-runtime retention outage selection",
-  );
+  for (const name of [
+    "PI_CLOUD_RETENTION_SESSION_RUNTIME_OUTAGE",
+    "PI_CLOUD_RETENTION_RESOURCE_MANAGEMENT_OUTAGE",
+  ])
+    assert([undefined, "0", "1"].includes(process.env[name]), "Invalid retention outage selection");
   const outageRequested = process.env.PI_CLOUD_RETENTION_SESSION_RUNTIME_OUTAGE === "1";
+  const managementOutageRequested =
+    process.env.PI_CLOUD_RETENTION_RESOURCE_MANAGEMENT_OUTAGE === "1";
+  assert(!(outageRequested && managementOutageRequested), "Exercise one outage role at a time");
+  const outageRole = managementOutageRequested ? "control-plane" : "session-runtime";
   const cluster = JSON.parse(
     await readFile(runtimeDirectory + "/cubesandbox/cluster.json", "utf8"),
   );
@@ -53,6 +53,8 @@ export async function elasticRetentionAcceptance({
     accepted: false,
     sessionRuntimeOutage: false,
     outageRequested,
+    managementOutageRequested,
+    expiryAuthority: "postgres-resource-management",
   };
   const abort = new AbortController();
   const interrupted = () => abort.abort(new Error("Retention acceptance interrupted"));
@@ -118,7 +120,7 @@ export async function elasticRetentionAcceptance({
       async () => {
         try {
           return (
-            await fetch(`http://${serviceAddress("session-runtime")}:3000/health/ready`, {
+            await fetch(`http://${serviceAddress(outageRole)}:3000/health/ready`, {
               signal: AbortSignal.timeout(2000),
             })
           ).ok;
@@ -126,7 +128,7 @@ export async function elasticRetentionAcceptance({
           return false;
         }
       },
-      "Session runtime restoration",
+      "Runtime role restoration",
       180000,
       1000,
       false,
@@ -151,20 +153,25 @@ export async function elasticRetentionAcceptance({
     assert.equal(policyWindow, 1800000, "The fixture must use the actual 30-minute policy");
     const instance = await cube.read(runtime.runtime_name);
     assert(instance?.nodeId, "Native resource node is unavailable");
+    const native = await lifecycle.metadata(runtime.runtime_name);
+    assert(
+      native && native.timeout_seconds === -1,
+      "Managed Cube native idle expiry must be disabled",
+    );
+    result.nativeTimeoutDisabled = true;
     const inspect = async () => {
-      const meta = await lifecycle.metadata(runtime.runtime_name);
-      assert(
-        meta &&
-          Number.isSafeInteger(meta.end_at) &&
-          meta.timeout_seconds > 0 &&
-          meta.timeout_seconds <= 1800,
-        "Native timeout evidence is unavailable",
-      );
-      return meta.end_at;
+      const row = await database
+        .selectFrom("workspace_runtimes")
+        .select("idle_expires_at")
+        .where("workspace_runtime_id", "=", runtime.workspace_runtime_id)
+        .executeTakeFirst();
+      assert(row?.idle_expires_at instanceof Date, "Platform idle deadline is unavailable");
+      return row.idle_expires_at.valueOf();
     };
     const initial = await inspect();
     assert(initial > Date.now());
     result.initialRuntimeId = runtime.workspace_runtime_id;
+    result.initialDeadlineAt = initial;
     result.windowMs = policyWindow;
     await save(result);
     // Worker Session activity is periodic. Keep a real Run active across a
@@ -213,7 +220,9 @@ export async function elasticRetentionAcceptance({
     );
     result.activeWaitRenewedWithoutNewTool = true;
     result.renewedUntil = renewed;
+    result.lastRecordedActivityAt = renewed - policyWindow;
     await save(result);
+    const idleStart = Date.now();
     if (outageRequested) {
       await assertNoWork();
       managementBefore = managementPods();
@@ -233,9 +242,7 @@ export async function elasticRetentionAcceptance({
       result.restoreReplicas = outage.receipt.replicas;
       result.restoreReceipt = restorePath;
       await save(result);
-      progress(
-        "retention: Session Projector offline; management stays ready while Cube owns idle expiry",
-      );
+      progress("retention: Session Projector offline; management stays ready and owns idle expiry");
       kubectl(
         ["scale", "deployment/pi-cloud-session-runtime", "--current-replicas=1", "--replicas=0"],
         { timeout: 15000 },
@@ -256,8 +263,56 @@ export async function elasticRetentionAcceptance({
       result.managementStayedAvailable = true;
       await save(result);
     }
+    if (managementOutageRequested) {
+      progress("retention: wait until near the real deadline before stopping management");
+      await wait(() => Date.now() >= renewed - 10000, "real idle window", 1980000, 5000);
+      await assertNoWork();
+      const terminals = await database
+        .selectFrom("workspace_terminal_sessions")
+        .select("terminal_id")
+        .where("state", "!=", "released")
+        .limit(1)
+        .execute();
+      const machineTerminals = await database
+        .selectFrom("development_environments")
+        .select("id")
+        .where("terminal_active", "=", true)
+        .limit(1)
+        .execute();
+      assert(!terminals.length && !machineTerminals.length, "Do not interrupt a human terminal");
+      const restorePath = `${runtimeDirectory}/retention-management-${randomUUID()}.restore.json`;
+      outage = await armRuntimeRestore("control-plane", restorePath, Date.now() + 300000);
+      assert.equal(outage.receipt.replicas, 1);
+      result.restoreRequired = true;
+      result.restoreReceipt = restorePath;
+      await save(result);
+      kubectl([
+        "scale",
+        "deployment/pi-cloud-control-plane",
+        "--current-replicas=1",
+        "--replicas=0",
+      ]);
+      await wait(
+        () =>
+          JSON.parse(kubectl(["get", "pods", "-l", outage.selector, "-o", "json"])).items.length ===
+          0,
+        "management stopped",
+        90000,
+      );
+      await wait(() => Date.now() >= renewed + 15000, "deadline passed without management", 120000);
+      assert.equal(
+        (await cube.observe(instance.sandboxId, instance.nodeId)).presence,
+        "present",
+        "Native Cube must not reclaim a platform-timed VM",
+      );
+      assert.equal(await inspect(), renewed, "Outage must not rewrite the deadline");
+      result.managementOutagePastDeadline = true;
+      result.observedAlivePastDeadlineAt = Date.now();
+      await save(result);
+      await restore();
+      assert.equal(await inspect(), renewed, "Adoption must not reset an expired deadline");
+    }
     progress("retention: waiting for the real 30-minute idle expiry");
-    const idleStart = Date.now();
     await wait(
       async () => {
         if (outage) await assertNoWork();
@@ -266,8 +321,8 @@ export async function elasticRetentionAcceptance({
         assert(Date.now() >= renewed, "Compute expired before its accepted deadline");
         return true;
       },
-      "Cube-owned idle expiry",
-      1980000,
+      "Platform-owned idle expiry",
+      2100000,
       5000,
     );
     result.idleWaitMs = Date.now() - idleStart;
@@ -277,7 +332,7 @@ export async function elasticRetentionAcceptance({
       assert.equal(
         JSON.parse(kubectl(["get", "pods", "-l", outage.selector, "-o", "json"])).items.length,
         0,
-        "Session runtime returned before the Cube-owned expiry observation",
+        "Session runtime returned before the platform expiry observation",
       );
       assert.deepEqual(
         managementPods(),
@@ -288,7 +343,7 @@ export async function elasticRetentionAcceptance({
         `http://${serviceAddress("control-plane")}:3000/health/ready`,
         { signal: AbortSignal.timeout(2000) },
       );
-      assert(managementHealth.ok, "Management was not available at confirmed Cube expiry");
+      assert(managementHealth.ok, "Management was not available at confirmed expiry");
       result.managementStayedAvailable = true;
     }
     await save(result);
@@ -303,7 +358,7 @@ export async function elasticRetentionAcceptance({
             .where("workspace_runtime_id", "=", runtime.workspace_runtime_id)
             .executeTakeFirst()
         )?.state === "released",
-      "Control Plane adopts Cube expiry",
+      "Resource manager settles positive deletion",
       120000,
     );
     progress("retention: Luna continues on a new VM with the existing Workspace");

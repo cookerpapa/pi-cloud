@@ -102,7 +102,6 @@ export interface CubeSandboxRuntimeClient {
   ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
   deleteVolume(volumeId: string): Promise<void>;
   create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance>;
-  setTimeout?(sandboxId: string, timeoutSeconds: number): Promise<void>;
   read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
   observe(
     sandboxId: string,
@@ -133,7 +132,7 @@ export interface CubeSandboxRuntimeClient {
   ): Promise<void>;
 
   pause(sandboxId: string): Promise<void>;
-  connect(sandboxId: string, timeoutSeconds?: number): Promise<CubeSandboxInstance>;
+  connect(sandboxId: string): Promise<CubeSandboxInstance>;
   list(): Promise<readonly CubeSandboxInstance[]>;
   destroy(sandboxId: string): Promise<void>;
   runCommand(
@@ -615,17 +614,6 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control("/health");
     await response.body?.cancel().catch(() => undefined);
   }
-  async setTimeout(sandboxId: string, timeoutSeconds: number): Promise<void> {
-    const id = bounded(sandboxId, "CubeSandbox ID", 128);
-    if (timeoutSeconds !== -1) positiveInteger(timeoutSeconds, 1800, 1, 2_147_483_647);
-    const response = await this.#control(`/sandboxes/${encodeURIComponent(id)}/timeout`, {
-      method: "POST",
-      timeoutMs: 5000,
-      body: JSON.stringify({ timeout: timeoutSeconds }),
-    });
-    await response.body?.cancel();
-  }
-
   async ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume> {
     const id = bounded(volumeId, "CubeSandbox volume ID", 128);
     const selectedDriver = bounded(driver, "CubeSandbox volume driver", 64);
@@ -1062,17 +1050,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     }
   }
 
-  async connect(sandboxId: string, timeoutSeconds?: number): Promise<CubeSandboxInstance> {
+  async connect(sandboxId: string): Promise<CubeSandboxInstance> {
     const id = encodeURIComponent(bounded(sandboxId, "CubeSandbox ID", 256));
-    const timeout =
-      timeoutSeconds === undefined
-        ? undefined
-        : timeoutSeconds === -1
-          ? -1
-          : positiveInteger(timeoutSeconds, 900, 1, 2_147_483_647);
     const response = await this.#control(`/sandboxes/${id}/connect`, {
       method: "POST",
-      body: JSON.stringify({ timeout }),
+      body: JSON.stringify({ timeout: -1 }),
     });
     return this.#rememberInstance(
       parseInstance(

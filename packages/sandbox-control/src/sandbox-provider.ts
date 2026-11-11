@@ -84,7 +84,7 @@ export type SandboxCreateSpec = Readonly<{
   policy: SandboxPolicy;
   toolRoot?: string;
   lifetime?: "development_environment";
-  /** Immutable allocation policy, persisted before the first Cube Create. */
+  /** Platform idle policy persisted with the one-shot creation intent, never a native provider timer. */
   retentionWindowMs?: number;
   volumeMountPath?: "/workspace" | "/home/user";
   sandboxProfileKey?: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey;

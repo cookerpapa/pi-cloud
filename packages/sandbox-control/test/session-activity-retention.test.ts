@@ -22,7 +22,11 @@ function fact(now = Date.now()): SessionActivity {
 }
 it("reads resource metadata once, renews silent families and never creates a missing VM", async () => {
   const retain = vi.fn(),
-    read = vi.fn(async () => ({ id: "allocation", capsule: "opaque" })),
+    read = vi.fn(async (tenantId: string) => ({
+      id: "allocation",
+      tenantId,
+      kind: "workspace" as const,
+    })),
     f = fact();
   const view = new SessionActivityRetention({
     retention: { retain } as unknown as RuntimeRetention,
@@ -56,7 +60,7 @@ it.each(["stale", "revoked", "reset"])(
     let now = Date.now(),
       current = true;
     const f = fact(now),
-      read = Promise.withResolvers<{ id: string; capsule: string }>(),
+      read = Promise.withResolvers<import("../src/runtime-retention.ts").RuntimeRetentionTarget>(),
       retain = vi.fn();
     const view = new SessionActivityRetention({
       retention: { retain } as unknown as RuntimeRetention,
@@ -67,7 +71,7 @@ it.each(["stale", "revoked", "reset"])(
     if (fault === "stale") now += 46000;
     if (fault === "revoked") current = false;
     if (fault === "reset") view.reset();
-    read.resolve({ id: "allocation", capsule: "opaque" });
+    read.resolve({ id: "allocation", tenantId: f.scope.tenantId, kind: "workspace" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(retain).not.toHaveBeenCalled();
     await view.close();

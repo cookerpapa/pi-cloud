@@ -23,15 +23,25 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(215);
+      expect(firstMigrationPass.rows).toHaveLength(218);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("215_runtime_continuation");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("218_platform_idle_expiry");
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,
       );
       const terminalNames = terminalColumns.rows.map((row) => row.column_name);
       expect(terminalNames).toContain("owner_instance_id");
+      expect(terminalNames).toContain("idle_expires_at");
+      const expiryColumns = await sql<{
+        table_name: string;
+      }>`select table_name from information_schema.columns
+        where column_name='idle_expires_at' and table_name in ('workspace_runtimes','workspace_terminal_sessions','development_environments')
+        order by table_name`.execute(database);
+      expect(expiryColumns.rows.map((r) => r.table_name)).toEqual([
+        "workspace_runtimes",
+        "workspace_terminal_sessions",
+      ]);
       expect(terminalNames).not.toContain("lease_expires_at");
       expect(terminalNames).not.toContain("last_heartbeat_at");
       const leaseColumns = await sql<{

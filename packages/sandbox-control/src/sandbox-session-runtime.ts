@@ -124,7 +124,7 @@ export async function createSandboxSessionRuntime(options: {
       },
     });
     cleanup.push(() => environments.reset());
-    const resources = new SessionResourceAccess(database, provider);
+
     const replies = new KafkaToolReplyPublisher(
       config.kafkaBrokers,
       `session-runtime-${instanceId}`,
@@ -178,30 +178,43 @@ export async function createSandboxSessionRuntime(options: {
       runtimeEvidence: async () => {},
     });
     cleanup.push(() => probes.close());
+    let nextRetentionManager = 0;
+    const retentionManagers = (options.managementBaseUrls ?? []).map(
+      (baseUrl) =>
+        new SandboxControlClient({
+          baseUrl,
+          serviceToken: config.serviceToken,
+          allowInsecureHttp: true,
+          requestTimeoutMs: 5000,
+        }),
+    );
     const retention = new RuntimeRetention({
-      renew: async (target, observedAt) => {
-        const start = performance.now();
-        let outcome = "confirmed";
+      renew: async (uses) => {
+        const startedAt = performance.now();
+        let outcome = "recorded";
+        const manager = retentionManagers[nextRetentionManager++ % retentionManagers.length];
         try {
-          await provider.renewPersistentRetention(target.capsule, observedAt);
+          if (!manager) throw new Error("Resource management endpoint is unavailable");
+          await manager.retainResources(uses);
         } catch (error) {
           outcome = "unconfirmed";
           throw error;
         } finally {
           metrics.sandboxDuration.observe(
-            { operation: "retention_renew", outcome },
-            (performance.now() - start) / 1000,
+            { operation: "retention_delivery", outcome },
+            (performance.now() - startedAt) / 1000,
           );
         }
       },
     });
+    const resources = new SessionResourceAccess(database, provider, retention);
     cleanup.push(() => retention.close());
     activity = new SessionActivityRetention({
       retention,
       read: async (tenantId, use) => {
         const row = await database
           .selectFrom("workspace_runtimes")
-          .select(["workspace_runtime_id", "runtime_capsule"])
+          .select(["workspace_runtime_id"])
           .where("tenant_id", "=", tenantId)
           .where("workspace_id", "=", use.workspaceId)
           .where(
@@ -213,8 +226,8 @@ export async function createSandboxSessionRuntime(options: {
           .where("allocation_closed", "=", false)
           .where("runtime_capsule", "is not", null)
           .executeTakeFirst();
-        return row?.runtime_capsule
-          ? { id: row.workspace_runtime_id, capsule: row.runtime_capsule }
+        return row
+          ? { id: row.workspace_runtime_id, tenantId, kind: "workspace" as const }
           : undefined;
       },
     });

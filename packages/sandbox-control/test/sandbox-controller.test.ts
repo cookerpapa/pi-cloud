@@ -2118,7 +2118,7 @@ describe("provider-backed Sandbox controller", () => {
     }
   });
 
-  it("does not expire retained compute when only the controller clock advances", async () => {
+  it("does not retire compute from the controller clock without a PG expiry claim", async () => {
     const fixture = providerFixture();
     let now = 1_000;
     const manager = testBroker({
@@ -2141,6 +2141,79 @@ describe("provider-backed Sandbox controller", () => {
     expect(manager.warmCount).toBe(1);
     expect(fixture.destroyed).toBe(false);
     await manager.close();
+  });
+
+  it("retires a PG-expired allocation even while its old Tool binding exists", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+      idleExpiryStartupGraceMs: 0,
+    });
+    try {
+      await manager.create(createRequest);
+      repository.expiredWorkspaces.push({ activationId: ACTIVATION_ID, assignment });
+      await manager.reapWorkspaceRuntimes();
+      expect(fixture.destroyed).toBe(true);
+      expect(manager.admittedCount).toBe(0);
+      expect(repository.closedAllocations.has(ACTIVATION_ID)).toBe(true);
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("retains quota and closed admission when idle deletion is uncertain", async () => {
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+      idleExpiryStartupGraceMs: 0,
+    });
+    const destroy = vi.spyOn(fixture.provider, "destroy");
+    try {
+      await manager.create(createRequest);
+      destroy.mockRejectedValueOnce(new Error("delete receipt lost"));
+      repository.expiredWorkspaces.push({ activationId: ACTIVATION_ID, assignment });
+      const state = vi.spyOn(repository, "setWorkspaceRuntimeState");
+      await manager.reapWorkspaceRuntimes();
+      expect(manager.admittedCount).toBe(1);
+      expect(state).toHaveBeenLastCalledWith(ACTIVATION_ID, "unknown", expect.anything());
+      expect(repository.closedAllocations.has(ACTIVATION_ID)).toBe(true);
+    } finally {
+      destroy.mockRestore();
+      await manager.close();
+    }
+  });
+
+  it("allows fresh use to arrive after readiness before claiming stored overdue resources", async () => {
+    let now = 1000;
+    const fixture = providerFixture(),
+      repository = new InMemoryWorkspaceRuntimeStateRepository();
+    const manager = testBroker({
+      provider: fixture.provider,
+      stateRepository: repository,
+      idGenerator: () => ACTIVATION_ID,
+      clock: () => now,
+    });
+    try {
+      await manager.create(createRequest);
+      const claim = vi.spyOn(repository, "claimExpiredWorkspaceRuntimes");
+      repository.expiredWorkspaces.push({ activationId: ACTIVATION_ID, assignment });
+      await manager.reapWorkspaceRuntimes();
+      expect(claim).not.toHaveBeenCalled();
+      now += 119000;
+      await manager.reapWorkspaceRuntimes();
+      expect(claim).not.toHaveBeenCalled();
+      now += 1000;
+      await manager.reapWorkspaceRuntimes();
+      expect(claim).toHaveBeenCalledOnce();
+    } finally {
+      await manager.close();
+    }
   });
 
   it("releases local compute quota only after an unused runtime is confirmed destroyed", async () => {

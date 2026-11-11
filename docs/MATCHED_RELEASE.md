@@ -1,5 +1,21 @@
 # Matched release
 
+ADR-0314's next matched cutover targets schema 218 and resource capsule 4.
+Session v20, replies v4, provider contract 1, Guest executor 1 and Tool payload 7
+stay unchanged. Retire old physical allocations before switching: new managed
+Cube instances disable native timeout, and PG/resource management becomes the
+sole idle-expiry authority. Do not mix the two lifetime policies or retain a
+capsule compatibility reader. #29's deployment/acceptance status is tracked in
+[the backlog](BACKLOG.md).
+
+In addition to the relevant source/PG and existing live gates, run the actual
+30-minute retention scope with
+`PI_CLOUD_RETENTION_RESOURCE_MANAGEMENT_OUTAGE=1`: a pending Tool must renew its
+PG deadline; the VM must survive its stored deadline while management is stopped;
+restoration must keep that deadline, confirm physical retirement, and allow a
+new VM to read the retained file. The owned watchdog restores the stopped role
+if acceptance is interrupted. No 131 MiB model request is required.
+
 ADR-0309's stock-provider source migration uses schemas 216/217, resource capsule 3
 and provider contract 1. Session v20, replies v4 and Guest protocols remain unchanged.
 The owner approved the four fixed official images under
@@ -15,11 +31,11 @@ Accounts, configuration, retained attachments and Workspace bytes remain preserv
 
 ## Current contract
 
-The serving contract is schema 217, Session topic v20, reply topic v4, resource
+The preceding stock-R5 serving contract is schema 217, Session topic v20, reply topic v4, resource
 capsule 3, provider contract 1, Guest executor 1 and fixed Tool payload 7. There is
 no private managed Cube protocol. Guest admission/cancellation uses ordinary envd
-process APIs. Session activity supplies fresh resource use; native Cube timeout
-semantics own expiry, and on-demand execution probes retain their separate role.
+process APIs. Its native-expiry behavior is replaced by the schema-218 cutover
+above; on-demand execution probes retain their separate role.
 
 Worker inventory retirement closes routing without cancelling accepted Guest
 work. Explicit chat Stop remains an ordered Tool cancellation. The Worker handoff

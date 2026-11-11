@@ -1,6 +1,8 @@
 import { uploadHttp, readUploadReceipt } from "./upload-http.ts";
 import { fileTransferHttp } from "./workspace-file-transfer-http.ts";
 import {
+  RESOURCE_RETENTION_PATH,
+  type PhysicalResourceUse,
   PREPARE_ENVIRONMENT_IMAGES_PATH,
   RECOVER_TOOL_ENVIRONMENT_PATH,
   parseToolEnvironmentRequest,
@@ -224,6 +226,17 @@ export class SandboxControlClient {
         true,
       );
     }
+  }
+
+  async retainResources(uses: readonly PhysicalResourceUse[]): Promise<void> {
+    const value = await this.#request(RESOURCE_RETENTION_PATH, this.#serviceToken, { uses });
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("updated" in value) ||
+      !Number.isSafeInteger(value.updated)
+    )
+      throw new Error("Invalid resource retention receipt");
   }
 
   async recoverEnvironment(

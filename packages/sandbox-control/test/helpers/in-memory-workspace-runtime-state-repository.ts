@@ -34,6 +34,25 @@ import type {
 
 /** Test fixture only. Production effects always use PostgreSQL ownership. */
 export class InMemoryWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
+  readonly resourceUses: import("@pi-cloud/protocol").PhysicalResourceUse[] = [];
+  readonly expiredWorkspaces: OrphanedWorkspaceRuntime[] = [];
+  readonly expiredTerminals: OrphanedWorkspaceTerminal[] = [];
+  async recordResourceUse(
+    uses: readonly import("@pi-cloud/protocol").PhysicalResourceUse[],
+  ): Promise<number> {
+    this.resourceUses.push(...structuredClone(uses));
+    return uses.length;
+  }
+  async claimExpiredWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]> {
+    const claimed = this.expiredWorkspaces.splice(0, limit);
+    for (const row of claimed) await this.closeAllocation(row.activationId, "workspace");
+    return claimed;
+  }
+  async claimExpiredTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]> {
+    const claimed = this.expiredTerminals.splice(0, limit);
+    for (const row of claimed) await this.closeAllocation(row.terminalId, "terminal");
+    return claimed;
+  }
   async reconcileOwnership(): Promise<void> {}
   readonly creations = new Map<
     string,

@@ -26,7 +26,7 @@ const row = {
   tenant_id: "tenant",
   workspace_id: "workspace",
   runtime_capsule: codec.seal({
-    version: 3,
+    version: 4,
     instance,
     executionTarget: { ...target, bootId: "boot" },
     handle: {

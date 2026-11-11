@@ -62,7 +62,9 @@ protocol, record the decision under `docs/adr/` before implementation.
   for maintenance. Cold resource metadata bootstrap is allowed. On-demand probes
   register their original reply waiter before entering that same Session path.
   Diagnostic evidence never becomes native history or authorizes destruction,
-  replay, lease renewal or quota release. Under ADR-0309 the native provider owns elastic expiry through its timeout API.
+  replay, lease renewal or quota release. ADR-0314 now authorizes moving elastic
+  expiry to the existing PG-backed resource manager in #29 before #27 integration.
+  Until that matched cutover, ADR-0309's native timeout remains the serving behavior.
   Without fresh activity, expiry may reclaim an unconfirmed Tool. Management
   observations must not generate Guest traffic that refreshes native idle time.
   Dedicated machines do not expire. Positive provider deletion evidence gates quota release.
@@ -138,8 +140,11 @@ protocol, record the decision under `docs/adr/` before implementation.
   and recovery. ADR-0273 separates durable user intent and verified allocation
   closure from disposable physical observations. A stable development machine
   receives a new allocation UUID only after confirmed old physical absence.
-  Under ADR-0309 native provider timeout/traffic semantics own idle expiry; retain
-  no competing Control Plane deadline scanner or warm-cache eviction policy.
+  Under ADR-0314, disable native idle timeout at the matched cutover and make the
+  existing resource manager the sole durable deadline/expiry authority. Retain no
+  competing provider timer or cache eviction policy. Activity updates PG only;
+  positive provider deletion evidence still gates release. Management outages
+  may delay reclamation; restart does not count as activity.
   Dedicated machines remain non-expiring. The fixed Guest service owns
   operation admission, boot/ordered-position fencing and exact Tool cancellation
   through the provider ordinary process API (ADR-0307). Resource creation uses one

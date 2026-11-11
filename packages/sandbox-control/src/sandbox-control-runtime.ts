@@ -108,6 +108,7 @@ export async function createSandboxControl(options: {
     controllerOwns = true;
     cleanup.push(() => (serverOwns ? undefined : controller.close()));
     const server = new SandboxControlServer({
+      retainResources: (uses) => ownership.recordResourceUse(uses),
       host: config.host,
       port: config.port,
       serviceToken: config.serviceToken,

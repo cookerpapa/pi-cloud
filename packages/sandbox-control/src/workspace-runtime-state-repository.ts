@@ -1,3 +1,5 @@
+import { claimIdleExpiry, recordResourceUse } from "./resource-idle-expiry.ts";
+import type { PhysicalResourceUse } from "@pi-cloud/protocol";
 import { resourceIdentityHash } from "@pi-cloud/database";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -163,6 +165,9 @@ function allocationRecovery(
 }
 
 export interface WorkspaceRuntimeStateRepository {
+  recordResourceUse(uses: readonly PhysicalResourceUse[]): Promise<number>;
+  claimExpiredWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]>;
+  claimExpiredTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]>;
   beginCreation(
     spec: SandboxCreateSpec,
     kind?: AllocationKind,
@@ -836,6 +841,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         ) {
           return { status: "busy" };
         }
+        if (existing.state === "allocated")
+          await transaction
+            .updateTable("workspace_runtimes")
+            .set({
+              idle_expires_at: sql<Date>`greatest(idle_expires_at,clock_timestamp()+(creation_spec->>'retentionWindowMs')::bigint*interval '1 millisecond')`,
+            })
+            .where("workspace_runtime_id", "=", existing.workspace_runtime_id)
+            .where("allocation_closed", "=", false)
+            .execute();
         return { status: "reserved" };
       }
       const domain = await transaction
@@ -1042,6 +1056,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           updated_at: now,
         })
         .executeTakeFirstOrThrow();
+      if (activation?.state === "allocated")
+        await transaction
+          .updateTable("workspace_runtimes")
+          .set({
+            idle_expires_at: sql<Date>`greatest(idle_expires_at,clock_timestamp()+(creation_spec->>'retentionWindowMs')::bigint*interval '1 millisecond')`,
+          })
+          .where("workspace_runtime_id", "=", activation.workspace_runtime_id)
+          .where("allocation_closed", "=", false)
+          .execute();
       const executionReference = createExecutionReference(
         input.terminalId,
         activation?.run_id ?? input.terminalId,
@@ -1825,6 +1848,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .updateTable("workspace_terminal_sessions")
         .set({
           state,
+          ...(state === "active"
+            ? {
+                idle_expires_at: sql<Date | null>`coalesce(idle_expires_at, clock_timestamp()+(creation_spec->>'retentionWindowMs')::bigint*interval '1 millisecond')`,
+              }
+            : state === "released"
+              ? { idle_expires_at: null }
+              : {}),
           runtime_id: detail.handle?.runtimeId ?? null,
           runtime_name: detail.handle?.runtimeName ?? null,
           failure_code: failureCode(detail.failureCode),
@@ -1901,6 +1931,73 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
     });
   }
 
+  recordResourceUse(uses: readonly PhysicalResourceUse[]): Promise<number> {
+    this.assertLocalOwnership();
+    return this.#transaction((tx) => recordResourceUse(tx, this.#sandboxDomainId, uses));
+  }
+
+  async claimExpiredWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]> {
+    const bounded = positiveInteger(limit, "idle expiry limit");
+    return this.#ownedTransaction(async (tx) => {
+      const rows = await claimIdleExpiry(
+        tx,
+        this.#sandboxDomainId,
+        this.#instanceId,
+        "workspace",
+        bounded,
+      );
+      return rows.map((value) => {
+        const row = value as import("kysely").Selectable<Database["workspace_runtimes"]>;
+        return {
+          activationId: row.workspace_runtime_id,
+          ...(row.runtime_capsule ? { runtimeCapsule: row.runtime_capsule } : {}),
+          assignment: {
+            tenantId: row.tenant_id,
+            projectId: row.project_id,
+            workspaceId: row.workspace_id,
+            supervisorId: row.supervisor_id,
+            bootId: row.boot_id,
+            sandboxId: row.sandbox_id,
+            runId: row.run_id,
+            sessionId: row.session_id,
+            turnId: row.turn_id,
+            executionReference: createExecutionReference(
+              row.lease_id,
+              row.run_id,
+              Number(row.fencing_token),
+            ),
+          },
+        };
+      });
+    });
+  }
+
+  async claimExpiredTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]> {
+    const bounded = positiveInteger(limit, "terminal idle expiry limit");
+    return this.#ownedTransaction(async (tx) => {
+      const rows = await claimIdleExpiry(
+        tx,
+        this.#sandboxDomainId,
+        this.#instanceId,
+        "terminal",
+        bounded,
+      );
+      return rows.map((value) => {
+        const row = value as import("kysely").Selectable<Database["workspace_terminal_sessions"]>;
+        return {
+          terminalId: row.terminal_id,
+          tenantId: row.tenant_id,
+          userId: row.user_id,
+          projectId: row.project_id,
+          workspaceId: row.workspace_id,
+          sessionId: row.session_id,
+          fencingToken: Number(row.fencing_token),
+          sharedRuntime: false,
+        };
+      });
+    });
+  }
+
   async claimWarmRuntimeRetirement(activationId: string): Promise<boolean> {
     return this.#ownedTransaction(async (transaction) => {
       const workspace = await transaction
@@ -1952,6 +2049,13 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         .updateTable("workspace_runtimes")
         .set({
           state,
+          ...(state === "allocated"
+            ? {
+                idle_expires_at: sql<Date>`coalesce(idle_expires_at, clock_timestamp()+(creation_spec->>'retentionWindowMs')::bigint*interval '1 millisecond')`,
+              }
+            : state === "released"
+              ? { idle_expires_at: null }
+              : {}),
           ...(state === "released"
             ? {
                 runtime_id: null,

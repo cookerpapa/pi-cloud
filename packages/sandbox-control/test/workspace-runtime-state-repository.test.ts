@@ -219,6 +219,183 @@ describe("PostgreSQL Sandbox control ownership", () => {
     return { database, repository, instanceId, spec, tenant };
   }
 
+  async function idleFixture() {
+    const f = await allocationFixture();
+    const spec = { ...f.spec, retentionWindowMs: 60000 };
+    await f.repository.beginCreation(spec);
+    await f.repository.setWorkspaceRuntimeState(spec.activationId, "allocated");
+    const row = () =>
+      f.database
+        .selectFrom("workspace_runtimes")
+        .select(["state", "allocation_closed", "idle_expires_at"])
+        .where("workspace_runtime_id", "=", spec.activationId)
+        .executeTakeFirstOrThrow();
+    const use = {
+      kind: "workspace" as const,
+      tenantId: f.tenant.tenantId,
+      id: spec.activationId,
+      observedAt: Date.now(),
+    };
+    return { ...f, spec, row, use };
+  }
+
+  it("persists one deadline and ignores duplicate, stale, future and wrong-resource use", async () => {
+    const f = await idleFixture(),
+      first = (await f.row()).idle_expires_at!;
+    await f.repository.setWorkspaceRuntimeState(f.spec.activationId, "allocated");
+    expect((await f.row()).idle_expires_at).toEqual(first);
+    const use = { ...f.use, observedAt: Date.now() + 1000 };
+    expect(
+      await f.repository.recordResourceUse([use, { ...use, observedAt: use.observedAt - 1000 }]),
+    ).toBe(1);
+    const expected = new Date(use.observedAt + 60000);
+    expect((await f.row()).idle_expires_at).toEqual(expected);
+    expect(await f.repository.recordResourceUse([use])).toBe(0);
+    expect(
+      await f.repository.recordResourceUse([
+        { ...use, observedAt: Date.now() - 120000 },
+        { ...use, observedAt: Date.now() + 60000 },
+        { ...use, tenantId: randomUUID() },
+        { ...use, id: randomUUID() },
+        { ...use, kind: "terminal" },
+      ]),
+    ).toBe(0);
+    expect((await f.row()).idle_expires_at).toEqual(expected);
+  });
+
+  it("retains a shared terminal through its Workspace and expires a standalone terminal through its own record", async () => {
+    const f = await idleFixture();
+    const user = await f.database
+      .selectFrom("users")
+      .select("id")
+      .where("tenant_id", "=", f.tenant.tenantId)
+      .executeTakeFirstOrThrow();
+    const input = {
+      terminalId: randomUUID(),
+      tenantId: f.tenant.tenantId,
+      userId: user.id,
+      projectId: f.spec.assignment.projectId,
+      workspaceId: f.spec.assignment.workspaceId,
+      sessionId: f.spec.assignment.sessionId,
+    };
+    const shared = await f.repository.reserveTerminal(input);
+    expect(shared).toMatchObject({ status: "reserved", workspaceRuntimeId: f.spec.activationId });
+    await f.repository.setTerminalState(input.terminalId, "active");
+    expect(
+      (
+        await f.database
+          .selectFrom("workspace_terminal_sessions")
+          .select("idle_expires_at")
+          .where("terminal_id", "=", input.terminalId)
+          .executeTakeFirstOrThrow()
+      ).idle_expires_at,
+    ).toBeNull();
+    expect(await f.repository.claimExpiredTerminals(16)).toEqual([]);
+    await f.repository.setTerminalState(input.terminalId, "released");
+    await f.repository.closeAllocation(f.spec.activationId, "workspace");
+    await f.repository.setWorkspaceRuntimeState(f.spec.activationId, "released");
+    const own = { ...input, terminalId: randomUUID() };
+    const reservation = await f.repository.reserveTerminal(own);
+    expect(reservation).toMatchObject({ status: "reserved" });
+    expect(reservation).not.toHaveProperty("workspaceRuntimeId");
+    await f.repository.beginCreation({ ...f.spec, activationId: own.terminalId }, "terminal");
+    await f.repository.setTerminalState(own.terminalId, "active");
+    const usage = {
+      kind: "terminal" as const,
+      tenantId: own.tenantId,
+      id: own.terminalId,
+      observedAt: Date.now() + 1000,
+    };
+    expect(await f.repository.recordResourceUse([usage])).toBe(1);
+    await f.database
+      .updateTable("workspace_terminal_sessions")
+      .set({ idle_expires_at: new Date(Date.now() - 1000) })
+      .where("terminal_id", "=", own.terminalId)
+      .execute();
+    expect(await f.repository.claimExpiredTerminals(16)).toMatchObject([
+      { terminalId: own.terminalId, sharedRuntime: false },
+    ]);
+    expect(await f.repository.recordResourceUse([usage])).toBe(0);
+  });
+
+  it("expiry and renewal have one winner and a closed allocation cannot renew", async () => {
+    const f = await idleFixture();
+    await f.database
+      .updateTable("workspace_runtimes")
+      .set({ idle_expires_at: new Date(Date.now() - 1000) })
+      .where("workspace_runtime_id", "=", f.spec.activationId)
+      .execute();
+    const [renewed, expired] = await Promise.all([
+      f.repository.recordResourceUse([{ ...f.use, observedAt: Date.now() }]),
+      f.repository.claimExpiredWorkspaceRuntimes(16),
+    ]);
+    expect(renewed + expired.length).toBe(1);
+    if (!expired.length) {
+      await f.database
+        .updateTable("workspace_runtimes")
+        .set({ idle_expires_at: new Date(Date.now() - 1000) })
+        .where("workspace_runtime_id", "=", f.spec.activationId)
+        .execute();
+      expect(await f.repository.claimExpiredWorkspaceRuntimes(16)).toHaveLength(1);
+    }
+    expect(await f.row()).toMatchObject({ state: "cleaning", allocation_closed: true });
+    expect(await f.repository.recordResourceUse([{ ...f.use, observedAt: Date.now() }])).toBe(0);
+    expect(await f.repository.claimRecoverableWorkspaceRuntimes(16, [])).toEqual([]);
+  });
+
+  it("skips a Workspace held by admission, then observes its committed renewal", async () => {
+    const f = await idleFixture();
+    await f.database
+      .updateTable("workspace_runtimes")
+      .set({ idle_expires_at: new Date(Date.now() - 1000) })
+      .where("workspace_runtime_id", "=", f.spec.activationId)
+      .execute();
+    const gate = Promise.withResolvers<void>(),
+      entered = Promise.withResolvers<void>();
+    const admission = f.database.transaction().execute(async (tx) => {
+      await tx
+        .selectFrom("workspaces")
+        .select("id")
+        .where("id", "=", f.spec.assignment.workspaceId)
+        .forUpdate()
+        .execute();
+      entered.resolve();
+      await gate.promise;
+    });
+    await entered.promise;
+    try {
+      expect(await f.repository.claimExpiredWorkspaceRuntimes(16)).toEqual([]);
+      expect(await f.repository.recordResourceUse([{ ...f.use, observedAt: Date.now() }])).toBe(1);
+    } finally {
+      gate.resolve();
+      await admission;
+    }
+    expect(await f.repository.claimExpiredWorkspaceRuntimes(16)).toEqual([]);
+  });
+
+  it("does not reset a due deadline when a new resource owner adopts it", async () => {
+    const f = await idleFixture(),
+      past = new Date(Date.now() - 5000);
+    await f.database
+      .updateTable("workspace_runtimes")
+      .set({ idle_expires_at: past })
+      .where("workspace_runtime_id", "=", f.spec.activationId)
+      .execute();
+    await f.repository.close();
+    const replacement = new PostgresWorkspaceRuntimeStateRepository({
+      database: f.database,
+      instanceId: randomUUID(),
+      sandboxDomainId: "sandbox-domain-0001",
+      ownerBaseUrl: "http://idle-replacement.test",
+    });
+    resources.push(() => replacement.close());
+    await replacement.start();
+    expect(await replacement.claimRecoverableWorkspaceRuntimes(16, [])).toHaveLength(1);
+    await replacement.setWorkspaceRuntimeState(f.spec.activationId, "allocated");
+    expect((await f.row()).idle_expires_at).toEqual(past);
+    expect(await replacement.claimExpiredWorkspaceRuntimes(16)).toHaveLength(1);
+  });
+
   it.each(["create", "close"] as const)(
     "serializes %s authorization before concurrent owner retirement",
     async (action) => {

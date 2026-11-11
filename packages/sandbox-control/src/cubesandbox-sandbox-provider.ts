@@ -198,7 +198,6 @@ type CubeActivation = {
   state: "running" | "quiesced" | "idle" | "paused";
   volumeId: string;
   lifetime: "elastic" | "development_environment";
-  retentionWindowMs: number;
   toolRoot: string;
   /** Observed lazily, including for machines adopted before their first probe. */
   guestBootId?: string;
@@ -206,7 +205,6 @@ type CubeActivation = {
 };
 
 export type CubeSandboxProviderOptions = Readonly<{
-  retentionWindowMs?: number;
   templateId: string;
   developmentTemplateIds: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;
@@ -590,19 +588,13 @@ export class CubeSandboxProvider implements SandboxProvider {
   readonly #developmentTemplateIds: ReadonlyMap<DevelopmentEnvironmentProfileKey, string>;
   readonly #imageRevision: string;
   readonly #client: CubeSandboxRuntimeClient;
-  readonly #retentionWindowMs: number;
   readonly #readyTimeoutMs: number;
   readonly #webProxy: ToolWebProxyBootstrap;
   readonly #workspaceVolumeGateway: WorkspaceVolumeGateway;
   readonly #persistentCapsules: CubePersistentCapsuleCodec | undefined;
   readonly #activations = new Map<string, CubeActivation>();
-  readonly #interactiveRetention = new Map<
-    string,
-    { users: number; timer: NodeJS.Timeout; pending: boolean }
-  >();
 
   constructor(options: CubeSandboxProviderOptions) {
-    this.#retentionWindowMs = positiveInteger(options.retentionWindowMs, 1800000, 86400000);
     this.#templateId = bounded(options.templateId, "CubeSandbox template ID", 256);
     this.#developmentTemplateIds = new Map(
       (["starter", "standard", "performance"] as const).map((key) => [
@@ -833,9 +825,8 @@ export class CubeSandboxProvider implements SandboxProvider {
           spec.sandboxProfileKey !== undefined
             ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
             : this.#templateId,
-        timeoutSeconds: exclusiveMachine
-          ? -1
-          : Math.ceil((spec.retentionWindowMs ?? this.#retentionWindowMs) / 1000),
+        // PG/resource management owns idle expiry for every managed allocation.
+        timeoutSeconds: -1,
         metadata: {
           ...assignmentMetadata(
             spec.activationId,
@@ -936,7 +927,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       runtimeId: runtimeUuid(instance.sandboxId),
       runtimeName: instance.sandboxId,
       capsule: this.#persistentCapsules.seal({
-        version: 3,
+        version: 4,
         kind: "created",
         activationId: id,
         assignment,
@@ -954,7 +945,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const instance = raw.instance as CubeSandboxInstance;
     const assignment = raw.assignment as ToolSandboxAssignment;
     if (
-      raw.version !== 3 ||
+      raw.version !== 4 ||
       raw.kind !== "created" ||
       raw.activationId !== id ||
       !instance?.sandboxId ||
@@ -1128,9 +1119,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: "running",
         volumeId,
         lifetime: spec.lifetime ?? "elastic",
-        retentionWindowMs: exclusiveMachine
-          ? 0
-          : (spec.retentionWindowMs ?? this.#retentionWindowMs),
         toolRoot,
       });
       return handle;
@@ -1171,7 +1159,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       this.#assertHandle(handle);
       const target = raw.executionTarget as SandboxExecutionTarget;
       if (
-        raw.version !== 3 ||
+        raw.version !== 4 ||
         handle.activationId !== id ||
         target?.sandboxId !== handle.runtimeName
       )
@@ -1236,7 +1224,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       );
     }
     if (activation.lifetime === "development_environment") {
-      const connected = await this.#client.connect(activation.instance.sandboxId, -1);
+      const connected = await this.#client.connect(activation.instance.sandboxId);
       if (connected.sandboxId !== activation.instance.sandboxId) {
         throw new SandboxControlError(
           "development_environment_connect_invalid",
@@ -1262,31 +1250,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       cols: size.cols,
       admin: activation.lifetime === "development_environment",
     });
-    const stopRetention = this.#retainInteractive(activation);
-    const output = (async function* () {
-      try {
-        yield* terminal.output;
-      } finally {
-        stopRetention();
-      }
-    })();
-    return Object.freeze({
-      pid: terminal.pid,
-      output,
-      sendInput: (data: Uint8Array) => terminal.sendInput(data),
-      resize: (next: SandboxTerminalSize) => terminal.resize(next),
-      kill: async () => {
-        try {
-          await terminal.kill();
-        } finally {
-          stopRetention();
-        }
-      },
-      disconnect: () => {
-        stopRetention();
-        terminal.disconnect();
-      },
-    });
+    return terminal;
   }
 
   async openWorkflow(
@@ -1324,9 +1288,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     }
     try {
       const connection = await this.#client.openTcp(activation.instance, port, signal);
-      const stopRetention = this.#retainInteractive(activation);
-      connection.once("close", stopRetention);
-      connection.once("error", stopRetention);
       return connection;
     } catch (error) {
       throw new SandboxControlError(
@@ -1500,7 +1461,7 @@ export class CubeSandboxProvider implements SandboxProvider {
         false,
       );
     }
-    const instance = await this.#client.connect(activation.instance.sandboxId, -1);
+    const instance = await this.#client.connect(activation.instance.sandboxId);
     if (instance.sandboxId !== activation.instance.sandboxId) {
       throw new SandboxControlError(
         "development_environment_identity_changed",
@@ -1555,7 +1516,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     return {
       handle: activation.handle,
       capsule: this.#persistentCapsules.seal({
-        version: 3,
+        version: 4,
         executionTarget: activation.executionTarget,
         imageRevision: activation.evidence.imageRevision,
         instance: activation.instance,
@@ -1567,7 +1528,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: activation.state,
         volumeId: activation.volumeId,
         lifetime: activation.lifetime,
-        retentionWindowMs: activation.retentionWindowMs,
         toolRoot: activation.toolRoot,
         guestBootId: activation.guestBootId,
         continuityId: activation.continuityId,
@@ -1595,7 +1555,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const target = raw.executionTarget as SandboxExecutionTarget;
     const evidence = parseEvidence(raw.evidence);
     if (
-      raw.version !== 3 ||
+      raw.version !== 4 ||
       !handle ||
       !instance ||
       !target ||
@@ -1609,8 +1569,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       typeof raw.volumeId !== "string" ||
       typeof raw.toolRoot !== "string" ||
       (raw.lifetime !== "elastic" && raw.lifetime !== "development_environment") ||
-      !Number.isSafeInteger(raw.retentionWindowMs) ||
-      (raw.retentionWindowMs as number) < 0 ||
       target.apiUrl !== descriptor.target.apiUrl ||
       target.nodeId !== descriptor.target.nodeId ||
       target.sandboxId !== descriptor.target.sandboxId ||
@@ -1652,7 +1610,6 @@ export class CubeSandboxProvider implements SandboxProvider {
         state: raw.state as "running" | "idle",
         volumeId: raw.volumeId,
         lifetime: raw.lifetime,
-        retentionWindowMs: raw.retentionWindowMs as number,
         toolRoot: raw.toolRoot,
       });
     }
@@ -1692,14 +1649,12 @@ export class CubeSandboxProvider implements SandboxProvider {
     const evidence = parseEvidence(raw.evidence);
     const toolchain = raw.toolchain as EnvironmentToolchainReport;
     if (
-      raw.version !== 3 ||
+      raw.version !== 4 ||
       typeof raw.executionTarget !== "object" ||
       raw.executionTarget === null ||
       typeof raw.imageRevision !== "string" ||
       !/^[0-9a-z._-]{1,128}$/.test(raw.imageRevision) ||
       (raw.lifetime !== "development_environment" && raw.lifetime !== "elastic") ||
-      !Number.isSafeInteger(raw.retentionWindowMs) ||
-      (raw.retentionWindowMs as number) < 0 ||
       typeof raw.bindingSha256 !== "string" ||
       !/^[0-9a-f]{64}$/.test(raw.bindingSha256) ||
       !Number.isSafeInteger(raw.authorityEpoch) ||
@@ -1810,7 +1765,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       state,
       volumeId: raw.volumeId,
       lifetime: raw.lifetime,
-      retentionWindowMs: raw.retentionWindowMs as number,
       toolRoot: raw.toolRoot,
       ...(typeof raw.guestBootId === "string" ? { guestBootId: raw.guestBootId } : {}),
       ...(typeof raw.continuityId === "string" ? { continuityId: raw.continuityId } : {}),
@@ -1824,70 +1778,6 @@ export class CubeSandboxProvider implements SandboxProvider {
       }
     }
     return handle;
-  }
-
-  async renewPersistentRetention(capsule: string, observedAt: number): Promise<void> {
-    if (!this.#persistentCapsules || !this.#client.setTimeout)
-      throw new Error("Cube retention transport unavailable");
-    const raw = record(this.#persistentCapsules.open(capsule), "Retention capsule");
-    if (raw.version !== 3 || raw.lifetime !== "elastic") throw new Error("Runtime is not elastic");
-    const handle = raw.handle as SandboxHandle;
-    this.#assertHandle(handle);
-    const target = raw.executionTarget as SandboxExecutionTarget;
-    if (!target || target.sandboxId !== handle.runtimeName || typeof target.bootId !== "string")
-      throw new Error("Retention target changed");
-    const window = raw.retentionWindowMs;
-    if (
-      !Number.isSafeInteger(window) ||
-      (window as number) <= 0 ||
-      !Number.isSafeInteger(observedAt) ||
-      observedAt <= 0
-    )
-      throw new Error("Runtime retention policy changed");
-    const remaining = (window as number) - Math.max(0, Date.now() - observedAt);
-    if (remaining <= 0) throw new Error("Runtime activity expired before renewal");
-    await this.#client.setTimeout(handle.runtimeName, Math.ceil(remaining / 1000));
-  }
-
-  #retainInteractive(activation: CubeActivation): () => void {
-    if (activation.lifetime !== "elastic") return () => {};
-    const id = activation.handle.activationId;
-    let entry = this.#interactiveRetention.get(id);
-    if (!entry) {
-      const refresh = () => {
-        const state = this.#interactiveRetention.get(id);
-        if (!state || state.pending || this.#activations.get(id) !== activation) return;
-        state.pending = true;
-        void Promise.resolve()
-          .then(() => {
-            if (!this.#client.setTimeout) throw new Error("Cube retention transport unavailable");
-            return this.#client.setTimeout(
-              activation.handle.runtimeName,
-              Math.ceil(activation.retentionWindowMs / 1000),
-            );
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            state.pending = false;
-          });
-      };
-      const timer = setInterval(refresh, 30000);
-      timer.unref();
-      entry = { users: 0, timer, pending: false };
-      this.#interactiveRetention.set(id, entry);
-      refresh();
-    }
-    entry.users++;
-    const held = entry;
-    let ended = false;
-    return () => {
-      if (ended) return;
-      ended = true;
-      if (--held.users === 0) {
-        clearInterval(held.timer);
-        if (this.#interactiveRetention.get(id) === held) this.#interactiveRetention.delete(id);
-      }
-    };
   }
 
   async probeExecution(handle: SandboxHandle): Promise<{ continuityId: string }> {
@@ -1929,7 +1819,7 @@ export class CubeSandboxProvider implements SandboxProvider {
     const target = raw.executionTarget as SandboxExecutionTarget;
     this.#assertHandle(handle);
     if (
-      raw.version !== 3 ||
+      raw.version !== 4 ||
       handle.activationId !== activationId ||
       !sameWorkspace(handle.assignment, assignment) ||
       target?.sandboxId !== handle.runtimeName ||
@@ -2682,8 +2572,6 @@ export class CubeSandboxProvider implements SandboxProvider {
     if (this.#uploadCleanupTimer) clearInterval(this.#uploadCleanupTimer);
     this.#uploadCleanupTimer = undefined;
     await this.#uploadCleanup;
-    for (const entry of this.#interactiveRetention.values()) clearInterval(entry.timer);
-    this.#interactiveRetention.clear();
     this.#activations.clear();
     const results = await Promise.allSettled([
       this.#client.close(),

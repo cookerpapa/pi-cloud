@@ -18,7 +18,7 @@ function cancelled() {
   );
 }
 
-/** Capacity accounting only. Cube owns idle expiration; a waiter cannot evict
+/** Capacity accounting only. The resource manager owns idle expiration; a waiter cannot evict
  * another task's retained VM merely because it has no current Tool binding. */
 export class SandboxAdmission {
   readonly #assigned = new Map<string, ToolSandboxAssignment>();

@@ -1,3 +1,6 @@
+import { RuntimeRetention } from "./runtime-retention.ts";
+import { retainTerminal, retainPreview } from "./interactive-resource-use.ts";
+import { SESSION_ACTIVITY_INTERVAL_MS } from "@pi-cloud/protocol";
 import { resourceLimit } from "@pi-cloud/domain";
 import { WorkspaceFileAccess } from "./workspace-file-access.ts";
 import { createWorkspaceSeed, encodeWorkspaceBlob } from "@pi-cloud/workspace-runtime";
@@ -105,6 +108,7 @@ import {
   type WorkspaceRuntimeStateRepository,
   type DevelopmentEnvironmentReservation,
   type OrphanedWorkspaceRuntime,
+  type OrphanedWorkspaceTerminal,
   type AllocationKind,
   type AllocationRecovery,
   type RecoverableDevelopmentEnvironment,
@@ -128,6 +132,7 @@ export type SandboxControllerOptions = {
   onProbeSample?(stage: "probe" | "scheduling", durationMs: number, outcome: string): void;
   clock?: () => number;
   elasticRetentionMs?: number;
+  idleExpiryStartupGraceMs?: number;
   imageRevision: string;
   serviceRegistry?: SandboxHttpServiceRegistry;
   onMaintenanceError?: (error: unknown) => void;
@@ -394,6 +399,9 @@ export class SandboxController {
   readonly #maximumActiveSandboxes: number | null;
   readonly #clock: () => number;
   readonly #elasticRetentionMs: number;
+  readonly #retention: RuntimeRetention;
+  readonly #expiryStartupGraceMs: number;
+  #expiryNotBefore: number | undefined;
   readonly #imageRevision: string;
   readonly #onMaintenanceError: ((error: unknown) => void) | undefined;
   readonly #toolBindings = new Map<string, ManagedToolBinding>();
@@ -440,6 +448,14 @@ export class SandboxController {
     );
     this.#admission = new SandboxAdmission(this.#maximumActiveSandboxes);
     this.#clock = options.clock ?? Date.now;
+    const grace = options.idleExpiryStartupGraceMs ?? SESSION_ACTIVITY_INTERVAL_MS * 2;
+    if (!Number.isSafeInteger(grace) || grace < 0 || grace > 300000)
+      throw new Error("Invalid expiry startup grace");
+    this.#expiryStartupGraceMs = grace;
+    this.#retention = new RuntimeRetention({
+      renew: (uses) => this.#stateRepository.recordResourceUse(uses),
+      clock: this.#clock,
+    });
     this.#elasticRetentionMs = options.elasticRetentionMs ?? 1800000;
     if (
       !Number.isSafeInteger(this.#elasticRetentionMs) ||
@@ -1699,6 +1715,12 @@ export class SandboxController {
         );
       }
       terminal = await this.#terminalsProvider.openTerminal(handle, input.size);
+      await this.#stateRepository.setTerminalState(terminalId, "active", { handle });
+      terminal = retainTerminal(terminal, this.#retention, {
+        id: handle.activationId,
+        tenantId: input.tenantId,
+        kind: workspaceRuntime ? "workspace" : "terminal",
+      });
       const activeTerminal = terminal;
       const managed: ManagedWorkspaceTerminal = {
         assignment,
@@ -1706,7 +1728,6 @@ export class SandboxController {
         session: activeTerminal,
         ...(workspaceRuntime === undefined ? {} : { workspaceRuntime }),
       };
-      await this.#stateRepository.setTerminalState(terminalId, "active", { handle });
       this.#terminals.set(terminalId, managed);
       return Object.freeze({
         terminalId,
@@ -1820,7 +1841,14 @@ export class SandboxController {
         "Application connections are unavailable",
         false,
       );
-    return this.#previews.openPreviewConnection(handle, request.port, signal);
+    const stream = await this.#previews.openPreviewConnection(handle, request.port, signal);
+    if (request.target.kind === "development_environment") return stream;
+    const terminal = this.#terminals.get(handle.activationId);
+    return retainPreview(stream, this.#retention, {
+      id: handle.activationId,
+      tenantId: request.tenantId,
+      kind: terminal && !terminal.workspaceRuntime ? "terminal" : "workspace",
+    });
   }
 
   async create(
@@ -3195,6 +3223,7 @@ export class SandboxController {
     const errors: unknown[] = [];
     this.#admission.close();
     clearInterval(this.#reaper);
+    await this.#retention.close();
     this.#cleanupController.abort();
     await this.#runtimeHealth.close();
     await this.#cleanupLoop;
@@ -3361,6 +3390,7 @@ export class SandboxController {
 
   reapWorkspaceRuntimes(): Promise<void> {
     return (this.#workspaceCleanup ??= (async () => {
+      this.#expiryNotBefore ??= this.#clock() + this.#expiryStartupGraceMs;
       const runtimes = new Set([
         ...this.#warm.values(),
         ...[...this.#toolBindings.values()].flatMap((b) =>
@@ -3370,6 +3400,18 @@ export class SandboxController {
       for (const runtime of runtimes)
         if (runtime.failure && !runtime.failureRecorded)
           await this.#markElasticRuntimeLost(runtime, runtime.failure);
+      if (this.#clock() >= this.#expiryNotBefore) {
+        for (const expired of await this.#stateRepository.claimExpiredWorkspaceRuntimes(16))
+          await this.#retireWorkspaceRuntime(expired);
+        for (const expired of await this.#stateRepository.claimExpiredTerminals(16)) {
+          const local = this.#terminals.get(expired.terminalId);
+          if (local)
+            await this.#closeTerminal(expired.terminalId, local).catch((error) =>
+              this.#onMaintenanceError?.(error),
+            );
+          else await this.#retireOrphanedTerminal(expired);
+        }
+      }
       await this.reapRetiredWarm();
       await this.#reapOrphanedWorkspaceRuntimes();
       await this.#reapUnboundWorkspaceRuntimes();
@@ -3701,27 +3743,28 @@ export class SandboxController {
   }
 
   async #reapOrphanedTerminals(): Promise<void> {
-    const orphaned = await this.#stateRepository.claimOrphanedTerminals(16);
-    for (const terminal of orphaned) {
-      if (terminal.sharedRuntime) {
-        await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
-        continue;
-      }
-      const assignment = terminalAssignment(
-        terminal.terminalId,
-        terminal,
-        createExecutionReference(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
-      );
-      try {
-        await this.#closePhysical(terminal.terminalId, assignment, "terminal");
-        await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
-      } catch (error: unknown) {
-        await this.#stateRepository
-          .setTerminalState(terminal.terminalId, "unknown", {
-            failureCode: operationFailureCode(error),
-          })
-          .catch(() => undefined);
-      }
+    for (const terminal of await this.#stateRepository.claimOrphanedTerminals(16))
+      await this.#retireOrphanedTerminal(terminal);
+  }
+  async #retireOrphanedTerminal(terminal: OrphanedWorkspaceTerminal): Promise<void> {
+    if (terminal.sharedRuntime) {
+      await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
+      return;
+    }
+    const assignment = terminalAssignment(
+      terminal.terminalId,
+      terminal,
+      createExecutionReference(terminal.terminalId, terminal.terminalId, terminal.fencingToken),
+    );
+    try {
+      await this.#closePhysical(terminal.terminalId, assignment, "terminal");
+      await this.#stateRepository.setTerminalState(terminal.terminalId, "released");
+    } catch (error: unknown) {
+      await this.#stateRepository
+        .setTerminalState(terminal.terminalId, "unknown", {
+          failureCode: operationFailureCode(error),
+        })
+        .catch(() => undefined);
     }
   }
 

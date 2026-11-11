@@ -28,7 +28,7 @@ export function connectionFromCapsule(
     physical = raw.executionTarget,
     handle = raw.handle;
   if (
-    raw.version !== 3 ||
+    raw.version !== 4 ||
     !instance ||
     !physical ||
     !handle ||

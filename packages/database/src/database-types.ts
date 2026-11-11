@@ -246,6 +246,7 @@ export interface SandboxControlInstanceTable {
 }
 
 export interface SandboxControlWorkspaceRuntimeTable {
+  idle_expires_at: NullableTimestamp;
   provider_create_started_at: NullableTimestamp;
   provider_receipt: GeneratedNullable<string>;
   creation_spec: GeneratedNullable<Record<string, unknown>>;
@@ -319,6 +320,7 @@ export interface SandboxHttpServiceTable {
 }
 
 export interface WorkspaceTerminalSessionTable {
+  idle_expires_at: NullableTimestamp;
   provider_create_started_at: NullableTimestamp;
   provider_receipt: GeneratedNullable<string>;
   creation_spec: GeneratedNullable<Record<string, unknown>>;

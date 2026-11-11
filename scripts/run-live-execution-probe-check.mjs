@@ -89,11 +89,11 @@ try{
  await client.pause(target.sandboxId);paused=true;
  await assert.rejects(client.probeExecution(target,randomUUID()));
  assert.equal((await client.observe(target.sandboxId,target.nodeId)).state,'paused');
- await client.connect(target.sandboxId,-1);paused=false;
+ await client.connect(target.sandboxId);paused=false;
  await client.probeExecution(target,randomUUID());
  console.log(JSON.stringify({directMs,oldBootRejected:true,directWithUndeliverableReply:true,pausedNotWoken:true,resumed:true}));
 }finally{
- if(paused&&target)await client.connect(target.sandboxId,-1).catch(()=>{});
+ if(paused&&target)await client.connect(target.sandboxId).catch(()=>{});
  await client.close();await database.destroy();
 }
 `;

@@ -1,3 +1,5 @@
+import { retainPreview } from "./interactive-resource-use.ts";
+import type { RuntimeRetention } from "./runtime-retention.ts";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { SandboxController } from "./sandbox-controller.ts";
@@ -18,6 +20,7 @@ export class SessionResourceAccess {
       | "readMachineWorkspaceFile"
       | "openPreviewConnection"
     >,
+    readonly retention: RuntimeRetention,
   ) {}
   async #machine(
     request: Pick<
@@ -116,6 +119,13 @@ export class SessionResourceAccess {
         throw new Error("Preview data identity changed");
     }
     signal?.throwIfAborted();
-    return this.provider.openPreviewConnection(handle, request.port, signal);
+    const stream = await this.provider.openPreviewConnection(handle, request.port, signal);
+    return request.target.kind === "development_environment"
+      ? stream
+      : retainPreview(stream, this.retention, {
+          kind: "workspace",
+          id: handle.activationId,
+          tenantId: request.tenantId,
+        });
   };
 }

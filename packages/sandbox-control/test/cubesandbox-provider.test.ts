@@ -858,7 +858,7 @@ describe("CubeSandbox Provider contract", () => {
     }
   });
 
-  it("renews elastic interactive connections but never renews from health probes", async () => {
+  it("never renews native expiry from interactive connections or health probes", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const provider = testCubeProvider({
       templateId: "pi-cloud-tool-v1",
@@ -877,7 +877,7 @@ describe("CubeSandbox Provider contract", () => {
       },
       creationAuthorization,
     );
-    expect(runtime.creates[0]?.timeoutSeconds).toBe(1800);
+    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("picloud.retention_window_ms");
     vi.useFakeTimers();
     try {
@@ -885,55 +885,18 @@ describe("CubeSandbox Provider contract", () => {
       expect(runtime.retention).not.toHaveBeenCalled();
       const terminal = await provider.openTerminal(handle, { rows: 24, cols: 100 });
       await vi.advanceTimersByTimeAsync(0);
-      expect(runtime.retention).toHaveBeenCalledTimes(1);
+      expect(runtime.retention).not.toHaveBeenCalled();
       const preview = await provider.openPreviewConnection(handle, 5173);
       await vi.advanceTimersByTimeAsync(30000);
-      expect(runtime.retention).toHaveBeenCalledTimes(2);
+      expect(runtime.retention).not.toHaveBeenCalled();
       await terminal.kill();
       await vi.advanceTimersByTimeAsync(30000);
-      expect(runtime.retention).toHaveBeenCalledTimes(3);
+      expect(runtime.retention).not.toHaveBeenCalled();
       preview.destroy();
       await vi.advanceTimersByTimeAsync(0);
       await provider.probeExecution(handle);
       await vi.advanceTimersByTimeAsync(60000);
-      expect(runtime.retention).toHaveBeenCalledTimes(3);
-    } finally {
-      await provider.close();
-      vi.useRealTimers();
-    }
-  });
-
-  it("renews only the remaining native timeout window and rejects stale activity", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-    });
-    const handle = await provider.create(
-      {
-        activationId: ACTIVATION_ID,
-        assignment,
-        environment,
-        workspaceSeed: { kind: "bundle", bundle: encodeWorkspaceBlob(createWorkspaceSeed([])) },
-        policy: provider.defaultPolicy,
-        retentionWindowMs: 60000,
-      },
-      creationAuthorization,
-    );
-    const saved = await provider.persistentCapsule(handle);
-    const now = Date.now();
-    vi.useFakeTimers({ now });
-    try {
-      expect(runtime.creates[0]?.timeoutSeconds).toBe(60);
-      await provider.renewPersistentRetention(saved.capsule, now - 10000);
-      expect(runtime.retention).toHaveBeenLastCalledWith(handle.runtimeName, 50);
-      await expect(provider.renewPersistentRetention(saved.capsule, now - 60000)).rejects.toThrow(
-        "expired",
-      );
-      expect(runtime.retention).toHaveBeenCalledTimes(1);
+      expect(runtime.retention).not.toHaveBeenCalled();
     } finally {
       await provider.close();
       vi.useRealTimers();
@@ -1101,7 +1064,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
     });
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.creates[0]?.timeoutSeconds).toBe(1800);
+    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);

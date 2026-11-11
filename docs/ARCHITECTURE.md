@@ -412,16 +412,18 @@ Ordinary elastic Sessions can share a Workspace's compute scope, files, ports an
 processes. Subagents may use separate temporary Linux compute on the same Volume.
 Human terminals have independent product authority. Pure chat creates no VM.
 
-The native provider owns elastic idle expiry, renewed from fresh Session activity on
-the existing Kafka path. Stale replay uses its original timestamp and cannot buy
-extra time. A missing VM is never created by maintenance. After renewal stops,
-expiry may reclaim compute even with an unfinished Tool; healthy Session families
-can renew indefinitely. The Control Plane has no competing idle deadline scanner.
-Dedicated machines do not expire. Diagnostic heartbeats are not retention intents,
-PG lease renewals or proof that a VM has disappeared.
-See [ADR-0309](adr/0309-stock-sandbox-contract.md).
-Management health samples native resource status without Guest traffic; execution
-uses on-demand full probes. Stock CubeProxy traffic can affect native idle timing.
+The resource manager owns elastic idle expiry under [ADR-0314](adr/0314-platform-owned-elastic-expiry.md).
+Existing allocation rows store the deadline; fresh Session declarations through
+Kafka and authorized terminal/preview use extend it in coalesced PG updates.
+No sandbox timeout API is called during renewal, and managed Cube native expiry
+is disabled. Original timestamps prevent stale replay from granting extra time.
+Missing compute is never created by maintenance. The existing cleanup loop
+claims due allocations atomically, closes dispatch admission and uses ordinary
+provider deletion. Quota release still requires positive deletion evidence.
+An unfinished old Tool is not an indefinite expiry veto. Dedicated machines do
+not expire. Management/PG or required closure-path outages may delay physical
+cleanup; recovery retains the stored deadline and allows a bounded activity
+reconciliation grace. Diagnostic probes do not renew resources.
 
 PG stores a dedicated machine's stable identity, desired running/paused/released
 intent and lifecycle completion. Cube supplies disposable physical observations.

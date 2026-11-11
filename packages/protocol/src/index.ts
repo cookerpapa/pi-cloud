@@ -742,3 +742,5 @@ export type { ToolImplementation } from "./control-tool-command.ts";
 export * from "./tool-recovery.ts";
 export * from "./session-activity.ts";
 export * from "./guest-executor.ts";
+
+export * from "./resource-retention.ts";
