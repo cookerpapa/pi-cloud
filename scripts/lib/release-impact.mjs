@@ -1,5 +1,14 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/retire-obsolete-cube-metadata.mjs",
+  "scripts/lib/obsolete-cube-metadata.mjs",
+  "scripts/lib/obsolete-cube-metadata.test.mjs",
+  "scripts/lib/matched-workspace-storage.mjs",
+  "scripts/lib/matched-workspace-storage.test.mjs",
+  "scripts/cube-metadata-cleanup/go.mod",
+  "scripts/cube-metadata-cleanup/go.sum",
+  "scripts/cube-metadata-cleanup/main.go",
+  "scripts/cube-metadata-cleanup/main_test.go",
   "eval/fault-cases.json",
   "scripts/lib/live-tool-reply-fault.mjs",
   "scripts/fixtures/tool-reply-fault.mjs",

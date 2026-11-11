@@ -101,3 +101,21 @@ it("rejects a replaced bootstrap workload while waiting for stop", async () => {
   await expect(stopNativeStorageConsumers(f)).rejects.toThrow("identity changed");
   expect(f.calls.some((args) => args[0] === "rollout")).toBe(false);
 });
+
+it("template maintenance requires and stops TemplateCenter and lifecycle writers too", async () => {
+  const f = await fixture();
+  await expect(stopNativeStorageConsumers({ ...f, templateMaintenance: true })).rejects.toThrow(
+    "cube-templatecenter",
+  );
+  for (const name of ["cube-templatecenter", "cube-lifecycle-manager"]) {
+    const item = structuredClone(f.items[0]);
+    item.metadata.name = name;
+    item.metadata.uid = `${name}-uid`;
+    item.spec.selector.matchLabels = { component: name };
+    f.items.push(item);
+  }
+  const restore = await stopNativeStorageConsumers({ ...f, templateMaintenance: true });
+  expect(f.items.slice(-2).map((v) => v.spec.replicas)).toEqual([0, 0]);
+  await restore();
+  expect(f.items.slice(-2).map((v) => v.spec.replicas)).toEqual([1, 1]);
+});

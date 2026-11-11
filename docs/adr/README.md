@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0311](0311-obsolete-cube-metadata-maintenance.md) defines bounded cold
+cleanup of obsolete template locators and private node buckets for #28.
+
 [ADR-0310](0310-stock-cube-release-exception.md) records the owner-approved release
 exception for four exact stock Cube image inputs; all other publication gates remain.
 

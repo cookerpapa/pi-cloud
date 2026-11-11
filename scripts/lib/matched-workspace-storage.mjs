@@ -90,12 +90,20 @@ export async function nativeStorageMaintenancePending(directory) {
 
 /** Called only after native all-node absence and the PG retirement receipts.
  * Keep a private resume record; a failed filesystem handoff stays offline. */
-export async function stopNativeStorageConsumers({ directory, kubectl, delay = sleep }) {
+export async function stopNativeStorageConsumers({
+  directory,
+  kubectl,
+  delay = sleep,
+  templateMaintenance = false,
+}) {
   const live = JSON.parse(
     kubectl([
       "get",
       "deployment/cube-api",
       "deployment/cube-master",
+      ...(templateMaintenance
+        ? ["deployment/cube-templatecenter", "deployment/cube-lifecycle-manager"]
+        : []),
       "daemonset/cube-node",
       "daemonset/cube-node-bootstrap",
       "--ignore-not-found",
@@ -103,7 +111,12 @@ export async function stopNativeStorageConsumers({ directory, kubectl, delay = s
       "json",
     ]),
   ).items;
-  for (const name of ["cube-api", "cube-master", "cube-node"])
+  for (const name of [
+    "cube-api",
+    "cube-master",
+    "cube-node",
+    ...(templateMaintenance ? ["cube-templatecenter", "cube-lifecycle-manager"] : []),
+  ])
     assert(
       live.some((item) => item.metadata.name === name),
       `Missing native workload ${name}`,

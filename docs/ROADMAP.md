@@ -14,6 +14,8 @@ image/browser, VM recovery, forced reachable-inventory Worker recovery and accou
 acceptance passed, including the real 30-minute idle-expiry and retained-file recovery
 check. Native template/node-metadata cleanup is separate maintenance in
 [#28](https://github.com/cookerpapa/pi-managed-agents/issues/28). The
+[cold cleanup decision](adr/0311-obsolete-cube-metadata-maintenance.md) now has
+operator code and focused tests; live maintenance remains pending. The
 [delivery report](reports/stock-cube-source-20261111.md) records passing live
 checks, failed samples, limits and the owner-approved exact-image exception.
 
