@@ -29,7 +29,11 @@ import {
   imageCatalogPath,
 } from "./lib/production-kubernetes.mjs";
 import { selfHostedValues } from "./lib/self-hosted-values.mjs";
-import { ensureWslWebForwarder, removeWslWebForwarder } from "./lib/wsl-web-forwarder.mjs";
+import {
+  ensureWslWebForwarder,
+  removeWslWebForwarder,
+  runWslWebAsRuntimeOwner,
+} from "./lib/wsl-web-forwarder.mjs";
 import { validateProductionRuntimeEnvironment } from "./production-runtime-policy.mjs";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
 
@@ -127,6 +131,13 @@ function flags(key) {
   return ["-f", resolve(directory, `${key}.yaml`), "--namespace", namespace];
 }
 async function configureLocalWeb() {
+  if (
+    runWslWebAsRuntimeOwner({
+      runtimeDirectory,
+      script: resolve(repositoryRoot, "scripts/production-kubernetes.mjs"),
+    })
+  )
+    return;
   const deployed = JSON.parse(kubectl(["get", workload("web"), "-o", "json"]));
   const port = deployed.spec.template.spec.containers
     .find((container) => container.name === "web")

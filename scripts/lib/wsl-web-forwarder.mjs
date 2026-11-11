@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import { homedir, release } from "node:os";
@@ -11,6 +12,36 @@ const unitDirectory = () =>
   join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "systemd/user");
 const run = (args) =>
   execFileSync("systemctl", ["--user", ...args], { stdio: "inherit", timeout: 30_000 });
+
+// A matched maintenance run can require root for storage operations. The WSL
+// localhost socket still belongs to the runtime owner's user service manager.
+export function runWslWebAsRuntimeOwner({ runtimeDirectory, script }) {
+  if (!release().toLowerCase().includes("microsoft") || process.geteuid() !== 0) return false;
+  const owner = statSync(join(runtimeDirectory, "secrets/cubesandbox-api-key"));
+  if (owner.uid === 0) return false;
+  const fields = execFileSync("getent", ["passwd", String(owner.uid)], { encoding: "utf8" })
+    .trim()
+    .split(":");
+  assert(fields.length === 7 && Number(fields[2]) === owner.uid, "Runtime owner is unavailable");
+  assert(fields[5].startsWith("/"), "Runtime owner home is invalid");
+  execFileSync(
+    "runuser",
+    [
+      "--user",
+      fields[0],
+      "--",
+      "/usr/bin/env",
+      `XDG_CONFIG_HOME=${join(fields[5], ".config")}`,
+      `XDG_RUNTIME_DIR=/run/user/${owner.uid}`,
+      `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${owner.uid}/bus`,
+      process.execPath,
+      script,
+      "local-web",
+    ],
+    { stdio: "inherit", timeout: 120_000 },
+  );
+  return true;
+}
 async function readUnit(directory, name) {
   const body = await readFile(join(directory, name), "utf8").catch((error) => {
     if (error.code === "ENOENT") return undefined;

@@ -21,6 +21,8 @@ export const operatorSources = new Set([
   "scripts/production-kubernetes.mjs",
   "scripts/lib/cube-workspace-contract.mjs",
   "scripts/lib/cube-workspace-contract.test.mjs",
+  "scripts/lib/wsl-web-forwarder.mjs",
+  "scripts/lib/wsl-web-forwarder.test.mjs",
   "scripts/lib/cube-node-readiness.mjs",
   "scripts/run-live-model-metering-check.mjs",
   "scripts/run-live-fast-compaction-check.mjs",
