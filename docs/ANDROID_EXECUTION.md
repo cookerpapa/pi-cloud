@@ -27,7 +27,8 @@ Session writer. Its authorized change follows the existing Kafka Session path
 into the Projector's memory view. Subsequent dispatches read that view, not PG.
 The shared Projector confirms its dispatch position before sending an operation.
 The trusted executor acknowledges admission, invokes Appium/UiAutomator2, and
-publishes to the original Worker's boot-scoped Kafka reply topic. The Worker
+publishes to the original operation's Worker reply topic. Replacement Workers
+retain protected original reply subscriptions under ADR-0306. The Worker
 passes the reply to Pi before a canonical Tool Result enters native history.
 No independent broker, executor command queue or Tool-result database is added.
 
@@ -59,8 +60,9 @@ userdata deletion or action replay.
 
 ## Operator installation
 
-Use the maintained K3s installation with schema 202, tool catalog version 3 and
-matching Worker/Control Plane code. A matched upgrade must drain writers first.
+Use the current maintained K3s installation and matching Worker/Session Runtime
+protocols. The initial schema/catalog numbers above are historical evidence,
+not a downgrade target. A matched upgrade must drain writers first.
 Do not expose Appium, ADB, device management credentials or Kafka to public clients.
 
 The first installer provisions one node-affine device. It uses the pinned
@@ -90,6 +92,10 @@ step is removed. Root dependency overrides remain ordinary deployment configurat
 No Android/Cuttlefish, Appium/UiAutomator runtime code or APK is patched.
 The #27 packaging change requires its own image and device acceptance; historical
 deployment evidence at the top of this guide is not proof of that new release.
+The target chart authorizes private calls from the independent Session Runtime
+and Session API as well as resource administration; it no longer assumes those
+roles share the Control Plane process. This concerns only the existing target
+port, not public access to ADB or Appium.
 The Android Pod has no Docker socket or host-home mount. Only its trusted
 executor/egress containers receive the minimal required service credentials.
 

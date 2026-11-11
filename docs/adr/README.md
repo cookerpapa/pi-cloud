@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0312](0312-unmodified-alternate-sandbox-validation.md) permits explicitly
+owned BoxLite/Android validation while retaining Cube as the production default.
+
 [ADR-0311](0311-obsolete-cube-metadata-maintenance.md) defines bounded cold
 cleanup of obsolete template locators and private node buckets for #28.
 

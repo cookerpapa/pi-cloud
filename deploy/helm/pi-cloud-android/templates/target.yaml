@@ -82,7 +82,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - { name: PI_CLOUD_CUBE_EGRESS_HOST, value: "0.0.0.0" }
-            - { name: PI_CLOUD_CUBE_EGRESS_CONTROL_PLANE_URL, value: {{ printf "%s/v1/internal/cube-egress-configuration" .Values.controlPlaneUrl | quote }} }
+            - { name: PI_CLOUD_CUBE_EGRESS_CONTROL_PLANE_URL, value: {{ printf "%s/v1/internal/cube-egress-configuration" .Values.sessionRuntimeUrl | quote }} }
             - { name: PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE, value: /run/pi-cloud-secrets/cube-egress-config-token }
           securityContext: { runAsUser: 1000, runAsGroup: 1000, allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
           resources:
@@ -121,7 +121,10 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Values.controlPlaneRelease | quote }}
-      app.kubernetes.io/component: control-plane
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [control-plane, session-runtime, session-api]
   policyTypes: [Egress]
   egress:
     - to:

@@ -39,6 +39,12 @@ try {
   assert.equal(pod.hostNetwork, undefined);
   assert.equal(pod.automountServiceAccountToken, false);
   const guest = pod.containers.find((c) => c.name === "android");
+  assert.equal(
+    pod.containers
+      .find((c) => c.name === "egress")
+      .env.find((e) => e.name === "PI_CLOUD_CUBE_EGRESS_CONTROL_PLANE_URL").value,
+    "http://session-runtime:3000/v1/internal/cube-egress-configuration",
+  );
   assert.equal(guest.securityContext.privileged, true);
   assert.deepEqual(guest.volumeMounts.map((m) => m.name).sort(), [
     "host",
@@ -66,6 +72,13 @@ try {
   }
   const access = objects.find((o) => o.kind === "NetworkPolicy");
   assert.equal(access.spec.podSelector.matchLabels["app.kubernetes.io/instance"], "pi-cloud");
+  assert.deepEqual(access.spec.podSelector.matchExpressions, [
+    {
+      key: "app.kubernetes.io/component",
+      operator: "In",
+      values: ["control-plane", "session-runtime", "session-api"],
+    },
+  ]);
   assert.deepEqual(access.spec.policyTypes, ["Egress"]);
   assert.equal(access.spec.egress[0].ports[0].port, 8090);
   assert.equal(
