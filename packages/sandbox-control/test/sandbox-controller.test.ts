@@ -2317,29 +2317,33 @@ describe("provider-backed Sandbox controller", () => {
     await manager.close();
   });
 
-  it("runs two Session Tool bindings through one physical Workspace runtime", async () => {
-    const fixture = providerFixture(),
-      bindings = new InMemorySandboxBindings();
-    const stop = vi.spyOn(bindings, "closeBinding");
-    const manager = testBroker({ provider: fixture.provider, bindings });
-    const first = await manager.create(createRequest),
-      next = nextBindingRequest(assignment.workspaceId);
-    await manager.create(next);
-    await manager.release({
-      toolBrokerProtocolVersion: 1,
-      type: "tool_sandbox.release",
-      requestId: crypto.randomUUID(),
-      activationId: first.activationId,
-      assignment: assignment,
-      disposition: "keep_warm",
-    });
-    expect(stop).toHaveBeenCalledWith(first.activationId, assignment, false);
-    expect(stop).toHaveBeenCalledTimes(1);
-    expect(bindings.rows.size).toBe(1);
-    expect(fixture.destroyed).toBe(false);
-    expect(manager.admittedCount).toBe(1);
-    await manager.close();
-  });
+  it.each([false, true])(
+    "releases one shared Session binding with explicit cancellation=%s",
+    async (cancelOutstanding) => {
+      const fixture = providerFixture(),
+        bindings = new InMemorySandboxBindings();
+      const stop = vi.spyOn(bindings, "closeBinding");
+      const manager = testBroker({ provider: fixture.provider, bindings });
+      const first = await manager.create(createRequest),
+        next = nextBindingRequest(assignment.workspaceId);
+      await manager.create(next);
+      await manager.release({
+        toolBrokerProtocolVersion: 1,
+        type: "tool_sandbox.release",
+        requestId: crypto.randomUUID(),
+        activationId: first.activationId,
+        assignment: assignment,
+        disposition: "keep_warm",
+        ...(cancelOutstanding ? { cancelOutstanding: true as const } : {}),
+      });
+      expect(stop).toHaveBeenCalledWith(first.activationId, assignment, cancelOutstanding);
+      expect(stop).toHaveBeenCalledTimes(1);
+      expect(bindings.rows.size).toBe(1);
+      expect(fixture.destroyed).toBe(false);
+      expect(manager.admittedCount).toBe(1);
+      await manager.close();
+    },
+  );
 
   it.each([false, true])(
     "fails every shared binding even when quarantine publication fails (%s)",
@@ -2441,6 +2445,29 @@ describe("provider-backed Sandbox controller", () => {
     expect(manager.warmCount).toBe(1);
     await manager.close();
   });
+
+  it.each(["terminateAndConfirmAbsent", "confirmAbsent"] as const)(
+    "retires reachable Worker routing through %s without cancelling accepted Guest work",
+    async (method) => {
+      const fixture = providerFixture();
+      const bindings = new InMemorySandboxBindings();
+      const closed = vi.spyOn(bindings, "closeBinding");
+      const manager = testBroker({ provider: fixture.provider, bindings });
+      try {
+        const created = await manager.create(createRequest);
+        const [runtime] = await manager.listAssignments(assignment.sandboxId);
+        expect(runtime).toBeDefined();
+        await manager[method](runtime!);
+        expect(closed).toHaveBeenCalledWith(created.activationId, assignment, false);
+        expect(closed.mock.calls.some((call) => call[2] === true)).toBe(false);
+        expect(await manager.listAssignments(assignment.sandboxId)).toEqual([]);
+        expect(manager.warmCount).toBe(1);
+        expect(fixture.destroyed).toBe(false);
+      } finally {
+        await manager.close();
+      }
+    },
+  );
 
   it("waits for routing revocation and preserves binding/quota if publication fails", async () => {
     const fixture = providerFixture(),

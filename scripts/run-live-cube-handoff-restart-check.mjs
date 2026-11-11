@@ -15,6 +15,7 @@ import {
   sessionViewReducer,
 } from "../packages/web-ui/src/session-view.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
+import { SandboxControlClient } from "../packages/sandbox-control/src/sandbox-control-client.ts";
 import { sql } from "kysely";
 if (process.env.PI_CLOUD_LIVE_SESSION_RUNTIME_RESTART_CHECK !== "1")
   throw new Error(
@@ -163,8 +164,7 @@ try {
     );
     uploadIds = [upload.id];
   }
-  const task =
-    "Use bash exactly once with this command: printf 'started\\n' >> once.txt; sleep 45; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'. Set timeout to 120 seconds. Do not use other tools or delegate. After completion reply CUBE_HANDOFF_SURVIVED.";
+  const task = `Use bash exactly once with this command: printf 'started\\n' >> once.txt; sleep ${workerFault ? 90 : 45}; printf 'finished\\n' >> once.txt; printf 'CUBE_HANDOFF_SURVIVED'. Set timeout to ${workerFault ? 180 : 120} seconds. Do not use other tools or delegate. After completion reply CUBE_HANDOFF_SURVIVED.`;
   const prompt =
     scenario === "child"
       ? `Call subagent exactly once with context:fresh, sandbox:shared and tools:["bash"]. Give it this exact task: ${task} Wait for that child's result and then reply CUBE_HANDOFF_SURVIVED. Do not use workflow, start another child, or use Bash yourself.`
@@ -349,6 +349,39 @@ try {
   report.charactersBeforeRoll = charactersBeforeRoll;
   report.charactersAtReady = observedText.length;
   const readyAt = Date.now();
+  if (workerFault) {
+    const recovered = await waitFor(async () => {
+      const run = await api.getRun(turn.runId);
+      return run.workerId && run.workerId !== before.workerId ? run : undefined;
+    }, "original Run acquired by a replacement Worker");
+    report.recoveredRunState = recovered.state;
+    report.originalCommandPendingAtRecovery =
+      Buffer.from((await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes).toString() ===
+      "started\n";
+    if (report.originalCommandPendingAtRecovery) {
+      // Exercise the reachable old-inventory path deterministically as well as
+      // the real Worker crash. Pending native replies retain this closed route.
+      const inventory = new SandboxControlClient({
+        baseUrl: `http://${serviceAddress("control-plane")}:4300`,
+        serviceToken: (await readFile(runtime + "/secrets/sandbox-control-token", "utf8")).trim(),
+        allowInsecureHttp: true,
+        requestTimeoutMs: 10000,
+      });
+      const routes = (await inventory.listAssignments(before.workerId)).filter(
+        (route) => route.runId === turn.runId && route.sessionId === session.sessionId,
+      );
+      assert.equal(routes.length, 1, "Original pending reply route was not retained");
+      await inventory.terminateAndConfirmAbsent(routes[0]);
+      const [routing] = await nativeQuery(sql`select cancel_outstanding from sandbox_tool_bindings
+        where binding_id=${routes[0].containerId}::uuid and run_id=${turn.runId}::uuid`);
+      assert.equal(
+        routing?.cancel_outstanding,
+        false,
+        "Worker retirement requested Tool cancellation",
+      );
+      report.reachableInventoryRetirement = true;
+    }
+  }
   const finished = await waitFor(
     async () => {
       try {
@@ -384,6 +417,20 @@ try {
     (t) => t.runId === turn.runId,
   ).transcript;
   const tools = transcript.items.filter((i) => i.kind === "tool");
+  // Preserve bounded evidence before cleanup, including unsuccessful native
+  // Tool settlement when the outer Run itself completed successfully.
+  report.toolEvidence = tools.map((tool) => JSON.stringify(tool).slice(0, 16000));
+  if (scenario === "cube") {
+    try {
+      report.executionFile = Buffer.from(
+        (await api.readWorkspaceFile(session.sessionId, "once.txt")).bytes,
+      )
+        .toString()
+        .slice(0, 4096);
+    } catch (failure) {
+      report.executionFileError = String(failure?.message ?? failure).slice(0, 300);
+    }
+  }
   if (scenario === "stream-image") {
     assert.equal(tools.length, 0);
     const text = transcript.items
@@ -423,6 +470,11 @@ try {
   report.accepted = true;
   report.workerUnchanged = !workerFault;
   if (workerFault) {
+    assert.equal(
+      report.originalCommandPendingAtRecovery,
+      true,
+      "Original command finished before recovery; the pending-wait boundary was not tested",
+    );
     const rows = await nativeQuery(
       sql`select count(*)::int as n from run_transitions where run_id=${turn.runId}::uuid and reason='native_execution_recovery'`,
     );
@@ -430,6 +482,8 @@ try {
     report.originalRunResumed = true;
   }
 } catch (e) {
+  report.accepted = false;
+  report.assertionFailure = String(e?.message ?? e).slice(0, 500);
   error = e;
 } finally {
   streamAbort?.abort();

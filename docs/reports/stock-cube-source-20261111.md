@@ -1,9 +1,9 @@
 # Stock Cube source migration — 2026-11-11
 
-Status: **stock Cube R3 is deployed; the capacity correction and final acceptance are in progress**.
+Status: **stock Cube R4 is deployed; a Worker-retirement correction and final acceptance are in progress**.
 Tracking: [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26),
 [ADR-0309](../adr/0309-stock-sandbox-contract.md).
-The serving installation is `stock-cube-20261111-r3`, schema 217. Old VMs were
+The serving installation is `stock-cube-20261111-r4`, schema 217. Old VMs were
 retired with positive deletion evidence; both original development-machine
 identities recovered on new native VMs with their original Workspace bytes.
 Accounts, model/provider configuration, credentials and retained attachments were preserved.
@@ -174,3 +174,30 @@ Android packaging was simplified in `fa342d61`, with 221 upstream driver files/A
 byte-checked. Device publication remains pending and its intentionally stopped
 StatefulSet stays stopped. BoxLite remains conditional in #27. The requested
 131 MiB cold model upload is excluded from this acceptance.
+
+## R4 follow-up
+
+R4 was published from `495b7d9f` with application Helm 161 / infrastructure 122.
+The capacity correction passed live: both short-lived allocations retained their
+verified CPU/memory, received a final absent observation and were cleaned normally.
+Pending-creation restrictions, exact retries, two Ready machines and Stop followed
+by complete binding retirement/release passed. Real browser input return/image
+resend, direct vision, bounded ASCII/Unicode Read, Guest Chromium screenshots,
+inline images and named preview links passed. Owned VM loss resumed the original
+Run with one original Tool call and an environment-reset record. Each fixture
+confirmed cleanup. Original-asset preservation passed again.
+
+One Worker-loss sample failed: the original Run recovered, but its Bash was aborted.
+Two subsequent samples passed, including a 90-second command confirmed still
+running when the replacement acquired the Run, with exactly one execution. These
+passes did not erase the first failure. A bounded read of that Session's retained
+Kafka interval found a cancellation target before a recoverable writer seal.
+
+The reachable management-inventory retirement path still requested cancellation
+of accepted Guest work. The unreachable-endpoint path did not, making the failure
+timing-dependent. Two deterministic controller regressions failed before the fix.
+Removing that cancellation request preserves routing revocation and leaves explicit
+chat Stop unchanged; the full 79-case controller/API run and type checking passed.
+The live fixture now explicitly invokes the old inventory path while the original
+command is pending, and retains bounded Tool evidence before cleanup. Publication
+and this final forced-path acceptance remain pending.

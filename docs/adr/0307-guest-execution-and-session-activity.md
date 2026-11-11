@@ -155,3 +155,9 @@ expiry during an unconfirmed operation, healthy activity through silent model/ch
 waits, stale activity replay, pure chat with no VM, images/output bounds, and exact
 resource cleanup. Source and live tests run serially; delivery requires the maintained
 matched release and real Cube/Luna evidence. The 131 MiB cold model upload stays deferred.
+
+Worker inventory retirement revokes logical routing; it does not cancel accepted
+Guest operations. This must hold whether the retiring boot's management endpoint
+is reachable or already gone. Explicit chat Stop still publishes ordered Tool
+cancellation. A reachable old inventory must not turn automatic Run recovery into
+physical Tool abortion before the recoverable writer seal is published.

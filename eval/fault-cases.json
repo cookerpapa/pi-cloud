@@ -3,6 +3,27 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "worker-inventory-retirement-reachable",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "retires reachable Worker routing through terminateAndConfirmAbsent without cancelling accepted Guest work",
+      "invariant": "Worker inventory retirement revokes routing without cancelling accepted Guest work, independent of endpoint reachability."
+    },
+    {
+      "id": "worker-inventory-retirement-confirmed",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "retires reachable Worker routing through confirmAbsent without cancelling accepted Guest work",
+      "invariant": "Worker inventory retirement revokes routing without cancelling accepted Guest work, independent of endpoint reachability."
+    },
+    {
+      "id": "shared-binding-explicit-cancellation",
+      "workspace": "@pi-cloud/sandbox-control",
+      "file": "test/sandbox-controller.test.ts",
+      "test": "releases one shared Session binding with explicit cancellation=true",
+      "invariant": "Explicit cancellation still applies to the selected binding while its sibling and shared VM remain available."
+    },
+    {
       "id": "native-creation-permit-recovery",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/workspace-runtime-state-repository.test.ts",

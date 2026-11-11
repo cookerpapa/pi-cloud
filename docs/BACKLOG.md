@@ -17,6 +17,9 @@
 - [x] #26 operator: privileged WSL maintenance configures the local web socket as the existing runtime owner.
 - [x] #26 acceptance: use retained Guest credentials, bounded native delete evidence and the independent collector's committed state in live fixtures and cleanup.
 - [x] #26 source: enrich creation receipts with native detail capacity before Guest preparation, including VMs shorter than the sampling interval.
+- [x] #26 source: reachable old-Worker inventory retirement revokes routing without cancelling accepted Guest Tools; two failing regressions now pass with the 79-case controller/API suite.
+- [x] #26 R4: capacity correction, admission/Stop, image/browser and owned-VM recovery acceptance passed.
+- [ ] #26: publish the Worker-retirement correction and verify the reachable inventory path, retention and accounting.
 - [x] #26: first stock matched delivery and original-asset preservation; Guest and Provider live gates passed.
 - [ ] #26: publish the capacity correction and complete final model/recovery/retention/accounting acceptance.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.

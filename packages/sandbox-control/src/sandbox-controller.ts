@@ -3017,6 +3017,9 @@ export class SandboxController {
   }
 
   async terminateAndConfirmAbsent(assignment: SupervisorRuntimeAssignment): Promise<void> {
+    // This inventory port retires a Worker assignment, not its accepted Guest
+    // operations. Reachable and unreachable old boots must have the same recovery
+    // behavior. Explicit Stop carries its own ordered cancellation request.
     const routes = await this.#bindings.inventory(assignment.sandboxId);
     for (const route of routes.filter(
       (row) =>
@@ -3029,7 +3032,6 @@ export class SandboxController {
         requestId: this.#idGenerator(),
         activationId: route.bindingId,
         assignment: route.snapshot.assignment,
-        cancelOutstanding: true,
         disposition: route.snapshot.developmentEnvironmentId ? "detach" : "keep_warm",
       });
     }
