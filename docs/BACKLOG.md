@@ -22,6 +22,9 @@ The real terminal handshake also exposed a public-role composition regression:
 Session API relied on the removed Worker gateway to register WebSocket support.
 Application assembly now installs it for the standalone terminal gateway, and
 the terminal test uses that assembly instead of manually supplying the plugin.
+The following live preview check found that the embedded BoxLite SDK rejects its
+hosted private-tunnel option. The node now uses the native local connected stream
+and verifies that it has no published URI; real preview revalidation is pending.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.

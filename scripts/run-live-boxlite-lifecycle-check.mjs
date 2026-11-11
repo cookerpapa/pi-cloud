@@ -210,8 +210,21 @@ try {
   assert(instance);
   report.machineRuntime = instance.sandboxId;
   await terminal(
-    "printf BOX_WORKSPACE > /home/user/box-marker; printf BOX_ROOT > /etc/box-marker; mkdir -p /home/user/box-preview; printf '<!doctype html><title>Box Preview</title>BOX_PREVIEW_OK' > /home/user/box-preview/index.html; nohup python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/box-preview </dev/null >/tmp/box-preview.log 2>&1 & sleep 1",
+    "printf BOX_WORKSPACE > /home/user/box-marker; printf BOX_ROOT > /etc/box-marker; mkdir -p /home/user/box-preview; printf '<!doctype html><title>Box Preview</title>BOX_PREVIEW_OK' > /home/user/box-preview/index.html; setsid python3 -m http.server 5173 --bind 0.0.0.0 --directory /home/user/box-preview </dev/null >/tmp/box-preview.log 2>&1 & sleep 1; curl -fsS http://127.0.0.1:5173/",
   );
+  const localHttp = await client.runCommand(instance, {
+    command: "curl -fsS http://127.0.0.1:5173/",
+    cwd: "/home/user",
+    user: "0:0",
+    timeoutMs: 10000,
+    maximumOutputBytes: 16384,
+  });
+  report.localHttpAfterTerminalClose = {
+    exitCode: localHttp.exitCode,
+    fixtureVisible: localHttp.stdout.includes("BOX_PREVIEW_OK"),
+  };
+  await save();
+  assert.equal(localHttp.exitCode, 0, "Detached application did not survive terminal close");
   const response = await fetch(
     base + `/v1/development-environments/${machine.environmentId}/preview/5173/`,
     { headers: { authorization: "Bearer " + tenant.credential.token }, redirect: "manual" },
@@ -220,7 +233,7 @@ try {
   const location = response.headers.get("location");
   await response.body?.cancel();
   const page = await readPreviewDocument(location, "127.0.0.1");
-  assert.equal(page.status, 200);
+  assert.equal(page.status, 200, `Preview response: ${page.body.toString().slice(0, 512)}`);
   assert.match(page.body.toString(), /BOX_PREVIEW_OK/);
   report.checks.push("public-terminal-and-native-tcp-preview");
   await save();

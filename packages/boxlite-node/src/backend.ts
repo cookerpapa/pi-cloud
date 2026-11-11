@@ -370,9 +370,11 @@ process.stdin.pipe(f);f.on('finish',()=>{if(size!==Number(n))fail();else process
   async tcp(id: string, port: number): Promise<Duplex> {
     return this.#admission.use(id, async () => {
       const box = await this.#box(id);
-      const tunnel = await box.network.tunnel(new SocketAddress({ address: "127.0.0.1", port }), {
-        isPublic: false,
-      });
+      // The embedded SDK rejects the cloud-only private-tunnel option. Its
+      // local tunnel opens one connected stream; it publishes no listener/URL.
+      // Access remains on this node's authenticated transport.
+      const tunnel = await box.network.tunnel(new SocketAddress({ address: "127.0.0.1", port }));
+      if (tunnel.uri() !== null) throw new Error("Expected a local BoxLite tunnel");
       return tunnelStream(await tunnel.connect());
     });
   }

@@ -67,6 +67,11 @@ SDK execution is forbidden on stopped resources; only management resume may
 start them. Admission closes and short SDK handoffs drain before deletion, so
 late control calls cannot implicitly restart a resource being removed.
 
+Preview uses the embedded SDK's one-connection TCP tunnel, which has no published
+URL or listener. BoxLite's `isPublic: false` option is for its hosted service and
+is rejected by the local SDK. The adapter uses the local default and verifies no
+URI was published; Pi Managed Agents' existing preview authorization still applies.
+
 ## Publication
 
 Prepare the main matched candidate, then the optional node image using its
