@@ -772,11 +772,22 @@ try {
     url: `http://${cluster.api.host}:${cluster.api.port}`,
     apiKey: lifecycleApiKey,
   });
-  const rawPage = await lifecycle.read(lifecycleSource.node_id, undefined, abort.signal);
+  const rawPage = await lifecycle.read(
+    lifecycleSource.node_id,
+    {
+      epoch: lifecycleSource.epoch,
+      sequence: String(lifecycleSource.after_sequence),
+      ...(lifecycleSource.source_position
+        ? { sourcePosition: lifecycleSource.source_position }
+        : {}),
+    },
+    abort.signal,
+  );
   assert.equal(rawPage.epoch, lifecycleSource.epoch);
   const collector = new LifecycleCollector(db, lifecycle);
   try {
-    // Replaying the old source position must lose the cursor compare-and-swap;
+    // A stock observation page is fresh, not replayable provider history. A
+    // collector with an obsolete PG cursor still cannot commit that page;
     // compute receipts cannot be injected through the Workspace receipt API.
     for (let repeat = 0; repeat < 2; repeat++)
       assert.equal(await collector.apply(lifecycleSource.id, undefined, rawPage), false);
