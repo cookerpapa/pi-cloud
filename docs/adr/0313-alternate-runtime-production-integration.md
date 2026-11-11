@@ -78,6 +78,78 @@ relevant isolation checks before enabling it. Do not claim a requested seccomp
 flag is effective when upstream gates it off. Native API limitations remain
 visible; no vendor patch is an acceptable hidden workaround.
 
+## BoxLite adapter choice
+
+Use the pinned Apache-2.0 `@boxlite-ai/boxlite` 0.12.0 SDK inside an independently
+deployed, trusted node adapter. The SDK's host mounts, process handles, PTYs and
+TCP tunnels cover the mechanical operations required by the existing provider
+ports. The official standalone REST server explicitly rejects managed volumes
+and does not expose host-path mounts; adopting the separate cloud application
+stack would introduce another scheduler and ownership store. A bounded SDK
+adapter is therefore justified, without changing the engine or implementing
+another resource scheduler. See the pinned
+[Node contracts](https://github.com/boxlite-ai/boxlite/blob/v0.12.0/sdks/node/lib/native-contracts.ts)
+and [standalone REST schema](https://github.com/boxlite-ai/boxlite/blob/v0.12.0/src/cli/src/commands/serve/types.rs).
+
+Extract shared fixed-Guest preparation, data access and execution transport from
+the Cube provider. Native creation/connection representations stay with their
+drivers; BoxLite must not impersonate Cube's API or invent Cube credentials.
+Select the backend explicitly in the resource domain's deployment configuration,
+with Cube the default and no fallback. Existing resources must be retired through
+the matched operator before changing that domain's provider. A product phone
+picker, mixed-provider placement scheduler and self-service device pool remain
+outside this integration.
+
+The BoxLite adapter receives only its owned SDK state, the managed Workspace
+pool and KVM access. It must not mount a host home or Docker socket. Untrusted
+Tools still execute inside the VM as UID 1000 with no-new-privileges. The prior
+no-jailer experiment does not establish an active VMM seccomp filter; verify
+and document the actual provider-Pod/VM boundary before publication. Do not
+silently relax an existing acceptance check or claim the optional filter works.
+The trusted node Pod uses the host PID namespace: native SDK process identities
+and recorded start times must remain meaningful across container replacement.
+The Guest is a separate VM and receives neither host `/proc` nor node mounts.
+This is an explicit compute-node privilege, not a privilege of Agent Tools.
+
+Run the API as a supervised child inside the node container, so an API-process
+restart does not terminate the container and its detached VMM children. Adopt
+Debian's pinned [Supervisor 4.2.5-1](https://packages.debian.org/bookworm/supervisor)
+with [per-process restart](https://supervisord.org/configuration.html) and group
+termination disabled; do not build another process supervisor. Kubernetes still
+owns the Pod. Full Pod/node loss remains a VM-failure boundary, whereas replacing
+only the API child must preserve a healthy VM and its original Guest reply.
+This process supervision owns no Session, deadline, quota or Tool task state.
+
+Reuse the existing POSIX attachment/deletion guard for BoxLite host mounts:
+acquire an immutable attachment before VM start and release it only after
+positive physical closure. Mount only Workspace bytes, never the private receipt
+directory. PG retains creation admission and early receipts; a lost create reply
+is reconciled by its original native identity/name, never `getOrCreate` or a new
+create. SDK inventory alone does not authorize deletion or quota release.
+The adapter's connection/stream handles are disposable; native SDK state and
+existing PG/Volume records retain their respective authorities.
+
+The embedded SDK's public info response lacks arbitrary creation metadata.
+The node adapter may retain one bounded immutable connection/attachment receipt
+alongside native SDK state so cold reads can reconstruct the original handle.
+This is a copy of the PG-issued creation specification and exact Volume receipt,
+not another lifecycle state machine, queue or expiry clock. Use the repository's
+existing fsync-and-no-replace receipt pattern. Missing or incomplete metadata
+is unresolved, never permission to recreate a Box or detach an unknown hold.
+
+Workspace byte authority remains the existing Cube persistent-Volume subsystem
+and POSIX pool. The BoxLite compute driver uses that storage port for volume
+creation/deletion, while its node adapter only acquires/releases the existing
+opaque attachment holds and supplies host mounts to the SDK. This integration
+replaces compute, not the storage service; it does not claim a deployment with
+every Cube component removed. No second Workspace copy or storage catalog is added.
+
+Public terminal protocol 2 removes the unused native `pid` field from ready
+messages. Human terminal control already uses the platform terminal ID; native
+Cube PIDs and BoxLite execution IDs remain inside their respective transports.
+Do not manufacture a Linux PID for an SDK execution UUID. Publish the matching
+Web/API/runtime versions together, with no old terminal-protocol reader.
+
 ## Acceptance and deployment
 
 First complete the Android recovery/completion slice, then BoxLite provider

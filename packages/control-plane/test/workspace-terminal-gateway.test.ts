@@ -174,10 +174,9 @@ describe("WorkspaceTerminalGateway", () => {
           else observedDevelopmentOpen = frame;
           socket.send(
             JSON.stringify({
-              workspaceTerminalProtocolVersion: 1,
+              workspaceTerminalProtocolVersion: 2,
               type: "workspace_terminal.ready",
               terminalId: IDS.terminal,
-              pid: 73,
               workspaceRoot: "/workspace",
             }),
           );
@@ -185,7 +184,7 @@ describe("WorkspaceTerminalGateway", () => {
         }
         observedInput = frame;
         socket.send(
-          JSON.stringify({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.pong" }),
+          JSON.stringify({ workspaceTerminalProtocolVersion: 2, type: "workspace_terminal.pong" }),
         );
       });
     });
@@ -267,13 +266,13 @@ describe("WorkspaceTerminalGateway", () => {
     });
     browser.send(
       JSON.stringify({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.ping",
       }),
     );
     await expect(nextFrame()).resolves.toMatchObject({ type: "workspace_terminal.pong" });
     expect(observedInput).toEqual({
-      workspaceTerminalProtocolVersion: 1,
+      workspaceTerminalProtocolVersion: 2,
       type: "workspace_terminal.ping",
     });
 

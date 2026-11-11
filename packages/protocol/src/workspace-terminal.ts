@@ -21,7 +21,7 @@ export const TerminalSizeProperties = {
 
 export const WorkspaceTerminalOpenRequestSchema = Type.Object(
   {
-    workspaceTerminalProtocolVersion: Type.Literal(1),
+    workspaceTerminalProtocolVersion: Type.Literal(2),
     type: Type.Literal("workspace_terminal.open"),
     requestId: UuidSchema,
     tenantId: UuidSchema,
@@ -39,7 +39,7 @@ export const WorkspaceTerminalOpenRequestSchema = Type.Object(
 export const WorkspaceTerminalClientFrameSchema = Type.Union([
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.input"),
       data: Base64Schema,
     },
@@ -47,7 +47,7 @@ export const WorkspaceTerminalClientFrameSchema = Type.Union([
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.resize"),
       ...TerminalSizeProperties,
     },
@@ -55,14 +55,14 @@ export const WorkspaceTerminalClientFrameSchema = Type.Union([
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.close"),
     },
     { additionalProperties: false },
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.ping"),
     },
     { additionalProperties: false },
@@ -72,7 +72,7 @@ export const WorkspaceTerminalClientFrameSchema = Type.Union([
 export const WorkspaceTerminalServerFrameSchema = Type.Union([
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.owner_redirect"),
       ownerBaseUrl: Type.String({ minLength: 8, maxLength: 2_048 }),
     },
@@ -80,17 +80,16 @@ export const WorkspaceTerminalServerFrameSchema = Type.Union([
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.ready"),
       terminalId: UuidSchema,
-      pid: Type.Integer({ minimum: 1 }),
       workspaceRoot: Type.String({ minLength: 1, maxLength: 4_096, pattern: "^/" }),
     },
     { additionalProperties: false },
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.output"),
       data: Base64Schema,
     },
@@ -98,14 +97,14 @@ export const WorkspaceTerminalServerFrameSchema = Type.Union([
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.exit"),
     },
     { additionalProperties: false },
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.error"),
       code: Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9_]*$" }),
       message: Type.String({ minLength: 1, maxLength: 512 }),
@@ -115,7 +114,7 @@ export const WorkspaceTerminalServerFrameSchema = Type.Union([
   ),
   Type.Object(
     {
-      workspaceTerminalProtocolVersion: Type.Literal(1),
+      workspaceTerminalProtocolVersion: Type.Literal(2),
       type: Type.Literal("workspace_terminal.pong"),
     },
     { additionalProperties: false },

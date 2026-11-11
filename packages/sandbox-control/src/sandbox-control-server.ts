@@ -1292,7 +1292,7 @@ export class SandboxControlServer {
     const fail = async (error: unknown): Promise<void> => {
       if (error instanceof SandboxOwnerRedirectError) {
         await send({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.owner_redirect",
           ownerBaseUrl: error.ownerBaseUrl,
         });
@@ -1300,7 +1300,7 @@ export class SandboxControlServer {
         const failure = safeFailure(error);
         reportFailure("workspace_terminal_failed", failure, error);
         await send({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.error",
           code: failure.code,
           message: failure.message,
@@ -1377,10 +1377,9 @@ export class SandboxControlServer {
             }
             connection = opened;
             await send({
-              workspaceTerminalProtocolVersion: 1,
+              workspaceTerminalProtocolVersion: 2,
               type: "workspace_terminal.ready",
               terminalId: connection.terminalId,
-              pid: connection.pid,
               workspaceRoot: connection.workspaceRoot,
             });
             void (async () => {
@@ -1388,7 +1387,7 @@ export class SandboxControlServer {
                 for await (const chunk of connection!.output) {
                   for (let offset = 0; offset < chunk.byteLength; offset += 48 * 1_024) {
                     await send({
-                      workspaceTerminalProtocolVersion: 1,
+                      workspaceTerminalProtocolVersion: 2,
                       type: "workspace_terminal.output",
                       data: Buffer.from(chunk.subarray(offset, offset + 48 * 1_024)).toString(
                         "base64",
@@ -1397,7 +1396,7 @@ export class SandboxControlServer {
                   }
                 }
                 await send({
-                  workspaceTerminalProtocolVersion: 1,
+                  workspaceTerminalProtocolVersion: 2,
                   type: "workspace_terminal.exit",
                 });
                 await close();
@@ -1422,7 +1421,7 @@ export class SandboxControlServer {
           } else if (frame.type === "workspace_terminal.close") {
             await close();
           } else {
-            await send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.pong" });
+            await send({ workspaceTerminalProtocolVersion: 2, type: "workspace_terminal.pong" });
           }
         })
         .catch((error: unknown) => fail(error))

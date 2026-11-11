@@ -4,7 +4,7 @@ import { parseExecutionReference, type ToolSandboxAssignment } from "@pi-cloud/p
 import type { ConfiguredImageAttachments } from "@pi-cloud/session-attachments";
 import type { SandboxController } from "./sandbox-controller.ts";
 import type { SandboxBindingView } from "./sandbox-binding-view.ts";
-import type { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
+import type { FixedGuestSandboxProvider } from "./fixed-guest-sandbox-provider.ts";
 import type { SandboxBinding } from "./sandbox-bindings.ts";
 import { SandboxControlError } from "./sandbox-provider.ts";
 import { WorkflowChannels } from "./workflow-channels.ts";
@@ -12,7 +12,7 @@ import type { SandboxHttpServiceRegistry } from "./sandbox-http-service-registry
 import type { ToolLogFact } from "./workflow-command-dispatcher.ts";
 
 type Provider = Pick<
-  CubeSandboxProvider,
+  FixedGuestSandboxProvider,
   | "attachExecutionData"
   | "clearExecutionData"
   | "openWorkflow"

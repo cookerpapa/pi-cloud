@@ -26,6 +26,7 @@ import {
 } from "../packages/session-attachments/src/index.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { checkSubagentWorkspace } from "./lib/live-subagent-workspace.mjs";
+import { androidRecoveryAcceptance } from "./lib/android-recovery-acceptance.mjs";
 if (process.env.PI_CLOUD_LIVE_ANDROID_CHECK !== "1")
   throw Error("Set PI_CLOUD_LIVE_ANDROID_CHECK=1 for the owned Android device and Luna acceptance");
 const [targetId, outputPath] = process.argv.slice(2);
@@ -236,6 +237,19 @@ try {
   const screen = await api.readExecutionTargetScreen(targetId);
   assert(screen.bytes.byteLength > 0 && screen.contentType.startsWith("image/"));
   report.apiScreen = true;
+  if (process.env.PI_CLOUD_LIVE_ANDROID_RECOVERY === "1") {
+    report.recovery = await androidRecoveryAcceptance({
+      db,
+      api,
+      session,
+      target,
+      until,
+      onRun: (run) => {
+        active = run;
+        report.runs.push(run);
+      },
+    });
+  }
   if (process.env.PI_CLOUD_LIVE_SUBAGENT_WORKSPACE === "1") {
     report.subagentWorkspace = await checkSubagentWorkspace({
       db,

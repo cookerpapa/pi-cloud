@@ -1,0 +1,45 @@
+# The official N-API package stays in this node image, never the Worker image.
+ARG PI_CLOUD_CONTROL_IMAGE
+FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS native-dependencies
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
+COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
+COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
+COPY packages/accounting/package.json packages/accounting/package.json
+COPY packages/cube-completion/package.json packages/cube-completion/package.json
+COPY packages/control-plane/package.json packages/control-plane/package.json
+COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
+COPY packages/session-attachments/package.json packages/session-attachments/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/domain/package.json packages/domain/package.json
+COPY packages/event-log/package.json packages/event-log/package.json
+COPY packages/observability/package.json packages/observability/package.json
+COPY packages/pi-session-postgres/package.json packages/pi-session-postgres/package.json
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/runtime-core/package.json packages/runtime-core/package.json
+COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
+COPY packages/subagent-control/package.json packages/subagent-control/package.json
+COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
+COPY packages/boxlite-node/package.json packages/boxlite-node/package.json
+RUN sh scripts/retry-npm-command.sh ci --omit=dev --ignore-scripts && npm cache clean --force
+
+
+FROM ${PI_CLOUD_CONTROL_IMAGE}
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends supervisor=4.2.5-1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=native-dependencies /app/node_modules/@boxlite-ai /app/node_modules/@boxlite-ai
+COPY packages/boxlite-node/package.json packages/boxlite-node/package.json
+COPY packages/boxlite-node/tsconfig.json packages/boxlite-node/tsconfig.json
+COPY packages/boxlite-node/src packages/boxlite-node/src
+COPY deploy/cubesandbox/cube-volume-picloud-posix.sh /opt/pi-cloud/bin/workspace-volume-attachment
+COPY deploy/boxlite/supervisord.conf /etc/pi-cloud/boxlite-supervisord.conf
+RUN chmod 0755 /opt/pi-cloud/bin/workspace-volume-attachment \
+    && node --input-type=module -e "import {JsBoxlite} from '@boxlite-ai/boxlite'; if(typeof JsBoxlite!=='function') process.exit(1)"
+ENTRYPOINT ["/usr/bin/supervisord","-n","-c","/etc/pi-cloud/boxlite-supervisord.conf"]
+
+ARG PI_CLOUD_VERSION=development
+ARG PI_CLOUD_REVISION=unknown
+LABEL org.opencontainers.image.title="PiCloud BoxLite node adapter" org.opencontainers.image.version="${PI_CLOUD_VERSION}" org.opencontainers.image.revision="${PI_CLOUD_REVISION}"

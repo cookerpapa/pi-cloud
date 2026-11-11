@@ -144,7 +144,7 @@ it.each(["valid", "invalid", "cancelled"])(
       socket.once("message", () =>
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.owner_redirect",
             ownerBaseUrl: address(nextOwner),
           }),

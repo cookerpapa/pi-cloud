@@ -42,6 +42,7 @@ work from remaining proposals and unverified limits.
 | [Private pilot](PRIVATE_PILOT.md) | Trial scope and acceptance |
 | [Optional modules](OPTIONAL_MODULES.md) | Optional integrations |
 | [Android target](ANDROID_EXECUTION.md) | Retained operator prototype; no Web product picker |
+| [BoxLite provider](BOXLITE_EXECUTION.md) | Explicit compute adapter, shared storage and pending production acceptance |
 
 ## Decisions and evidence
 

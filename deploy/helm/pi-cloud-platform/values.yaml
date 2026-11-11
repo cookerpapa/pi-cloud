@@ -233,6 +233,10 @@ networkPolicy:
   externalEgressCidrs: []
 
 sandboxPlane:
+  provider: cubesandbox
+  boxlite:
+    url: ""
+    nodeId: ""
   volumeGatewayUrl: http://workspace-volume-gateway:4500
   domainId: sandbox-domain-0001
   volumeGatewayReplicas: 2

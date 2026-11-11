@@ -30,6 +30,7 @@ export class AndroidExecutionManager {
   #position: ExecutorPosition | undefined;
   #active: Active | undefined;
   #closed = false;
+  #operationsStarted = 0;
   readonly #tools = new Map(androidToolDefinitions().map((t) => [t.name, t]));
   constructor(
     readonly options: {
@@ -47,6 +48,9 @@ export class AndroidExecutionManager {
   ) {}
   get busy() {
     return Boolean(this.#active);
+  }
+  get operationsStarted() {
+    return this.#operationsStarted;
   }
   #authorize(binding: ExecutorBinding): void {
     if (this.#closed) throw new ExecutorRefusal("executor_stopping");
@@ -164,6 +168,7 @@ export class AndroidExecutionManager {
     try {
       signal.throwIfAborted();
       let isError = false;
+      this.#operationsStarted++;
       const result = await this.options
         .execute(call.toolName, call.arguments, signal)
         .catch((error) => {

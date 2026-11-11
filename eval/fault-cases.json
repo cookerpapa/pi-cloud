@@ -115,18 +115,18 @@
       "invariant": "Empty observation pages retain atomic cursor fencing."
     },
     {
-      "id": "native-timeout-renewal-wire",
+      "id": "managed-native-expiry-disabled",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/cubesandbox-runtime-client.test.ts",
-      "test": "renews through the native timeout API without an allocation journal endpoint",
-      "invariant": "Elastic renewal uses the provider-native timeout contract, not a private allocation journal API."
+      "test": "maps the common managed-create port to disabled native expiry and private ingress",
+      "invariant": "Managed native creation disables provider expiry; PG resource management is the sole idle deadline authority."
     },
     {
-      "id": "native-timeout-stale-activity",
+      "id": "platform-expiry-stale-activity",
       "workspace": "@pi-cloud/sandbox-control",
-      "file": "test/cubesandbox-provider.test.ts",
-      "test": "renews only the remaining native timeout window and rejects stale activity",
-      "invariant": "Delayed activity does not receive a new full retention window and expired activity never renews compute."
+      "file": "test/workspace-runtime-state-repository.test.ts",
+      "test": "persists one deadline and ignores duplicate, stale, future and wrong-resource use",
+      "invariant": "Original activity time renews the PG deadline; duplicates, stale/future evidence and different allocations do not extend it."
     },
     {
       "id": "guest-cold-connection-from-cloud-capsule",
@@ -454,7 +454,7 @@
       "id": "runtime-probe-partial-inventory",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/runtime-health-monitor.test.ts",
-      "test": "missing inventory and failed execution need exact evidence, not inferred absence",
+      "test": "missing inventory and failed native observations never infer physical absence",
       "invariant": "Partial inventory or failed guest responses cannot authorize VM destruction or quota release."
     },
     {
@@ -2785,15 +2785,15 @@
       "id": "completed-ephemeral-reference-elastic",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/shared-compute-lifecycle.postgres.test.ts",
-      "test": "retains a completed ephemeral scope from an elastic parent until Cube expiry or reference removal",
-      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; Cube alone owns ordinary idle expiry."
+      "test": "retains a completed ephemeral scope from an elastic parent until platform expiry or reference removal",
+      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; the platform resource manager owns ordinary idle expiry."
     },
     {
       "id": "completed-ephemeral-reference-development_environment",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/shared-compute-lifecycle.postgres.test.ts",
-      "test": "retains a completed ephemeral scope from an development_environment parent until Cube expiry or reference removal",
-      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; Cube alone owns ordinary idle expiry."
+      "test": "retains a completed ephemeral scope from an development_environment parent until platform expiry or reference removal",
+      "invariant": "A visible child Conversation retains its separate elastic compute scope regardless of the parent product mode; the platform resource manager owns ordinary idle expiry."
     },
     {
       "id": "shared-fork-late-id",
@@ -2869,7 +2869,7 @@
       "id": "native-proxy-reattachment",
       "workspace": "@pi-cloud/sandbox-supervisor",
       "file": "test/remote-tool-continuation.test.ts",
-      "test": "Pi re-enters only the acknowledged proxy wait and commits the original Tool result once",
+      "test": "Pi restores the original bash proxy wait without another effect",
       "invariant": "Native recovery resumes the acknowledged remote wait without dispatching the command again."
     },
     {
@@ -2990,6 +2990,27 @@
       "file": "test/durable-turn-runner.test.ts",
       "test": "runs native input and admission gates (environment_recovery)",
       "invariant": "After environment failure the native Run uses one fresh logical binding for recovery, retaining it across readiness retries without republishing any accepted Tool."
+    },
+    {
+      "id": "native-device-proxy-reattachment",
+      "workspace": "@pi-cloud/sandbox-supervisor",
+      "file": "test/remote-tool-continuation.test.ts",
+      "test": "Pi restores the original android_tap proxy wait without another effect",
+      "invariant": "Native device recovery reattaches to the original reply; it never dispatches the UI action again."
+    },
+    {
+      "id": "boxlite-close-admission-drain",
+      "workspace": "@pi-cloud/boxlite-node",
+      "file": "test/allocation-admission.test.ts",
+      "test": "drains an admitted SDK handoff and rejects a late command before native deletion",
+      "invariant": "Resource closure drains admitted native handoffs and rejects late calls which could otherwise auto-start a Box."
+    },
+    {
+      "id": "boxlite-unknown-close",
+      "workspace": "@pi-cloud/boxlite-node",
+      "file": "test/allocation-admission.test.ts",
+      "test": "unknown deletion keeps command admission closed while only deletion is retried",
+      "invariant": "Uncertain deletion never reopens command admission; retry targets only the original physical cleanup."
     }
   ]
 }

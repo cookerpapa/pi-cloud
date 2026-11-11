@@ -1,3 +1,10 @@
+import {
+  GuestExecutionRejected,
+  SandboxRuntimeClientError,
+  SandboxRuntimeTransportError,
+} from "./guest-runtime-client.ts";
+import { GuestApplicationPortError } from "./guest-runtime-client.ts";
+import type { GuestRuntimeClient } from "./guest-runtime-client.ts";
 import { CubeLifecycleEvents } from "./cube-lifecycle-events.ts";
 import { Agent, buildConnector, fetch, type Dispatcher } from "undici";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
@@ -58,114 +65,23 @@ export type CubeToolHandoff = Readonly<{
   timeoutMs: number;
 }>;
 
-/** Endpoint refusal, distinct from a lost transport ACK. A stale position or
- * changed operation can refer to earlier effects and must remain UNKNOWN. */
-export class CubeExecutionRejected extends Error {
-  constructor(readonly code: string) {
-    super(`Cube execution refused: ${code}`);
-  }
-}
-
 export type CubeSandboxCreateInput = Readonly<{
   templateId: string;
-  timeoutSeconds: number;
+  timeoutSeconds?: number;
   metadata: Readonly<Record<string, string>>;
-  allowInternetAccess: true;
-  allowPublicTraffic: false;
+  allowInternetAccess?: true;
+  allowPublicTraffic?: false;
   volumeMounts?: readonly Readonly<{ name: string; path: "/workspace" | "/home/user" }>[];
   lifecycle?: Readonly<{ onTimeout: "kill" | "pause"; autoResume: boolean }>;
 }>;
 
-export type CubeSandboxGuestCommandRequest = Readonly<{
-  command: string;
-  cwd: string;
-  user: string;
-  timeoutMs: number;
-  maximumOutputBytes: number;
-  signal?: AbortSignal;
-  onStdout?: (chunk: Buffer) => Promise<void>;
-}>;
-
-export type CubeSandboxGuestCommandResult = Readonly<{
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}>;
-
-export interface CubeSandboxRuntimeClient {
-  openProgram?(
-    instance: CubeSandboxInstance,
-    input: { script: string; cwd: string },
-  ): Promise<Duplex>;
-  openTcp?(instance: CubeSandboxInstance, port: number, signal?: AbortSignal): Promise<Duplex>;
-  checkHealth(): Promise<void>;
-  ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
-  deleteVolume(volumeId: string): Promise<void>;
-  create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance>;
-  read(sandboxId: string): Promise<CubeSandboxInstance | undefined>;
-  observe(
-    sandboxId: string,
-    nodeId?: string,
-  ): Promise<import("./sandbox-provider.ts").SandboxRuntimeObservation>;
-  executionTarget(
-    sandboxId: string,
-    nodeId: string,
-    connection?: CubeSandboxInstance,
-  ): Promise<CubeExecutionTarget>;
-  probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply>;
-  submitProbe(
-    target: CubeExecutionTarget,
-    request: {
-      probeId: string;
-      delivery: unknown;
-    },
-  ): Promise<void>;
-  submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void>;
-  cancelTool(
-    target: CubeExecutionTarget,
-    request: {
-      source: ExecutionLogPosition;
-      executionScopeId: string;
-      writerId: string;
-      operationId?: string;
-    },
-  ): Promise<void>;
-
-  pause(sandboxId: string): Promise<void>;
-  connect(sandboxId: string): Promise<CubeSandboxInstance>;
-  list(): Promise<readonly CubeSandboxInstance[]>;
-  destroy(sandboxId: string): Promise<void>;
-  runCommand(
-    instance: CubeSandboxInstance,
-    input: CubeSandboxGuestCommandRequest,
-  ): Promise<CubeSandboxGuestCommandResult>;
-  writeGuestFileStream(
-    instance: CubeSandboxInstance,
-    path: string,
-    chunks: AsyncIterable<Uint8Array>,
-    byteLength: number,
-    signal?: AbortSignal,
-  ): Promise<void>;
-  writeGuestFile(instance: CubeSandboxInstance, path: string, data: Uint8Array): Promise<void>;
-  openTerminal(
-    instance: CubeSandboxInstance,
-    input: Readonly<{
-      rows: number;
-      cols: number;
-      admin: boolean;
-    }>,
-  ): Promise<CubeSandboxTerminal>;
-  close(): Promise<void>;
-}
-
-export interface CubeSandboxTerminal {
+export type CubeSandboxGuestCommandRequest =
+  import("./guest-runtime-client.ts").GuestCommandRequest;
+export type CubeSandboxGuestCommandResult = import("./guest-runtime-client.ts").GuestCommandResult;
+export type CubeSandboxTerminal = import("./guest-runtime-client.ts").GuestTerminal & {
   readonly pid: number;
-  readonly output: AsyncIterable<Uint8Array>;
-  sendInput(data: Uint8Array): Promise<void>;
-  resize(size: Readonly<{ rows: number; cols: number }>): Promise<void>;
-  kill(): Promise<void>;
-  disconnect(): void;
-}
+};
+export interface CubeSandboxRuntimeClient extends GuestRuntimeClient<CubeSandboxInstance> {}
 
 export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   lifecycleRedisUrl?: string;
@@ -187,33 +103,6 @@ export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   requestTimeoutMs?: number;
 }>;
 
-export class CubeRuntimeClientError extends Error {
-  readonly statusCode: number | undefined;
-
-  constructor(message: string, statusCode?: number) {
-    super(message);
-    this.name = "CubeRuntimeClientError";
-    this.statusCode = statusCode;
-  }
-}
-
-/** No trustworthy HTTP response; effects may already have been admitted. */
-export class CubeRuntimeTransportError extends CubeRuntimeClientError {
-  constructor(cause: unknown) {
-    super("CubeSandbox API transport did not return a response");
-    this.name = "CubeRuntimeTransportError";
-    this.cause = cause;
-  }
-}
-
-/** The Guest process ran, but the requested application socket was refused. */
-export class CubeApplicationPortError extends CubeRuntimeClientError {
-  constructor() {
-    super("Application port is not accepting connections");
-    this.name = "CubeApplicationPortError";
-  }
-}
-
 function bounded(value: unknown, label: string, maximum: number): string {
   if (
     typeof value !== "string" ||
@@ -221,14 +110,14 @@ function bounded(value: unknown, label: string, maximum: number): string {
     value.length > maximum ||
     /[\u0000-\u001f\u007f]/.test(value)
   ) {
-    throw new CubeRuntimeClientError(`${label} was invalid`);
+    throw new SandboxRuntimeClientError(`${label} was invalid`);
   }
   return value;
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new CubeRuntimeClientError(`${label} response was invalid`);
+    throw new SandboxRuntimeClientError(`${label} response was invalid`);
   }
   return value as Record<string, unknown>;
 }
@@ -277,7 +166,7 @@ function parseInstance(
   const candidate = record(value, "CubeSandbox");
   const sandboxId = bounded(candidate.sandboxID, "CubeSandbox ID", 128);
   if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,126}[A-Za-z0-9])?$/.test(sandboxId)) {
-    throw new CubeRuntimeClientError("CubeSandbox ID was invalid");
+    throw new SandboxRuntimeClientError("CubeSandbox ID was invalid");
   }
   const cpuCount =
     typeof candidate.cpuCount === "number" && Number.isSafeInteger(candidate.cpuCount)
@@ -329,7 +218,7 @@ function parseVolume(value: unknown): CubeSandboxVolume {
   const volumeId = bounded(candidate.volumeID ?? candidate.volume_id, "CubeSandbox volume ID", 128);
   const name = bounded(candidate.name, "CubeSandbox volume name", 128);
   if (!/^[A-Za-z0-9_-]+$/.test(volumeId) || !/^[A-Za-z0-9_-]+$/.test(name) || name !== volumeId) {
-    throw new CubeRuntimeClientError("CubeSandbox volume identity was invalid");
+    throw new SandboxRuntimeClientError("CubeSandbox volume identity was invalid");
   }
   return Object.freeze({ volumeId, name });
 }
@@ -379,7 +268,7 @@ async function readBoundedResponse(
     bytes += value.byteLength;
     if (bytes > maximumBytes) {
       await response.body.cancel().catch(() => undefined);
-      throw new CubeRuntimeClientError("CubeSandbox response exceeded its byte limit");
+      throw new SandboxRuntimeClientError("CubeSandbox response exceeded its byte limit");
     }
     chunks.push(value);
   }
@@ -391,7 +280,7 @@ function parseJson(bytes: Buffer, label: string): unknown {
   try {
     return JSON.parse(bytes.toString("utf8")) as unknown;
   } catch {
-    throw new CubeRuntimeClientError(`${label} response was not valid JSON`);
+    throw new SandboxRuntimeClientError(`${label} response was not valid JSON`);
   }
 }
 
@@ -460,7 +349,7 @@ async function* connectFrames(
       while (buffered >= 5) {
         const { flags, size } = header();
         if (size > MAXIMUM_CONNECT_ENVELOPE_BYTES) {
-          throw new CubeRuntimeClientError("CubeSandbox envd frame exceeded its byte limit");
+          throw new SandboxRuntimeClientError("CubeSandbox envd frame exceeded its byte limit");
         }
         if (buffered < size + 5) break;
         take(5);
@@ -470,7 +359,7 @@ async function* connectFrames(
       if (next.done) break;
       if (next.value.byteLength > 0) {
         if (buffered + next.value.byteLength > MAXIMUM_CONNECT_ENVELOPE_BYTES + 5) {
-          throw new CubeRuntimeClientError("CubeSandbox envd stream buffer exceeded its limit");
+          throw new SandboxRuntimeClientError("CubeSandbox envd stream buffer exceeded its limit");
         }
         chunks.push(Buffer.from(next.value));
         buffered += next.value.byteLength;
@@ -480,7 +369,7 @@ async function* connectFrames(
     reader.releaseLock();
   }
   if (buffered !== 0) {
-    throw new CubeRuntimeClientError("CubeSandbox envd stream ended with a partial frame");
+    throw new SandboxRuntimeClientError("CubeSandbox envd stream ended with a partial frame");
   }
 }
 
@@ -492,7 +381,7 @@ function raiseConnectEnd(payload: Buffer): void {
   if (typeof error !== "object" || error === null || Array.isArray(error)) return;
   const details = error as Record<string, unknown>;
   const message = typeof details.message === "string" ? details.message : "envd stream failed";
-  throw new CubeRuntimeClientError(
+  throw new SandboxRuntimeClientError(
     typeof details.code === "string" ? `${details.code}: ${message}` : message,
   );
 }
@@ -618,7 +507,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const id = bounded(volumeId, "CubeSandbox volume ID", 128);
     const selectedDriver = bounded(driver, "CubeSandbox volume driver", 64);
     if (!/^[A-Za-z0-9_-]+$/.test(id) || !/^[A-Za-z0-9_-]+$/.test(selectedDriver)) {
-      throw new CubeRuntimeClientError("CubeSandbox volume request was invalid");
+      throw new SandboxRuntimeClientError("CubeSandbox volume request was invalid");
     }
     const encoded = encodeURIComponent(id);
     const existing = await this.#control(`/volumes/${encoded}`, {}, true);
@@ -653,7 +542,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   async deleteVolume(volumeId: string): Promise<void> {
     const id = bounded(volumeId, "CubeSandbox volume ID", 128);
     if (!/^pcw-[0-9a-f]{48}$/.test(id)) {
-      throw new CubeRuntimeClientError("CubeSandbox volume deletion request was invalid");
+      throw new SandboxRuntimeClientError("CubeSandbox volume deletion request was invalid");
     }
     const response = await this.#control(
       `/volumes/${encodeURIComponent(id)}`,
@@ -666,7 +555,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
     const body = JSON.stringify({
       templateID: input.templateId,
-      timeout: input.timeoutSeconds,
+      timeout: input.timeoutSeconds ?? -1,
       metadata: input.metadata,
       ...(input.volumeMounts === undefined
         ? {}
@@ -676,7 +565,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
                 !/^pcw-[0-9a-f]{48}$/.test(mount.name) ||
                 !new Set(["/workspace", "/home/user"]).has(mount.path)
               ) {
-                throw new CubeRuntimeClientError("CubeSandbox volume mount was invalid");
+                throw new SandboxRuntimeClientError("CubeSandbox volume mount was invalid");
               }
               return { name: mount.name, path: mount.path };
             }),
@@ -694,8 +583,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         ],
         denyOut: ["0.0.0.0/0"],
       },
-      // Native timeout owns expiry. Dedicated machines use timeout=-1 and
-      // explicit lifecycle operations; ordinary traffic must not auto-resume.
+      // Managed allocations use platform expiry. A finite override belongs only
+      // to direct native contract checks; ordinary traffic must not auto-resume.
       lifecycle: {
         on_timeout: input.lifecycle?.onTimeout ?? "kill",
         auto_resume: input.lifecycle?.autoResume ?? false,
@@ -710,7 +599,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       false,
     );
     if (!instance.trafficAccessToken)
-      throw new CubeRuntimeClientError("Cube creation omitted its private connection data");
+      throw new SandboxRuntimeClientError("Cube creation omitted its private connection data");
     return { ...instance, metadata: input.metadata };
   }
 
@@ -793,7 +682,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     );
     if (response.status === 404) {
       await response.body?.cancel();
-      throw new CubeExecutionRejected("execution_unavailable");
+      throw new GuestExecutionRejected("execution_unavailable");
     }
     let instance = parseInstance(
       parseJson(await readBoundedResponse(response, 256 * 1024), "CubeSandbox inspect"),
@@ -801,22 +690,22 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       true,
     );
     if (instance.sandboxId !== sandboxId || instance.nodeId !== nodeId)
-      throw new CubeExecutionRejected("executor_replaced");
-    if (instance.state !== "running") throw new CubeExecutionRejected("execution_unavailable");
+      throw new GuestExecutionRejected("executor_replaced");
+    if (instance.state !== "running") throw new GuestExecutionRejected("execution_unavailable");
     if (!instance.trafficAccessToken) {
       let retained: CubeSandboxInstance | undefined;
       try {
         retained = await this.#resolveExecutionConnection?.({ apiUrl, sandboxId, nodeId });
       } catch {
         // No Guest client or Tool request has been sent at this point.
-        throw new CubeExecutionRejected("execution_unavailable");
+        throw new GuestExecutionRejected("execution_unavailable");
       }
       if (
         !retained?.trafficAccessToken ||
         retained.sandboxId !== sandboxId ||
         retained.nodeId !== nodeId
       )
-        throw new CubeExecutionRejected("execution_unavailable");
+        throw new GuestExecutionRejected("execution_unavailable");
       // The public observation confirms current identity/state; private values
       // come from retained cloud data. Never connect/resume or read an extension.
       instance = {
@@ -837,7 +726,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     timeoutMs = 10000,
   ): Promise<Record<string, unknown>> {
     const input = Buffer.from(JSON.stringify(request) + "\n");
-    if (input.length > GUEST_EXECUTOR_MAX_INPUT) throw new CubeExecutionRejected("invalid_request");
+    if (input.length > GUEST_EXECUTOR_MAX_INPUT)
+      throw new GuestExecutionRejected("invalid_request");
     const abort = new AbortController(),
       timer = setTimeout(() => abort.abort(), timeoutMs);
     timer.unref();
@@ -861,7 +751,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       );
       await response.body?.cancel();
       if (!response.ok)
-        throw new CubeRuntimeClientError("Guest process control failed", response.status);
+        throw new SandboxRuntimeClientError("Guest process control failed", response.status);
     };
     try {
       const response = await this.#dataFetch(
@@ -890,7 +780,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
           signal: abort.signal,
         },
       );
-      if (!response.ok || !response.body) throw new CubeExecutionRejected("execution_unavailable");
+      if (!response.ok || !response.body) throw new GuestExecutionRejected("execution_unavailable");
       frames = connectFrames(response.body as ReadableStream<Uint8Array>);
       const first = await frames.next();
       if (first.done) throw new Error("Guest process unavailable");
@@ -937,9 +827,9 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       }
       throw new Error("Guest response unavailable");
     } catch (error) {
-      if (error instanceof CubeExecutionRejected) throw error;
-      if (!sent) throw new CubeExecutionRejected("execution_not_started");
-      throw new CubeRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
+      if (error instanceof GuestExecutionRejected) throw error;
+      if (!sent) throw new GuestExecutionRejected("execution_not_started");
+      throw new SandboxRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
     } finally {
       clearTimeout(timer);
       abort.abort();
@@ -959,14 +849,14 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         connection.nodeId !== nodeId ||
         !connection.trafficAccessToken
       )
-        throw new CubeRuntimeClientError("Cube execution connection identity changed");
+        throw new SandboxRuntimeClientError("Cube execution connection identity changed");
       this.#rememberInstance(connection);
     }
     const instance = await this.#guestInstance(sandboxId, nodeId);
     const value = await this.#guestRpc(instance, { version: 1, action: "info" });
-    if (value.runtimeBlocked === true) throw new CubeExecutionRejected("runtime_quarantined");
+    if (value.runtimeBlocked === true) throw new GuestExecutionRejected("runtime_quarantined");
     if (value.version !== 1 || typeof value.bootId !== "string" || !this.#uuid(value.bootId))
-      throw new CubeExecutionRejected("execution_unavailable");
+      throw new GuestExecutionRejected("execution_unavailable");
     return { apiUrl: this.#apiUrl, sandboxId, nodeId, bootId: value.bootId };
   }
   #uuid(value: string) {
@@ -976,13 +866,13 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const instance = await this.#guestInstance(target.sandboxId, target.nodeId, target.apiUrl);
     const value = await this.#guestRpc(instance, { version: 1, bootId: target.bootId, ...request });
     if (value.accepted === false && value.rejection === "handoff_unconfirmed")
-      throw new CubeRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
+      throw new SandboxRuntimeTransportError("Guest handoff acknowledgement was not confirmed");
     if (value.accepted === false)
-      throw new CubeExecutionRejected(
+      throw new GuestExecutionRejected(
         typeof value.rejection === "string" ? value.rejection : "execution_unavailable",
       );
     if (value.accepted !== true || value.bootId !== target.bootId)
-      throw new CubeRuntimeClientError("Guest execution acknowledgement changed");
+      throw new SandboxRuntimeClientError("Guest execution acknowledgement changed");
     return value;
   }
   async submitTool(target: CubeExecutionTarget, request: CubeToolHandoff): Promise<void> {
@@ -996,7 +886,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       timeoutMs: request.timeoutMs,
     });
     if (value.operationId !== request.operationId)
-      throw new CubeRuntimeClientError("Guest operation identity changed");
+      throw new SandboxRuntimeClientError("Guest operation identity changed");
   }
   async cancelTool(
     target: CubeExecutionTarget,
@@ -1018,7 +908,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   async probeExecution(target: CubeExecutionTarget, probeId: string): Promise<GuestProbeReply> {
     const value = await this.#callGuest(target, { action: "probe", probeId });
     const reply = parseGuestProbeReply(value.output);
-    if (reply.probeId !== probeId) throw new CubeRuntimeClientError("Guest probe identity changed");
+    if (reply.probeId !== probeId)
+      throw new SandboxRuntimeClientError("Guest probe identity changed");
     return reply;
   }
   async submitProbe(
@@ -1045,7 +936,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       // while CubeMaster continues the full-VM snapshot after that HTTP 408.
       // Resolve the uncertain transport outcome from physical state instead
       // of turning a successfully paused machine into an UNKNOWN allocation.
-      if (!(error instanceof CubeRuntimeClientError) || error.statusCode !== 408) throw error;
+      if (!(error instanceof SandboxRuntimeClientError) || error.statusCode !== 408) throw error;
       await this.#waitForState(sandboxId, "paused");
     }
   }
@@ -1077,7 +968,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         ? (body as { sandboxes: unknown[] }).sandboxes
         : undefined;
     if (values === undefined || values.length > 1_000) {
-      throw new CubeRuntimeClientError("CubeSandbox inventory response was invalid");
+      throw new SandboxRuntimeClientError("CubeSandbox inventory response was invalid");
     }
     return values.map((value) => parseInstance(value, this.#sandboxDomain, true));
   }
@@ -1097,7 +988,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       await response.body?.cancel().catch(() => undefined);
     } catch (error) {
       if (
-        error instanceof CubeRuntimeClientError &&
+        error instanceof SandboxRuntimeClientError &&
         error.statusCode === 404 &&
         (await this.#confirmedDeletion(raw))
       )
@@ -1160,7 +1051,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     );
     if (!response.ok || response.body === null) {
       const bytes = await readBoundedResponse(response, 64 * 1_024);
-      throw new CubeRuntimeClientError(
+      throw new SandboxRuntimeClientError(
         `CubeSandbox envd command failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
         response.status,
       );
@@ -1171,7 +1062,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     let exitCode: number | undefined;
     for await (const frame of connectFrames(response.body as ReadableStream<Uint8Array>)) {
       if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0) {
-        throw new CubeRuntimeClientError("CubeSandbox envd returned compressed output");
+        throw new SandboxRuntimeClientError("CubeSandbox envd returned compressed output");
       }
       if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
         raiseConnectEnd(frame.payload);
@@ -1189,21 +1080,21 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       ] as const) {
         if (stream === undefined) continue;
         if (typeof stream !== "string") {
-          throw new CubeRuntimeClientError("CubeSandbox envd process output was invalid");
+          throw new SandboxRuntimeClientError("CubeSandbox envd process output was invalid");
         }
         const chunk = Buffer.from(stream, "base64");
         if (chunk.toString("base64") !== stream) {
-          throw new CubeRuntimeClientError("CubeSandbox envd process output was invalid");
+          throw new SandboxRuntimeClientError("CubeSandbox envd process output was invalid");
         }
         if (target === stdout && input.onStdout) {
           if (chunk.byteLength > maximumOutputBytes)
-            throw new CubeRuntimeClientError("CubeSandbox envd output frame exceeded its limit");
+            throw new SandboxRuntimeClientError("CubeSandbox envd output frame exceeded its limit");
           await input.onStdout(chunk);
           continue;
         }
         bytes += chunk.byteLength;
         if (bytes > maximumOutputBytes) {
-          throw new CubeRuntimeClientError("CubeSandbox envd process output exceeded its limit");
+          throw new SandboxRuntimeClientError("CubeSandbox envd process output exceeded its limit");
         }
         target.push(chunk);
       }
@@ -1212,12 +1103,12 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         const candidate = end.exitCode ?? end.exit_code ?? exitCodeFromStatus(end.status);
         if (Number.isSafeInteger(candidate)) exitCode = candidate as number;
         else if (typeof end.error === "string" && end.error.length > 0) {
-          throw new CubeRuntimeClientError(`CubeSandbox envd process failed: ${end.error}`);
+          throw new SandboxRuntimeClientError(`CubeSandbox envd process failed: ${end.error}`);
         }
       }
     }
     if (exitCode === undefined) {
-      throw new CubeRuntimeClientError("CubeSandbox envd process ended without an exit code");
+      throw new SandboxRuntimeClientError("CubeSandbox envd process ended without an exit code");
     }
     return {
       stdout: Buffer.concat(stdout).toString("utf8"),
@@ -1244,7 +1135,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     );
     const bytes = await readBoundedResponse(response, 64 * 1_024);
     if (!response.ok) {
-      throw new CubeRuntimeClientError(
+      throw new SandboxRuntimeClientError(
         `CubeSandbox envd file write failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
         response.status,
       );
@@ -1299,7 +1190,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       );
       await readBoundedResponse(response, 64 * 1024);
       if (!response.ok)
-        throw new CubeRuntimeClientError("Guest file upload failed", response.status);
+        throw new SandboxRuntimeClientError("Guest file upload failed", response.status);
     } finally {
       clearTimeout(timer);
       controller.abort();
@@ -1318,7 +1209,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       port > 65535 ||
       [CUBESANDBOX_ENVD_PORT, 49_984, 50_005].includes(port)
     ) {
-      throw new CubeRuntimeClientError("Invalid application port");
+      throw new SandboxRuntimeClientError("Invalid application port");
     }
     // A connection-scoped byte relay, not a PTY or a resident control service.
     // No authority/credential is sent to the guest; the only target is loopback.
@@ -1393,17 +1284,17 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         },
       );
       if (!response.ok || response.body === null)
-        throw new CubeRuntimeClientError("Application TCP stream could not start");
+        throw new SandboxRuntimeClientError("Application TCP stream could not start");
       const frames = connectFrames(response.body as ReadableStream<Uint8Array>);
       const first = await frames.next();
-      if (first.done) throw new CubeRuntimeClientError("Application TCP stream has no process");
+      if (first.done) throw new SandboxRuntimeClientError("Application TCP stream has no process");
       const start = record(
         record(parseJson(first.value.payload, "envd TCP start"), "envd TCP start").event,
         "envd TCP event",
       ).start as { pid?: number };
       const pid = start?.pid;
       if (!Number.isSafeInteger(pid) || pid! < 1)
-        throw new CubeRuntimeClientError("Application TCP stream has no PID");
+        throw new SandboxRuntimeClientError("Application TCP stream has no PID");
       const unary = async (method: "SendInput" | "SendSignal", value: unknown): Promise<void> => {
         const result = await this.#dataFetch(
           instance,
@@ -1420,7 +1311,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         );
         await result.body?.cancel();
         if (!result.ok && result.status !== 404)
-          throw new CubeRuntimeClientError("Application TCP input failed", result.status);
+          throw new SandboxRuntimeClientError("Application TCP input failed", result.status);
       };
       killRelay = () => unary("SendSignal", { signal: "SIGNAL_SIGKILL" });
       let ended = false;
@@ -1431,13 +1322,14 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       // ACK CONNECT until that relay confirms the application's TCP socket.
       while (!connectionReport.includes(readyMarker)) {
         const next = await frames.next();
-        if (next.done) throw new CubeRuntimeClientError("Guest TCP relay ended before connecting");
+        if (next.done)
+          throw new SandboxRuntimeClientError("Guest TCP relay ended before connecting");
         if ((next.value.flags & CONNECT_END_STREAM_FLAG) !== 0) {
           raiseConnectEnd(next.value.payload);
-          throw new CubeRuntimeClientError("Guest TCP relay ended before connecting");
+          throw new SandboxRuntimeClientError("Guest TCP relay ended before connecting");
         }
         if ((next.value.flags & CONNECT_COMPRESSED_FLAG) !== 0)
-          throw new CubeRuntimeClientError("Compressed application TCP output is unsupported");
+          throw new SandboxRuntimeClientError("Compressed application TCP output is unsupported");
         const event = record(
           record(parseJson(next.value.payload, "envd TCP connect"), "envd TCP connect").event,
           "envd TCP event",
@@ -1449,18 +1341,20 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
           readyMarker === "PI_CLOUD_TCP_CONNECTED\n" &&
           connectionReport.includes("PI_CLOUD_TCP_FAILED\n")
         )
-          throw new CubeApplicationPortError();
+          throw new GuestApplicationPortError();
         if (connectionReport.length > 1024)
-          throw new CubeRuntimeClientError("Guest TCP relay handshake was invalid");
+          throw new SandboxRuntimeClientError("Guest TCP relay handshake was invalid");
         if (typeof data.stdout === "string") {
           const output = Buffer.from(data.stdout, "base64");
           initialBytes += output.length;
           if (initialBytes > 65536)
-            throw new CubeRuntimeClientError("Guest TCP relay handshake output exceeded its limit");
+            throw new SandboxRuntimeClientError(
+              "Guest TCP relay handshake output exceeded its limit",
+            );
           initialOutput.push(output);
         }
         if (event.end !== undefined)
-          throw new CubeRuntimeClientError("Guest TCP relay exited before connecting");
+          throw new SandboxRuntimeClientError("Guest TCP relay exited before connecting");
       }
       clearTimeout(timeout);
       const readable = Readable.from(
@@ -1472,7 +1366,9 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
               break;
             }
             if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0)
-              throw new CubeRuntimeClientError("Compressed application TCP output is unsupported");
+              throw new SandboxRuntimeClientError(
+                "Compressed application TCP output is unsupported",
+              );
             const event = record(
               record(parseJson(frame.payload, "envd TCP"), "envd TCP").event,
               "envd TCP event",
@@ -1483,7 +1379,9 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
               ended = true;
               const end = record(event.end, "envd TCP end");
               if ((end.exitCode ?? end.exit_code ?? exitCodeFromStatus(end.status)) !== 0)
-                throw new CubeRuntimeClientError("Application TCP connection closed with an error");
+                throw new SandboxRuntimeClientError(
+                  "Application TCP connection closed with an error",
+                );
               return;
             }
           }
@@ -1582,7 +1480,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       );
       if (!response.ok || response.body === null) {
         const bytes = await readBoundedResponse(response, 64 * 1_024);
-        throw new CubeRuntimeClientError(
+        throw new SandboxRuntimeClientError(
           `CubeSandbox envd PTY start failed with HTTP ${response.status}: ${errorResponseDiagnostic(bytes)}`,
           response.status,
         );
@@ -1591,7 +1489,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       const events = (async function* (): AsyncGenerator<Record<string, unknown>> {
         for await (const frame of frames) {
           if ((frame.flags & CONNECT_COMPRESSED_FLAG) !== 0) {
-            throw new CubeRuntimeClientError("CubeSandbox envd returned compressed PTY output");
+            throw new SandboxRuntimeClientError("CubeSandbox envd returned compressed PTY output");
           }
           if ((frame.flags & CONNECT_END_STREAM_FLAG) !== 0) {
             raiseConnectEnd(frame.payload);
@@ -1604,7 +1502,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       const first = await events.next();
       const start = first.done ? undefined : record(first.value.start, "envd PTY start");
       if (start === undefined || !Number.isSafeInteger(start.pid) || (start.pid as number) < 1) {
-        throw new CubeRuntimeClientError("CubeSandbox envd PTY stream did not begin with a PID");
+        throw new SandboxRuntimeClientError("CubeSandbox envd PTY stream did not begin with a PID");
       }
       clearTimeout(timeout);
       const pid = start.pid as number;
@@ -1613,7 +1511,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       const output: AsyncIterable<Uint8Array> = {
         [Symbol.asyncIterator]: async function* () {
           if (consumed) {
-            throw new CubeRuntimeClientError("CubeSandbox PTY output can only be consumed once");
+            throw new SandboxRuntimeClientError("CubeSandbox PTY output can only be consumed once");
           }
           consumed = true;
           try {
@@ -1622,7 +1520,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
               if (typeof data.pty === "string") {
                 const bytes = Buffer.from(data.pty, "base64");
                 if (bytes.byteLength > 64 * 1_024 || bytes.toString("base64") !== data.pty) {
-                  throw new CubeRuntimeClientError("CubeSandbox envd PTY output was invalid");
+                  throw new SandboxRuntimeClientError("CubeSandbox envd PTY output was invalid");
                 }
                 yield bytes;
               }
@@ -1653,7 +1551,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
         );
         const bytes = await readBoundedResponse(result, 64 * 1_024);
         if (!result.ok && !(allowAbsent && result.status === 404)) {
-          throw new CubeRuntimeClientError(
+          throw new SandboxRuntimeClientError(
             `CubeSandbox envd PTY request failed with HTTP ${result.status}: ${errorResponseDiagnostic(bytes)}`,
             result.status,
           );
@@ -1679,8 +1577,8 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     } catch (error: unknown) {
       clearTimeout(timeout);
       controller.abort();
-      if (error instanceof CubeRuntimeClientError) throw error;
-      throw new CubeRuntimeClientError(
+      if (error instanceof SandboxRuntimeClientError) throw error;
+      throw new SandboxRuntimeClientError(
         `CubeSandbox envd PTY start failed: ${error instanceof Error ? error.message : "unknown error"}`,
       );
     }
@@ -1699,7 +1597,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   ): Promise<Awaited<ReturnType<typeof fetch>>> {
     const token = instance.trafficAccessToken;
     if (token === undefined) {
-      throw new CubeRuntimeClientError("CubeSandbox private-ingress token was unavailable");
+      throw new SandboxRuntimeClientError("CubeSandbox private-ingress token was unavailable");
     }
     const host = `${String(port)}-${instance.sandboxId}.${instance.domain}`;
     return fetch(`${this.#proxyScheme}://${host}${path}`, {
@@ -1744,14 +1642,14 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     for (;;) {
       const current = await this.read(sandboxId);
       if (current === undefined) {
-        throw new CubeRuntimeClientError(
+        throw new SandboxRuntimeClientError(
           `CubeSandbox disappeared while waiting for ${expectedState}`,
         );
       }
       if (current.state.toLowerCase() === expectedState) return;
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        throw new CubeRuntimeClientError(
+        throw new SandboxRuntimeClientError(
           `CubeSandbox did not reach ${expectedState} after an uncertain lifecycle response`,
           408,
         );
@@ -1768,7 +1666,7 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
   ): Promise<Awaited<ReturnType<typeof fetch>>> {
     const endpoint = validateApiUrl(apiUrl);
     const key = this.#executionEndpoints.get(endpoint);
-    if (!key) throw new CubeExecutionRejected("execution_endpoint_unconfigured");
+    if (!key) throw new GuestExecutionRejected("execution_endpoint_unconfigured");
     const response = await fetch(`${endpoint}${path}`, {
       dispatcher: controlDispatcher,
       redirect: "error",
@@ -1780,11 +1678,11 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
       ...(init.body === undefined ? {} : { body: init.body }),
       signal: AbortSignal.timeout(init.timeoutMs ?? this.#requestTimeoutMs),
     }).catch((cause: unknown) => {
-      throw new CubeRuntimeTransportError(cause);
+      throw new SandboxRuntimeTransportError(cause);
     });
     if (!response.ok && !(allowNotFound && response.status === 404)) {
       await response.body?.cancel().catch(() => undefined);
-      throw new CubeRuntimeClientError(
+      throw new SandboxRuntimeClientError(
         `CubeSandbox API request failed with HTTP ${response.status}`,
         response.status,
       );

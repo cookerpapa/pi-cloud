@@ -34,10 +34,9 @@ async function openServer(connect: (socket: WebSocket) => void) {
   };
 }
 const ready = {
-  workspaceTerminalProtocolVersion: 1,
+  workspaceTerminalProtocolVersion: 2,
   type: "workspace_terminal.ready",
   terminalId: crypto.randomUUID(),
-  pid: 1,
   workspaceRoot: "/home/user",
 };
 
@@ -54,13 +53,13 @@ it("applies stream backpressure while preserving all terminal output", async () 
       for (let i = 0; i < 100; i++)
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.output",
             data: data.toString("base64"),
           }),
         );
       socket.send(
-        JSON.stringify({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.exit" }),
+        JSON.stringify({ workspaceTerminalProtocolVersion: 2, type: "workspace_terminal.exit" }),
       );
     }),
   );

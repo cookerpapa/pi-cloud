@@ -25,8 +25,8 @@ vi.mock("../src/sandbox-control-config.ts", () => ({
     maximumActiveCommands: 32,
   }),
 }));
-vi.mock("../src/cube-runtime-transport.ts", () => ({
-  createCubeRuntimeTransport: async () => ({
+vi.mock("../src/sandbox-runtime-transport.ts", () => ({
+  createSandboxRuntimeTransport: async () => ({
     provider: {
       providerId: "cubesandbox",
       close: calls.providerClose,

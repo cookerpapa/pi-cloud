@@ -227,7 +227,7 @@ it("retains native ephemeral child compute under its shared root lease", async (
 }, 60_000);
 
 it.each(["elastic", "development_environment"] as const)(
-  "retains a completed ephemeral scope from an %s parent until Cube expiry or reference removal",
+  "retains a completed ephemeral scope from an %s parent until platform expiry or reference removal",
   async (mode) => {
     const f = await fixture();
     try {

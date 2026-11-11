@@ -2,10 +2,7 @@ import type {
   SandboxControlListWorkspaceDirectoryRequest,
   SandboxControlReadWorkspaceFileRequest,
 } from "@pi-cloud/protocol";
-import type {
-  CubeSandboxInstance,
-  CubeSandboxRuntimeClient,
-} from "./cubesandbox-runtime-client.ts";
+import type { GuestRuntimeInstance, GuestRuntimeClient } from "./guest-runtime-client.ts";
 
 // Code-owned, credential-free read-only helper. No resident guest controller
 // and no template upgrade are needed for human-owned full-VM file browsing.
@@ -43,9 +40,9 @@ if (c.mode === 'list') {
 process.stdout.write(JSON.stringify(result));
 `;
 
-export async function browseCubeWorkspace(
-  client: CubeSandboxRuntimeClient,
-  instance: CubeSandboxInstance,
+export async function browseGuestWorkspace<I extends GuestRuntimeInstance>(
+  client: Pick<GuestRuntimeClient<I>, "runCommand">,
+  instance: I,
   request: SandboxControlListWorkspaceDirectoryRequest | SandboxControlReadWorkspaceFileRequest,
 ): Promise<Record<string, unknown>> {
   const config = {

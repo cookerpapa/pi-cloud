@@ -1,15 +1,15 @@
 import {
+  GuestExecutionRejected,
+  SandboxRuntimeClientError,
+  SandboxRuntimeTransportError,
+} from "./guest-runtime-client.ts";
+import {
   TOOL_REPLY_DELIVERY_MARGIN_MS,
   type AcceptedToolCommand,
   type ExecutionLogPosition,
   type ToolExecutionFailureData,
 } from "@pi-cloud/protocol";
-import {
-  CubeExecutionRejected,
-  CubeRuntimeClientError,
-  CubeRuntimeTransportError,
-  type CubeSandboxRuntimeClient,
-} from "./cubesandbox-runtime-client.ts";
+import type { GuestRuntimeClient } from "./guest-runtime-client.ts";
 import type { SandboxBinding } from "./sandbox-bindings.ts";
 import { executionTargetId, type SandboxExecutionTarget } from "./sandbox-execution.ts";
 import type {
@@ -19,11 +19,11 @@ import type {
 } from "./tool-executor.ts";
 import type { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
 
-/** Native Cube wire and refusal semantics remain behind the complete-Tool port.
+/** Provider mechanics remain behind the complete-Tool port.
  * The fixed Guest service owns admission/execution independently of this client. */
-export class CubeSandboxToolExecutor implements SandboxToolExecutor {
+export class FixedGuestToolExecutor implements SandboxToolExecutor {
   constructor(
-    readonly client: Pick<CubeSandboxRuntimeClient, "submitTool" | "cancelTool">,
+    readonly client: Pick<GuestRuntimeClient, "submitTool" | "cancelTool">,
     readonly completion: Pick<ToolCompletionIssuer, "issue">,
   ) {}
 
@@ -55,7 +55,7 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
         Date.parse(command.occurredAt) + command.request.timeoutMs + TOOL_REPLY_DELIVERY_MARGIN_MS,
     };
     const guest = await this.completion.issue(grant).catch(() => {
-      throw new CubeExecutionRejected("execution_endpoint_unconfigured");
+      throw new GuestExecutionRejected("execution_endpoint_unconfigured");
     });
     return this.client.submitTool(binding.descriptor.target, {
       source,
@@ -79,7 +79,7 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
   }
 
   cancellationRefused(error: unknown): boolean {
-    return error instanceof CubeExecutionRejected;
+    return error instanceof GuestExecutionRejected;
   }
 
   handoffFailure(error: unknown): ToolHandoffFailure {
@@ -87,13 +87,13 @@ export class CubeSandboxToolExecutor implements SandboxToolExecutor {
     let effect: ToolExecutionFailureData["effect"] = "unknown";
     let quarantine = false;
     if (
-      error instanceof CubeRuntimeTransportError ||
-      (error instanceof CubeRuntimeClientError &&
+      error instanceof SandboxRuntimeTransportError ||
+      (error instanceof SandboxRuntimeClientError &&
         error.statusCode !== undefined &&
         (error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500))
     )
       code = "tool_handoff_unconfirmed";
-    if (error instanceof CubeExecutionRejected) {
+    if (error instanceof GuestExecutionRejected) {
       switch (error.code) {
         case "executor_replaced":
         case "runtime_quarantined":

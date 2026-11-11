@@ -1,0 +1,11 @@
+nodeName: ""
+nodeId: ""
+image: ""
+dataDirectory: ""
+workspacePoolDirectory: ""
+existingSecret: pi-cloud-platform-secrets
+controlPlaneRelease: pi-cloud
+replicas: 0
+profiles: {}
+registries: []
+allowedAddresses: []

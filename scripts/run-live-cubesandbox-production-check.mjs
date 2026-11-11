@@ -249,7 +249,7 @@ async function terminalCommand(path, command, marker) {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.close",
           }),
         );
@@ -261,7 +261,7 @@ async function terminalCommand(path, command, marker) {
         ready = true;
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.input",
             data: Buffer.from(`${shellEnvelope(command)}\n`, "utf8").toString("base64"),
           }),

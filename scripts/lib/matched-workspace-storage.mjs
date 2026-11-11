@@ -106,6 +106,7 @@ export async function stopNativeStorageConsumers({
         : []),
       "daemonset/cube-node",
       "daemonset/cube-node-bootstrap",
+      "statefulset/pi-cloud-boxlite",
       "--ignore-not-found",
       "-o",
       "json",

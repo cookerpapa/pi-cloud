@@ -31,6 +31,8 @@ export function createExecutorServer(options: {
       targetId: options.manager.options.targetId,
       bootId: options.manager.options.bootId,
       ready,
+      busy: options.manager.busy,
+      operationsStarted: options.manager.operationsStarted,
       capabilities: ANDROID_CAPABILITIES,
     });
   });

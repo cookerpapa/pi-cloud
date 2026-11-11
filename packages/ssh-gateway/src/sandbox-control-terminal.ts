@@ -132,17 +132,17 @@ export async function openSandboxControlTerminal(options: {
     output,
     input: (data) =>
       send({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.input",
         data: Buffer.from(data).toString("base64"),
       }),
     resize: (rows, cols) =>
-      send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.resize", rows, cols }),
+      send({ workspaceTerminalProtocolVersion: 2, type: "workspace_terminal.resize", rows, cols }),
     close: async () => {
       // A paused websocket must resume to finish its closing handshake.
       socket.resume();
       if (socket.readyState === WebSocket.OPEN) {
-        await send({ workspaceTerminalProtocolVersion: 1, type: "workspace_terminal.close" }).catch(
+        await send({ workspaceTerminalProtocolVersion: 2, type: "workspace_terminal.close" }).catch(
           () => undefined,
         );
         socket.close(1_000, "SSH client disconnected");

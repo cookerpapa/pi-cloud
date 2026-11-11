@@ -5,6 +5,13 @@ import { isAbsolute } from "node:path";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 
 export type SandboxControlConfig = {
+  runtimeProvider?: "cubesandbox" | "boxlite";
+  boxlite?: {
+    url: string;
+    nodeId: string;
+    templateId: string;
+    developmentTemplateIds: Readonly<Record<"starter" | "standard" | "performance", string>>;
+  };
   host: string;
   port: number;
   databaseUrl: string;
@@ -238,6 +245,9 @@ async function executionEndpoints(path: string | undefined) {
 export async function loadSandboxControlConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<SandboxControlConfig> {
+  const runtimeProvider = environment.PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox";
+  if (runtimeProvider !== "cubesandbox" && runtimeProvider !== "boxlite")
+    throw new TypeError("PI_CLOUD_SANDBOX_PROVIDER is invalid");
   const cubeProxyScheme = environment.PI_CLOUD_CUBESANDBOX_PROXY_SCHEME ?? "http";
   if (cubeProxyScheme !== "http" && cubeProxyScheme !== "https") {
     throw new TypeError("PI_CLOUD_CUBESANDBOX_PROXY_SCHEME is invalid");
@@ -258,6 +268,25 @@ export async function loadSandboxControlConfig(
     throw new TypeError("Sandbox control heartbeat must leave lease failure margin");
   }
   return {
+    runtimeProvider,
+    ...(runtimeProvider === "boxlite"
+      ? {
+          boxlite: {
+            url: serviceUrl(required(environment, "PI_CLOUD_BOXLITE_URL"), "BoxLite node URL"),
+            nodeId: bounded(
+              required(environment, "PI_CLOUD_BOXLITE_NODE_ID"),
+              "BoxLite node identity",
+              100,
+            ),
+            templateId: "tool",
+            developmentTemplateIds: {
+              starter: "starter",
+              standard: "standard",
+              performance: "performance",
+            },
+          },
+        }
+      : {}),
     host: bounded(environment.PI_CLOUD_SANDBOX_CONTROL_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_SANDBOX_CONTROL_PORT, 4_300, 1, 65_535),
     databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),

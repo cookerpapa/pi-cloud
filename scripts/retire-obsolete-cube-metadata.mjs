@@ -1,3 +1,5 @@
+import { nativeComputeRetirement } from "./lib/native-compute-retirement.mjs";
+import { assertBoxLiteEmpty } from "./lib/boxlite-maintenance.mjs";
 /** ADR-0311: explicit operator maintenance, never part of Tool execution. */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -208,18 +210,21 @@ try {
         sandboxDomain: cluster.sandboxDomain,
         egressProxyIp: "10.255.255.254",
       });
+      const retirement = nativeComputeRetirement({ cube: native, runtimeDirectory, kubectl });
       try {
         await retireComputeForMaintenance({
           repository,
-          native,
+          native: retirement,
           assertProcessesStopped: assertStopped,
           openCapsule: (v) => codec.open(v),
           progress: (v) => console.log(JSON.stringify(v)),
         });
       } finally {
+        await retirement.close();
         await native.close();
       }
       absent();
+      await assertBoxLiteEmpty({ kubectl });
       state.stage = "retired";
       await save(state);
     }

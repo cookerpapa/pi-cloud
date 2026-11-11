@@ -262,7 +262,7 @@ window.renderTerminal=()=>{
   })));
 };
 window.terminalReady=i=>terminalSockets[i].dispatchEvent(new MessageEvent('message',{data:JSON.stringify({
-  workspaceTerminalProtocolVersion:1,type:'workspace_terminal.ready',terminalId:'10000000-0000-4000-8000-000000000001',pid:1,workspaceRoot:'/workspace'
+  workspaceTerminalProtocolVersion:2,type:'workspace_terminal.ready',terminalId:'10000000-0000-4000-8000-000000000001',workspaceRoot:'/workspace'
 })}));
 window.restoreWebSocket=()=>{window.WebSocket=NativeWebSocket;};
 window.renderNavigation=()=>{

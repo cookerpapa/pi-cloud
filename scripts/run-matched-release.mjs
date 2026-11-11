@@ -1,3 +1,5 @@
+import { nativeComputeRetirement } from "./lib/native-compute-retirement.mjs";
+import { assertBoxLiteEmpty } from "./lib/boxlite-maintenance.mjs";
 import { retireCubeExtensionTables } from "./lib/retire-cube-extension-tables.mjs";
 import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import { reconcileCubeEgressGateway } from "./lib/cube-egress-release.mjs";
@@ -418,19 +420,22 @@ try {
         sandboxDomain: cluster.sandboxDomain,
         egressProxyIp: "10.255.255.254",
       });
+      const retirement = nativeComputeRetirement({ cube: native, runtimeDirectory, kubectl });
       try {
         phase("retire compute while retaining Workspaces and machine intent");
         await retireComputeForMaintenance({
           repository,
-          native,
+          native: retirement,
           assertProcessesStopped,
           openCapsule: (value) => codec.open(value),
           progress: (value) => console.log(JSON.stringify(value)),
         });
       } finally {
+        await retirement.close();
         await native.close();
       }
       assertNativeInventory(true);
+      await assertBoxLiteEmpty({ kubectl });
     } else
       assert.equal(
         (await repository.listTargets()).length,

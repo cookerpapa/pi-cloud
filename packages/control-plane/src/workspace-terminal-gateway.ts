@@ -158,7 +158,7 @@ export class WorkspaceTerminalGateway {
       const currentUpstream = upstream;
       if (currentUpstream?.readyState === WebSocket.OPEN) {
         void send(currentUpstream, {
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.close",
         }).finally(() => currentUpstream.close(1_000, "browser disconnected"));
       } else if (currentUpstream !== undefined && currentUpstream.readyState !== WebSocket.CLOSED) {
@@ -184,7 +184,7 @@ export class WorkspaceTerminalGateway {
       );
       if (closed) return;
       await send(browser, {
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.error",
         code:
           identity.kind === "conversation"
@@ -260,7 +260,7 @@ export class WorkspaceTerminalGateway {
           }
         })().catch(async () => {
           await send(browser, {
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.error",
             code: "workspace_terminal_proxy_failed",
             message: "Workspace terminal proxy failed",
@@ -281,7 +281,7 @@ export class WorkspaceTerminalGateway {
       await connect(descriptor.sandboxControlBaseUrl, 0);
     } catch {
       await send(browser, {
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.error",
         code: "workspace_terminal_proxy_failed",
         message: "Workspace terminal could not reach the Sandbox control",
@@ -428,7 +428,7 @@ export class WorkspaceTerminalGateway {
       sandboxControlBaseUrl: row.sandboxControlBaseUrl,
       internalPath: SANDBOX_CONTROL_TERMINAL_PATH,
       open: {
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.open",
         requestId: randomUUID(),
         tenantId: identity.tenantId,

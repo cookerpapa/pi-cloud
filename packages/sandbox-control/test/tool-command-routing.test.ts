@@ -1,14 +1,14 @@
+import {
+  GuestExecutionRejected,
+  SandboxRuntimeClientError,
+  SandboxRuntimeTransportError,
+} from "../src/guest-runtime-client.ts";
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createExecutionReference, type AcceptedToolCommand } from "@pi-cloud/protocol";
 import { ToolCommandDispatcher, toolDeliveryFact } from "../src/tool-command-dispatcher.ts";
-import { CubeSandboxToolExecutor } from "../src/cubesandbox-tool-executor.ts";
-import {
-  CubeExecutionRejected,
-  CubeRuntimeTransportError,
-  CubeRuntimeClientError,
-  type CubeSandboxRuntimeClient,
-} from "../src/cubesandbox-runtime-client.ts";
+import { FixedGuestToolExecutor } from "../src/fixed-guest-tool-executor.ts";
+import { type CubeSandboxRuntimeClient } from "../src/cubesandbox-runtime-client.ts";
 import type { SandboxBinding, SandboxBindingReader } from "../src/sandbox-bindings.ts";
 import { SandboxBindingView } from "../src/sandbox-binding-view.ts";
 
@@ -92,7 +92,7 @@ function fixture() {
     quarantine = vi.fn(async () => {});
   const options = {
     routes: { get, closeWriter, isAlive: async () => true },
-    executor: new CubeSandboxToolExecutor(cube, {
+    executor: new FixedGuestToolExecutor(cube, {
       issue: async (grant) => ({
         url: "https://completion.test/v1/completions",
         address: "127.0.0.1",
@@ -405,10 +405,10 @@ it("retains source ordering for several pending calls sharing one binding", asyn
 
 describe("Projector native Cube handoff", () => {
   it.each([
-    [new CubeRuntimeTransportError(new Error("socket closed")), "tool_handoff_unconfirmed"],
-    [new CubeRuntimeClientError("gateway timeout", 504), "tool_handoff_unconfirmed"],
-    [new CubeRuntimeClientError("wrong operation identity"), "cubesandbox_tool_result_unknown"],
-    [new CubeRuntimeClientError("access refused", 403), "cubesandbox_tool_result_unknown"],
+    [new SandboxRuntimeTransportError(new Error("socket closed")), "tool_handoff_unconfirmed"],
+    [new SandboxRuntimeClientError("gateway timeout", 504), "tool_handoff_unconfirmed"],
+    [new SandboxRuntimeClientError("wrong operation identity"), "cubesandbox_tool_result_unknown"],
+    [new SandboxRuntimeClientError("access refused", 403), "cubesandbox_tool_result_unknown"],
   ])("distinguishes missing handoff transport from invalid replies: %s", async (error, code) => {
     const f = fixture();
     f.cube.submitTool.mockRejectedValue(error);
@@ -593,7 +593,7 @@ describe("Projector native Cube handoff", () => {
     "does not destroy or quarantine a VM for explicit %s refusal",
     async (code) => {
       const f = fixture();
-      f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected(code));
+      f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected(code));
       await f.router.consume(record(f.command));
       expect(f.quarantine).not.toHaveBeenCalled();
       expect(f.publishReply).toHaveBeenCalledOnce();
@@ -601,7 +601,7 @@ describe("Projector native Cube handoff", () => {
   );
   it("quarantines a replaced executor rather than refreshing its boot and retrying", async () => {
     const f = fixture();
-    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected("executor_replaced"));
+    f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected("executor_replaced"));
     await f.router.consume(record(f.command));
     expect(f.quarantine).toHaveBeenCalledWith(f.route.descriptor.target);
     expect(f.cube.submitTool).toHaveBeenCalledOnce();
@@ -611,7 +611,7 @@ describe("Projector native Cube handoff", () => {
     async (reason) => {
       const f = fixture(),
         pending = Promise.withResolvers<void>();
-      f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected(reason));
+      f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected(reason));
       f.quarantine.mockImplementation(() => pending.promise);
       const handling = f.router.consume(record(f.command));
       const result = handling.catch((error) => error);
@@ -634,7 +634,7 @@ describe("Projector native Cube handoff", () => {
   );
   it("attempts failure notification even when quarantine throws synchronously", async () => {
     const f = fixture();
-    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected("executor_replaced"));
+    f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected("executor_replaced"));
     f.quarantine.mockImplementation(() => {
       throw Error("synchronous lifecycle failure");
     });
@@ -643,7 +643,7 @@ describe("Projector native Cube handoff", () => {
   });
   it("still completes quarantine when the failure reply is lost, without replay or cancellation", async () => {
     const f = fixture();
-    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected("executor_replaced"));
+    f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected("executor_replaced"));
     f.publishReply.mockRejectedValue(new Error("reply transport unavailable"));
     await f.router.consume(record(f.command));
     expect(f.quarantine).toHaveBeenCalledOnce();
@@ -667,7 +667,7 @@ describe("Projector native Cube handoff", () => {
     ["future_refusal", "cubesandbox_tool_result_unknown", "unknown"],
   ])("preserves %s refusal evidence without inventing effects", async (reason, code, effect) => {
     const f = fixture();
-    f.cube.submitTool.mockRejectedValue(new CubeExecutionRejected(reason));
+    f.cube.submitTool.mockRejectedValue(new GuestExecutionRejected(reason));
     await f.router.consume(record(f.command));
     expect(f.publishReply.mock.calls[0]?.[1]).toMatchObject({ failure: { code, effect } });
     expect(f.cube.submitTool).toHaveBeenCalledOnce();

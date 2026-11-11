@@ -3,7 +3,7 @@ import type { RuntimeRetention } from "./runtime-retention.ts";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
 import type { SandboxController } from "./sandbox-controller.ts";
-import type { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
+import type { FixedGuestSandboxProvider } from "./fixed-guest-sandbox-provider.ts";
 import type { SandboxControlListWorkspaceDirectoryRequest } from "@pi-cloud/protocol";
 import { SandboxControlError } from "./sandbox-provider.ts";
 
@@ -12,7 +12,7 @@ export class SessionResourceAccess {
   constructor(
     readonly database: Kysely<Database>,
     readonly provider: Pick<
-      CubeSandboxProvider,
+      FixedGuestSandboxProvider,
       | "openDataCapsule"
       | "listWorkspaceDirectory"
       | "readWorkspaceFile"

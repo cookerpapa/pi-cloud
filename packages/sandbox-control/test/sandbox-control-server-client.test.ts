@@ -494,7 +494,7 @@ describe("Sandbox control authenticated RPC", () => {
       });
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.open",
           requestId: "10000000-0000-4000-8000-000000000088",
           tenantId: "10000000-0000-4000-8000-000000000081",
@@ -520,23 +520,22 @@ describe("Sandbox control authenticated RPC", () => {
       await expect(nextFrame()).resolves.toMatchObject({
         type: "workspace_terminal.ready",
         terminalId,
-        pid: 73,
       });
       await expect(nextFrame()).resolves.toEqual({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.output",
         data: Buffer.from("shell ready\r\n").toString("base64"),
       });
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.input",
           data: Buffer.from("pwd\r").toString("base64"),
         }),
       );
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.resize",
           rows: 40,
           cols: 120,
@@ -544,7 +543,7 @@ describe("Sandbox control authenticated RPC", () => {
       );
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.ping",
         }),
       );
@@ -560,7 +559,7 @@ describe("Sandbox control authenticated RPC", () => {
         try {
           socket.send(
             JSON.stringify({
-              workspaceTerminalProtocolVersion: 1,
+              workspaceTerminalProtocolVersion: 2,
               type: "workspace_terminal.input",
               data: Buffer.from("blocked").toString("base64"),
             }),
@@ -573,7 +572,7 @@ describe("Sandbox control authenticated RPC", () => {
           for (let index = 0; index < frames; index++)
             socket.send(
               JSON.stringify({
-                workspaceTerminalProtocolVersion: 1,
+                workspaceTerminalProtocolVersion: 2,
                 type: "workspace_terminal.input",
                 data: Buffer.from(payload).toString("base64"),
               }),
@@ -596,7 +595,7 @@ describe("Sandbox control authenticated RPC", () => {
       }
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.close",
         }),
       );

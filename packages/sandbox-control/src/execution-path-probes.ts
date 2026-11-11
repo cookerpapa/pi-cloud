@@ -12,8 +12,8 @@ import {
 } from "@pi-cloud/protocol";
 import { TOOL_REPLY_TOPIC_PATTERN } from "@pi-cloud/event-log";
 import type { SandboxBinding, SandboxBindingReader } from "./sandbox-bindings.ts";
-import type { CubeSandboxRuntimeClient } from "./cubesandbox-runtime-client.ts";
-import { CubeExecutionRejected } from "./cubesandbox-runtime-client.ts";
+import type { GuestRuntimeClient } from "./guest-runtime-client.ts";
+import { GuestExecutionRejected } from "./guest-runtime-client.ts";
 import { executionTargetId } from "./sandbox-execution.ts";
 import PQueue from "p-queue";
 import type { ToolCompletionIssuer } from "./tool-completion-issuer.ts";
@@ -47,7 +47,7 @@ export class ExecutionPathProbes {
   constructor(
     readonly options: {
       routes: SandboxBindingReader;
-      cube: Pick<CubeSandboxRuntimeClient, "submitProbe">;
+      cube: Pick<GuestRuntimeClient, "submitProbe">;
       completion: Pick<ToolCompletionIssuer, "issue">;
       runtimeEvidence(route: SandboxBinding, observedAt: number): Promise<void>;
       sample?(stage: "handoff" | "round_trip", durationMs: number, outcome: string): void;
@@ -267,7 +267,7 @@ export class ExecutionPathProbes {
             "invalid_probe",
           ];
           const reason =
-            error instanceof CubeExecutionRejected && codes.includes(error.code)
+            error instanceof GuestExecutionRejected && codes.includes(error.code)
               ? error.code
               : "handoff_unconfirmed";
           const unconfirmed = group.find((pending) => !pending.done && this.#valid(pending.scope));

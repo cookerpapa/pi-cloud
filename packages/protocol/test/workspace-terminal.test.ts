@@ -24,7 +24,7 @@ describe("Workspace terminal protocol", () => {
   it("accepts bounded trusted open and browser PTY frames", () => {
     expect(
       parseWorkspaceTerminalOpenRequest({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.open",
         requestId: "10000000-0000-4000-8000-000000000002",
         tenantId: "10000000-0000-4000-8000-000000000003",
@@ -40,26 +40,25 @@ describe("Workspace terminal protocol", () => {
     ).toMatchObject({ rows: 24, cols: 100 });
     expect(
       parseWorkspaceTerminalClientFrame({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.input",
         data: Buffer.from("pwd\r").toString("base64"),
       }),
     ).toMatchObject({ type: "workspace_terminal.input" });
     expect(
       parseWorkspaceTerminalServerFrame({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.ready",
         terminalId: "10000000-0000-4000-8000-000000000008",
-        pid: 73,
         workspaceRoot: "/workspace",
       }),
-    ).toMatchObject({ pid: 73 });
+    ).toMatchObject({ workspaceRoot: "/workspace", workspaceTerminalProtocolVersion: 2 });
   });
 
   it("rejects identity fields and oversized terminal dimensions in browser frames", () => {
     expect(() =>
       parseWorkspaceTerminalClientFrame({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.resize",
         rows: 24,
         cols: 100,
@@ -68,7 +67,7 @@ describe("Workspace terminal protocol", () => {
     ).toThrow(WorkspaceTerminalProtocolError);
     expect(() =>
       parseWorkspaceTerminalClientFrame({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.resize",
         rows: 24,
         cols: 10_000,

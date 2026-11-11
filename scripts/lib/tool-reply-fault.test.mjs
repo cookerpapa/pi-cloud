@@ -4,6 +4,55 @@ import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { wrapCompletionAdapter } from "../fixtures/tool-reply-fault.mjs";
 
+it("defers only the owned device Session and retains no screenshot bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "device-reply-fault-"));
+  const config = join(directory, "config"),
+    state = join(directory, "state"),
+    accepted = vi.fn();
+  class Base {
+    async accept(packet) {
+      accepted(packet);
+    }
+  }
+  const Adapter = wrapCompletionAdapter(Base, config, state),
+    adapter = new Adapter();
+  const settings = {
+    tenantId: "owned",
+    sessionId: "owned-session",
+    toolName: "android_observe",
+    defer: true,
+    nonce: "device",
+    expiresAt: Date.now() + 10000,
+  };
+  const packet = {
+    kind: "result",
+    operationId: "one-action",
+    context: {
+      kind: "executor_tool",
+      scope: { tenantId: "owned", sessionId: "owned-session", runId: "run" },
+      toolName: "android_observe",
+      replyTopic: "original",
+    },
+    result: { output: { type: "executor.result", secretImage: "DO_NOT_RETAIN" } },
+  };
+  try {
+    await writeFile(config, JSON.stringify(settings));
+    await expect(adapter.accept(packet)).rejects.toThrow("deferred");
+    expect(accepted).not.toHaveBeenCalled();
+    expect(await readFile(state, "utf8")).not.toContain("DO_NOT_RETAIN");
+    await adapter.accept({
+      ...packet,
+      context: { ...packet.context, scope: { ...packet.context.scope, sessionId: "other" } },
+    });
+    expect(accepted).toHaveBeenCalledOnce();
+    await writeFile(config, JSON.stringify({ ...settings, expiresAt: 0 }));
+    await adapter.accept(packet);
+    expect(accepted).toHaveBeenCalledTimes(2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("isolates reply loss to the armed tenant/result and its guest probe, with expiry", async () => {
   const directory = await mkdtemp(join(tmpdir(), "reply-fault-test-"));
   const config = join(directory, "config"),

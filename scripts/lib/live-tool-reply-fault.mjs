@@ -146,14 +146,20 @@ export async function installOwnedReplyFault(receiptPath) {
     throw error;
   }
 }
-export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe, dropAck = false) {
+export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe, dropAck = false, device) {
   assert.match(tenantId, /^[0-9a-f-]{36}$/);
+  if (device) {
+    assert.match(device.sessionId, /^[0-9a-f-]{36}$/);
+    assert.equal(device.toolName, "android_observe");
+    assert.equal(device.defer, true);
+  }
   const settings = {
     fixtureId: receipt.fixtureId,
     tenantId,
     marker,
     dropProbe,
     dropAck,
+    ...(device ?? {}),
     nonce: randomUUID(),
     expiresAt: Date.now() + 10 * 60_000,
   };
@@ -162,6 +168,12 @@ export function armOwnedReplyFault(receipt, tenantId, marker, dropProbe, dropAck
     `if(JSON.parse(fs.readFileSync('${config}','utf8')).fixtureId!==${JSON.stringify(receipt.fixtureId)})throw Error('Fixture owner changed');fs.writeFileSync('${config}',${JSON.stringify(JSON.stringify(settings))},{mode:0o600});`,
   );
   return settings.nonce;
+}
+export function disarmOwnedReplyFault(receipt) {
+  run(
+    receipt.pod,
+    `if(JSON.parse(fs.readFileSync('${config}','utf8')).fixtureId!==${JSON.stringify(receipt.fixtureId)})throw Error('Fixture owner changed');fs.writeFileSync('${config}',${JSON.stringify(JSON.stringify({ fixtureId: receipt.fixtureId, expiresAt: 0 }))},{mode:0o600});`,
+  );
 }
 export function readOwnedReplyFault(receipt) {
   return JSON.parse(

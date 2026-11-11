@@ -68,7 +68,11 @@ function parseArguments(argv) {
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
       if (argument === "--component") {
-        if (!["all", "host", "android", ...Object.keys(imageReleaseTargets)].includes(value))
+        if (
+          !["all", "host", "android", "boxlite", ...Object.keys(imageReleaseTargets)].includes(
+            value,
+          )
+        )
           throw new Error("Unsupported evidence scope");
         result.component = value;
       }
@@ -81,7 +85,7 @@ function parseArguments(argv) {
     }
     if (argument === "--help") {
       process.stdout.write(
-        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|tool-host|session-decoder|session-api|session-retention|worker-bootstrap|android] [--allow-dirty]\n",
+        "Usage: npm run release:evidence -- [--output-dir EMPTY_PATH] [--cache-dir PATH] [--image-version VERSION] [--component all|host|provider|web|tool-host|session-decoder|session-api|session-retention|worker-bootstrap|android|boxlite] [--allow-dirty]\n",
       );
       process.exit(0);
     }
@@ -326,46 +330,54 @@ try {
   const guestIdentity =
     options.component === "all" ? await guestBuildIdentity(repositoryRoot) : undefined;
   const imageDescriptors =
-    options.component === "android"
-      ? ["android-runtime", "android-automation", "android-executor", "android-egress"].map(
-          (imageName) => ({
-            imageName,
-            reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+    options.component === "boxlite"
+      ? [
+          {
+            imageName: "boxlite-node",
+            reference: `pi-cloud/boxlite-node:${options.imageVersion}`,
             labelVersion: options.imageVersion,
-          }),
-        )
-      : options.component === "host"
-        ? PRODUCTION_IMAGE_NAMES.map((imageName) => ({
-            imageName,
-            reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-            labelVersion: options.imageVersion,
-          }))
-        : options.component !== "all"
-          ? [
-              {
-                imageName: imageReleaseTargets[options.component].imageName,
-                reference: `pi-cloud/${imageReleaseTargets[options.component].imageName}:${options.imageVersion}`,
-                labelVersion: options.imageVersion,
-              },
-            ]
-          : [
-              ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
-                imageName,
-                reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-                labelVersion: options.imageVersion,
-              })),
-              ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
-                imageName,
-                reference: `pi-cloud/${imageName}:${options.imageVersion}`,
-                labelVersion: options.imageVersion,
-              })),
-              {
-                imageName: "cubesandbox-tool",
-                reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
-                labelVersion: "cube-primary",
-                guestIdentity,
-              },
-            ];
+          },
+        ]
+      : options.component === "android"
+        ? ["android-runtime", "android-automation", "android-executor", "android-egress"].map(
+            (imageName) => ({
+              imageName,
+              reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+              labelVersion: options.imageVersion,
+            }),
+          )
+        : options.component === "host"
+          ? PRODUCTION_IMAGE_NAMES.map((imageName) => ({
+              imageName,
+              reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+              labelVersion: options.imageVersion,
+            }))
+          : options.component !== "all"
+            ? [
+                {
+                  imageName: imageReleaseTargets[options.component].imageName,
+                  reference: `pi-cloud/${imageReleaseTargets[options.component].imageName}:${options.imageVersion}`,
+                  labelVersion: options.imageVersion,
+                },
+              ]
+            : [
+                ...PRODUCTION_IMAGE_NAMES.map((imageName) => ({
+                  imageName,
+                  reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+                  labelVersion: options.imageVersion,
+                })),
+                ...CUBE_PLATFORM_IMAGES.map((imageName) => ({
+                  imageName,
+                  reference: `pi-cloud/${imageName}:${options.imageVersion}`,
+                  labelVersion: options.imageVersion,
+                })),
+                {
+                  imageName: "cubesandbox-tool",
+                  reference: `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
+                  labelVersion: "cube-primary",
+                  guestIdentity,
+                },
+              ];
   for (const { imageName, ...descriptor } of imageDescriptors) {
     const { reference } = descriptor;
     const evidence = await inspectReleaseImage(

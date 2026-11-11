@@ -76,6 +76,9 @@ spec:
             - name: POD_IP
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
             - { name: PI_CLOUD_SANDBOX_DOMAIN_ID, value: {{ .Values.sandboxPlane.domainId | quote }} }
+            - { name: PI_CLOUD_SANDBOX_PROVIDER, value: {{ .Values.sandboxPlane.provider | quote }} }
+            - { name: PI_CLOUD_BOXLITE_URL, value: {{ .Values.sandboxPlane.boxlite.url | quote }} }
+            - { name: PI_CLOUD_BOXLITE_NODE_ID, value: {{ .Values.sandboxPlane.boxlite.nodeId | quote }} }
             - name: PI_CLOUD_SANDBOX_CONTROL_ADVERTISED_URL
               value: {{ printf "http://$(POD_IP):4300" | quote }}
             - { name: PI_CLOUD_SANDBOX_CONTROL_HOST, value: 0.0.0.0 }

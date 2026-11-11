@@ -5,7 +5,7 @@ import { type ConfiguredImageAttachments } from "@pi-cloud/session-attachments";
 import type { Kysely } from "kysely";
 import { SandboxControlServer } from "./sandbox-control-server.ts";
 import { SandboxController } from "./sandbox-controller.ts";
-import { createCubeRuntimeTransport } from "./cube-runtime-transport.ts";
+import { createSandboxRuntimeTransport } from "./sandbox-runtime-transport.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "./workspace-runtime-state-repository.ts";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
@@ -68,7 +68,7 @@ export async function createSandboxControl(options: {
     });
     cleanup.push(() => (controllerOwns ? undefined : ownership.close()));
     await ownership.start();
-    const { volume, provider } = await createCubeRuntimeTransport(config, database);
+    const { volume, provider } = await createSandboxRuntimeTransport(config, database);
     cleanup.push(() => (controllerOwns ? undefined : provider.close()));
     const wake = new PostgresNotificationWake(
       config.databaseNotificationUrl,

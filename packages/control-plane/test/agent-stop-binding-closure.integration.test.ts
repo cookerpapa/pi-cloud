@@ -16,7 +16,7 @@ import { SessionControlOutbox } from "../../runtime-core/src/session-control-out
 import { PostgresSandboxBindings } from "../../sandbox-control/src/sandbox-bindings.ts";
 import { SandboxBindingView } from "../../sandbox-control/src/sandbox-binding-view.ts";
 import { ToolCommandDispatcher } from "../../sandbox-control/src/tool-command-dispatcher.ts";
-import { CubeSandboxToolExecutor } from "../../sandbox-control/src/cubesandbox-tool-executor.ts";
+import { FixedGuestToolExecutor } from "../../sandbox-control/src/fixed-guest-tool-executor.ts";
 import { PostgresWorkspaceRuntimeStateRepository } from "../../sandbox-control/src/workspace-runtime-state-repository.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
@@ -94,7 +94,7 @@ it.skipIf(!postgres || !brokers)(
       const dispatcher = new ToolCommandDispatcher({
         routes: view,
         // Cube receives no stop RPC. Run settlement depends only on routing revocation.
-        executor: new CubeSandboxToolExecutor(
+        executor: new FixedGuestToolExecutor(
           { submitTool: submit, cancelTool: cancel },
           {
             issue: async (grant) => ({

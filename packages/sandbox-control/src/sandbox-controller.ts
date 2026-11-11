@@ -209,7 +209,6 @@ export type WorkspaceTerminalOpenInput = Readonly<{
 
 export type WorkspaceTerminalConnection = Readonly<{
   terminalId: string;
-  pid: number;
   workspaceRoot: string;
   output: AsyncIterable<Uint8Array>;
   sendInput(data: Uint8Array): Promise<void>;
@@ -1593,7 +1592,6 @@ export class SandboxController {
     let closed = false;
     return Object.freeze({
       terminalId: input.environmentId,
-      pid: terminal.pid,
       workspaceRoot: terminalHandle.workspaceRoot,
       output: terminal.output,
       sendInput: (data: Uint8Array) => terminal.sendInput(data),
@@ -1731,7 +1729,6 @@ export class SandboxController {
       this.#terminals.set(terminalId, managed);
       return Object.freeze({
         terminalId,
-        pid: activeTerminal.pid,
         workspaceRoot: handle.workspaceRoot,
         output: activeTerminal.output,
         sendInput: async (data: Uint8Array) => {

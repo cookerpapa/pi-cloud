@@ -98,7 +98,7 @@ async function terminal(command) {
       if (frame.type === "workspace_terminal.ready")
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.input",
             data: Buffer.from(`printf '%s' '${script}' | base64 -d | bash\n`).toString("base64"),
           }),
@@ -109,7 +109,7 @@ async function terminal(command) {
           closing = true;
           socket.send(
             JSON.stringify({
-              workspaceTerminalProtocolVersion: 1,
+              workspaceTerminalProtocolVersion: 2,
               type: "workspace_terminal.close",
             }),
           );

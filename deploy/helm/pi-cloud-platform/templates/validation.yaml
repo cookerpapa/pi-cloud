@@ -1,3 +1,9 @@
+{{- if not (has .Values.sandboxPlane.provider (list "cubesandbox" "boxlite")) -}}
+{{- fail "sandboxPlane.provider must be cubesandbox or boxlite" -}}
+{{- end -}}
+{{- if and (eq .Values.sandboxPlane.provider "boxlite") (or (not .Values.sandboxPlane.boxlite.url) (not .Values.sandboxPlane.boxlite.nodeId)) -}}
+{{- fail "BoxLite requires its explicit node URL and identity" -}}
+{{- end -}}
 {{- if and (eq .Values.profile "distributed") (or .Values.globalPlaneEnabled .Values.sandboxPlaneEnabled) (lt (int .Values.controlPlane.replicas) 2) -}}
 {{- fail "controlPlane.replicas must be at least 2 for the distributed profile" -}}
 {{- end -}}

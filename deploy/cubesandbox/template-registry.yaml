@@ -153,6 +153,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/component: templatecenter
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: boxlite-node
       ports:
         - protocol: TCP
           port: 5000

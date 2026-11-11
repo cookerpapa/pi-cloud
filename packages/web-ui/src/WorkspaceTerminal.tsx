@@ -80,7 +80,7 @@ export function WorkspaceTerminal({
     if (socket?.readyState === WebSocket.OPEN) {
       socket.send(
         JSON.stringify({
-          workspaceTerminalProtocolVersion: 1,
+          workspaceTerminalProtocolVersion: 2,
           type: "workspace_terminal.close",
         } satisfies WorkspaceTerminalClientFrame),
       );
@@ -124,7 +124,7 @@ export function WorkspaceTerminal({
           terminal.focus();
           fitRef.current?.fit();
           transmit({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.resize",
             rows: terminal.rows,
             cols: terminal.cols,
@@ -197,7 +197,7 @@ export function WorkspaceTerminal({
     const input = terminal.onData((data) => {
       if (stateRef.current !== "ready") return;
       transmit({
-        workspaceTerminalProtocolVersion: 1,
+        workspaceTerminalProtocolVersion: 2,
         type: "workspace_terminal.input",
         data: base64(new TextEncoder().encode(data)),
       });
@@ -212,7 +212,7 @@ export function WorkspaceTerminal({
         }
         if (stateRef.current === "ready") {
           transmit({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.resize",
             rows: terminal.rows,
             cols: terminal.cols,

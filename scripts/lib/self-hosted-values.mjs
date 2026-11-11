@@ -159,6 +159,8 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
         externalEgressCidrs: [`${cluster.nodeAddress ?? "10.255.255.254"}/32`],
       },
       sandboxPlane: {
+        provider: e.PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox",
+        boxlite: { url: e.PI_CLOUD_BOXLITE_URL ?? "", nodeId: e.PI_CLOUD_BOXLITE_NODE_ID ?? "" },
         volumeGatewayResources: { requests: { cpu: "250m", memory: "256Mi" } },
         volumeGatewayReplicas: 1,
         workspace: { existingClaim: "pi-cloud-workspaces" },

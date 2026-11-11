@@ -1,3 +1,4 @@
+import { nativeComputeRetirement } from "./lib/native-compute-retirement.mjs";
 import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -32,7 +33,7 @@ const interrupted = () =>
   abort.abort(new Error("Compute retirement interrupted; recorded cleanup targets are retained"));
 process.on("SIGTERM", interrupted);
 process.on("SIGINT", interrupted);
-let database, native;
+let database, native, retirement;
 try {
   const endpoint = new URL(
     (await readFile(resolve(runtimeDirectory, "secrets/database-url"), "utf8")).trim(),
@@ -96,6 +97,7 @@ try {
       sandboxDomain: cluster.sandboxDomain,
       egressProxyIp: "10.255.255.254",
     });
+    retirement = nativeComputeRetirement({ cube: native, runtimeDirectory, kubectl });
     const assertProcessesStopped = async () =>
       assertRetirementProcessesStopped({
         workloads: JSON.parse(
@@ -110,7 +112,7 @@ try {
     });
     const completed = await retireComputeForMaintenance({
       repository,
-      native,
+      native: retirement,
       openCapsule,
       signal: abort.signal,
       assertProcessesStopped,
@@ -127,6 +129,7 @@ try {
 } finally {
   process.removeListener("SIGTERM", interrupted);
   process.removeListener("SIGINT", interrupted);
+  await retirement?.close();
   await native?.close();
   await database?.destroy();
 }

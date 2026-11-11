@@ -158,7 +158,7 @@ export type SandboxDirectoryListing = Readonly<{
 
 type SandboxRuntimeIsolation = Readonly<{
   isolationBoundary: "microvm";
-  runtime: "cubesandbox-kvm";
+  runtime: "cubesandbox-kvm" | "boxlite-kvm";
 }>;
 
 export type SandboxEffectiveIsolation = SandboxRuntimeIsolation &
@@ -211,7 +211,6 @@ export type SandboxTerminalSize = Readonly<{
 }>;
 
 export type SandboxTerminalSession = Readonly<{
-  pid: number;
   output: AsyncIterable<Uint8Array>;
   sendInput(data: Uint8Array): Promise<void>;
   resize(size: SandboxTerminalSize): Promise<void>;

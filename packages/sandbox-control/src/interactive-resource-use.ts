@@ -10,7 +10,6 @@ export function retainTerminal(
 ): SandboxTerminalSession {
   const release = retention.hold(target);
   return {
-    pid: terminal.pid,
     output: (async function* () {
       try {
         yield* terminal.output;

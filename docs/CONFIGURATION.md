@@ -272,6 +272,9 @@ Do not commit proxy credentials or expose a local proxy publicly.
 | `PI_CLOUD_RUNTIME_PROBE_CONCURRENCY` | `4` | concurrent physical-runtime health checks per control plane, range 1–64; limits in-flight work, never the number of VMs covered |
 | `PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS` | `8` | simultaneous interactive workflows per control plane (Helm default 32); fixed Tools have a Cubelet-local limit of 32 |
 | `PI_CLOUD_ELASTIC_RETENTION_MS` | `1800000` | platform-owned elastic idle window, captured before creation; existing PG resource records own deadlines, range 1 second–24 hours |
+| `PI_CLOUD_SANDBOX_PROVIDER` | `cubesandbox` | explicitly select `cubesandbox` or `boxlite` for this resource domain; changing provider requires matched compute retirement |
+| `PI_CLOUD_BOXLITE_URL` | required for BoxLite | private node API base URL; no provider fallback |
+| `PI_CLOUD_BOXLITE_NODE_ID` | required for BoxLite | recorded identity of the node, matching its managed configuration |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS` | `15000` | control-plane sandbox-management ownership lease |
 | `PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS` | `5000` | sandbox-management ownership heartbeat |
 

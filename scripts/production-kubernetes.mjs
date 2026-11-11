@@ -487,6 +487,18 @@ if (isEntrypoint) {
   } else if (action === "local-web") {
     await configureLocalWeb();
   } else if (action === "bootstrap") {
+    if (environment.PI_CLOUD_SANDBOX_PROVIDER === "boxlite") {
+      const node = kubectl([
+        "get",
+        "statefulset/pi-cloud-boxlite",
+        "--ignore-not-found",
+        "-o",
+        "json",
+      ]);
+      if (!node.trim())
+        throw new Error("Install the matched BoxLite node before selecting this provider");
+      kubectl(["scale", "statefulset/pi-cloud-boxlite", "--replicas=1"]);
+    }
     await deployPlatform({ images: runtimeImages(), deploymentEnvironment: environment });
     writeFileSync(
       resolve(directory, "bootstrap-completed.json"),
@@ -495,6 +507,18 @@ if (isEntrypoint) {
     );
   } else if (action === "down") {
     await removeWslWebForwarder();
+    const boxlite = kubectl([
+      "get",
+      "statefulset/pi-cloud-boxlite",
+      "--ignore-not-found",
+      "-o",
+      "json",
+    ]);
+    if (boxlite.trim()) {
+      // Keep SDK state, Workspace bytes and PG ownership for ordinary recovery.
+      // Stopping the service is not confirmed resource deletion or quota release.
+      kubectl(["scale", "statefulset/pi-cloud-boxlite", "--replicas=0"]);
+    }
     helmRun(["uninstall", "pi-cloud", "--namespace", namespace, "--wait", "--timeout", "25m"]);
     helmRun([
       "uninstall",

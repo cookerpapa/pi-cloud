@@ -11,7 +11,10 @@
     "./session-runtime": "./src/sandbox-session-runtime.ts",
     "./dispatch": "./src/tool-command-dispatcher.ts",
     "./bindings": "./src/sandbox-bindings.ts",
-    "./cube-lifecycle": "./src/cube-lifecycle-events.ts"
+    "./cube-lifecycle": "./src/cube-lifecycle-events.ts",
+    "./guest-runtime": "./src/guest-runtime-client.ts",
+    "./boxlite-node-contract": "./src/boxlite-node-contract.ts",
+    "./boxlite-client": "./src/boxlite-runtime-client.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -87,8 +87,8 @@ function fixture(desiredState = "running", kind = "machine") {
     }),
   };
   const native = {
-    destroy: vi.fn(async (id) => {
-      assert.equal(id, original.runtimeName);
+    destroy: vi.fn(async (target) => {
+      assert.equal(target.runtimeName, original.runtimeName);
       assert(row.allocationClosed);
       physicallyClosed = true;
       events.push("native-close");

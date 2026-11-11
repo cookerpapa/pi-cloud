@@ -699,6 +699,24 @@
           "type": "integer",
           "minimum": 60000,
           "maximum": 86400000
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["cubesandbox", "boxlite"]
+        },
+        "boxlite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "nodeId"],
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "nodeId": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
         }
       }
     },

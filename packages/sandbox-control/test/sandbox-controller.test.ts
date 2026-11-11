@@ -1632,7 +1632,8 @@ describe("provider-backed Sandbox controller", () => {
       workspaceSeed: { kind: "sample_java" },
       size: { rows: 24, cols: 100 },
     });
-    expect(terminal).toMatchObject({ terminalId: ACTIVATION_ID, pid: 77 });
+    expect(terminal).toMatchObject({ terminalId: ACTIVATION_ID });
+    expect(terminal).not.toHaveProperty("pid");
     await terminal.sendInput(Buffer.from("pwd\r"));
     await terminal.resize({ rows: 40, cols: 120 });
     expect(fixture.terminalInput).toHaveBeenCalledWith(Buffer.from("pwd\r"));

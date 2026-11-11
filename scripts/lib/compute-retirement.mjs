@@ -107,6 +107,9 @@ export function validateRetirementTarget(target, openCapsule) {
   );
   assert(target.capsule !== null, "Settle pending creation before compute maintenance");
   let nodeId = null;
+  let providerId = null,
+    instance = null,
+    endpoint = null;
   if (target.capsule !== null) {
     const capsule = openCapsule(target.capsule);
     const handle = capsule.handle,
@@ -115,7 +118,11 @@ export function validateRetirementTarget(target, openCapsule) {
     // Retirement consumes only the stable provider-address contract. It does
     // not adopt a Harness, Guest or a historical private allocation protocol.
     assert.equal(handle?.providerApiVersion, 1, "Unsupported provider address contract");
-    assert.equal(handle?.providerId, "cubesandbox", "Unsupported resource provider");
+    assert(
+      ["cubesandbox", "boxlite"].includes(handle?.providerId),
+      "Unsupported resource provider",
+    );
+    providerId = handle.providerId;
     assert.equal(handle?.runtimeName, sandboxId, "Capsule sandbox changed");
     if (target.runtimeId !== null)
       assert.equal(handle?.runtimeId, target.runtimeId, "Capsule runtime changed");
@@ -129,8 +136,22 @@ export function validateRetirementTarget(target, openCapsule) {
       "Capsule recorded node is unavailable",
     );
     nodeId = execution.nodeId;
+    instance = capsule.instance;
+    endpoint = execution.apiUrl;
+    if (providerId === "boxlite") {
+      assert(
+        instance?.sandboxId === sandboxId &&
+          instance.nodeId === nodeId &&
+          instance.attachment?.sandboxId === target.allocationId,
+        "BoxLite deletion requires its original physical and attachment receipt",
+      );
+      assert(
+        typeof endpoint === "string" && endpoint.length <= 2048,
+        "BoxLite endpoint is unavailable",
+      );
+    }
   }
-  return { ...target, neverIssued: false, nodeId };
+  return { ...target, neverIssued: false, nodeId, providerId, instance, endpoint };
 }
 
 /** Wait for positive process/PG quiescence. Time passing never clears a writer
@@ -202,7 +223,7 @@ export async function retireComputeForMaintenance({
       // The adapter accepts a successful native deletion or a retained matching
       // native delete event. Generic 404, timeouts and probes remain uncertain.
       // Join the admitted request even if operator cancellation arrives.
-      await native.destroy(target.runtimeName);
+      await native.destroy(target);
       signal?.throwIfAborted();
     }
     await cold();

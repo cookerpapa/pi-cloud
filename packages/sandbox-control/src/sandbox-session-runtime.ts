@@ -13,7 +13,7 @@ import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
-import { createCubeRuntimeTransport } from "./cube-runtime-transport.ts";
+import { createSandboxRuntimeTransport } from "./sandbox-runtime-transport.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { SandboxBindingView } from "./sandbox-binding-view.ts";
 import { SessionBindingExecution } from "./session-binding-execution.ts";
@@ -24,7 +24,7 @@ import { SandboxControlError } from "./sandbox-provider.ts";
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkflowCommandDispatcher } from "./workflow-command-dispatcher.ts";
 import { ToolCommandDispatcher, type ToolLogDelivery } from "./tool-command-dispatcher.ts";
-import { CubeSandboxToolExecutor } from "./cubesandbox-tool-executor.ts";
+import { FixedGuestToolExecutor } from "./fixed-guest-tool-executor.ts";
 import { ToolEnvironmentCoordinator } from "./tool-environment-coordinator.ts";
 import { EnvironmentRecovery } from "./environment-recovery.ts";
 import { SandboxControlClient } from "./sandbox-control-client.ts";
@@ -70,7 +70,7 @@ export async function createSandboxSessionRuntime(options: {
       if (errors.length) throw new AggregateError(errors, "Session execution cleanup failed");
     })());
   try {
-    const { client, provider } = await createCubeRuntimeTransport(config, database);
+    const { client, provider } = await createSandboxRuntimeTransport(config, database);
     cleanup.push(() => provider.close());
     const completion = new ToolCompletionIssuer({
       url:
@@ -235,7 +235,7 @@ export async function createSandboxSessionRuntime(options: {
     cleanup.push(() => sessionActivity.close());
     const dispatcher = new ToolCommandDispatcher({
       routes: bindingView,
-      executor: new CubeSandboxToolExecutor(client, completion),
+      executor: new FixedGuestToolExecutor(client, completion),
       environments,
       metrics,
       onDispatch: (command, route) => probes.rememberTool(command, route),

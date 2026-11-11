@@ -11,6 +11,9 @@
 owner authorization beyond the earlier operator-only experiment.
 Android source/PG/Harness checks pass; matched publication and live device
 continuation remain part of the open acceptance item, not the old operator proof.
+BoxLite source now shares fixed Guest behavior through a neutral driver port,
+uses a separate stock-SDK node and preserves existing Volume authority. Its
+operator/private protocol and terminal v2 require the remaining source/live gates.
 
 ## Platform-owned elastic idle expiry — deployed
 

@@ -877,7 +877,7 @@ describe("CubeSandbox Provider contract", () => {
       },
       creationAuthorization,
     );
-    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
+    expect(runtime.creates[0]).not.toHaveProperty("timeoutSeconds");
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("picloud.retention_window_ms");
     vi.useFakeTimers();
     try {
@@ -903,7 +903,7 @@ describe("CubeSandbox Provider contract", () => {
     }
   });
 
-  it("uses Cube never-timeout lifecycle and preserves identity across development pause/resume", async () => {
+  it("preserves dedicated identity across explicit development pause/resume", async () => {
     const runtime = new FakeCubeRuntimeClient();
     const persistentStateKey = Buffer.alloc(32, 9);
     const provider = testCubeProvider({
@@ -968,8 +968,6 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.guestFiles.size).toBe(0);
     expect(runtime.creates[0]).toMatchObject({
       templateId: "tpl-standard0000000000000000",
-      timeoutSeconds: -1,
-      lifecycle: { onTimeout: "pause", autoResume: false },
       volumeMounts: [
         {
           name: expect.stringMatching(/^pcw-[0-9a-f]{48}$/),
@@ -1064,7 +1062,7 @@ describe("CubeSandbox Provider contract", () => {
       workspaceSeed: { kind: "sample_java" },
     });
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.creates[0]?.timeoutSeconds).toBe(-1);
+    expect(runtime.creates[0]).not.toHaveProperty("timeoutSeconds");
     expect(runtime.creates).toHaveLength(1);
     expect(runtime.creates[0]?.metadata).not.toHaveProperty("host-mount");
     const activeAssignments = await manager.listAssignments(assignment.sandboxId);
@@ -1277,8 +1275,6 @@ describe("CubeSandbox Provider contract", () => {
     expect(runtime.creates).toHaveLength(2);
     expect(runtime.creates[1]).toMatchObject({
       templateId: "pi-cloud-tool-v1",
-      allowInternetAccess: true,
-      allowPublicTraffic: false,
       volumeMounts: [
         {
           name: expect.stringMatching(/^pcw-[0-9a-f]{48}$/),
@@ -1840,10 +1836,7 @@ describe("CubeSandbox Provider contract", () => {
       creationAuthorization,
     );
     expect(runtime.creates).toHaveLength(1);
-    expect(runtime.creates[0]).toMatchObject({
-      allowInternetAccess: true,
-      allowPublicTraffic: false,
-    });
+    expect(handle.environmentValidation.networkMode).toBe("public_web_proxy_private_denied");
     const initialize = runtime.requests.find(
       ({ guestRequest }) => guestRequest.type === "worker.initialize",
     );

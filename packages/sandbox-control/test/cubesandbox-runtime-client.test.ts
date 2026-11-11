@@ -1,4 +1,9 @@
 import {
+  GuestExecutionRejected,
+  SandboxRuntimeTransportError,
+} from "../src/guest-runtime-client.ts";
+import { GuestApplicationPortError } from "../src/guest-runtime-client.ts";
+import {
   createServer,
   type IncomingHttpHeaders,
   type Server,
@@ -7,12 +12,7 @@ import {
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { OfficialCubeSandboxRuntimeClient } from "../src/index.ts";
-import {
-  CubeExecutionRejected,
-  CubeApplicationPortError,
-  CubeRuntimeTransportError,
-  type OfficialCubeSandboxRuntimeClientOptions,
-} from "../src/cubesandbox-runtime-client.ts";
+import { type OfficialCubeSandboxRuntimeClientOptions } from "../src/cubesandbox-runtime-client.ts";
 import { MAX_IMAGE_GUEST_RESPONSE_BYTES } from "@pi-cloud/protocol";
 
 type ObservedRequest = {
@@ -401,7 +401,7 @@ it("classifies a disconnected native HTTP reply as transport uncertainty", async
     loseExecutionReply = true;
     await expect(
       client.probeExecution(executionTarget, "10000000-0000-4000-8000-000000000099"),
-    ).rejects.toBeInstanceOf(CubeRuntimeTransportError);
+    ).rejects.toBeInstanceOf(SandboxRuntimeTransportError);
   } finally {
     await client.close();
   }
@@ -414,6 +414,21 @@ afterAll(async () => {
 });
 
 describe("official CubeSandbox HTTP compatibility client", () => {
+  it("maps the common managed-create port to disabled native expiry and private ingress", async () => {
+    const client = executionClient();
+    try {
+      await client.create({ templateId: "pi-cloud-tool-v1", metadata: {} });
+      const request = observed.find((r) => r.method === "POST" && r.path === "/sandboxes");
+      expect(request?.body).toMatchObject({
+        timeout: -1,
+        allow_internet_access: true,
+        network: { allowPublicTraffic: false },
+        lifecycle: { auto_resume: false },
+      });
+    } finally {
+      await client.close();
+    }
+  });
   it("never retries an uncertain native creation or consults a private allocation endpoint", async () => {
     const client = executionClient();
     loseCreateReply = true;
@@ -426,7 +441,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
           allowInternetAccess: true,
           allowPublicTraffic: false,
         }),
-      ).rejects.toBeInstanceOf(CubeRuntimeTransportError);
+      ).rejects.toBeInstanceOf(SandboxRuntimeTransportError);
       expect(createEffects).toBe(1);
       expect(observed.map((r) => [r.method, r.path])).toEqual([["POST", "/sandboxes"]]);
     } finally {
@@ -542,7 +557,7 @@ describe("official CubeSandbox HTTP compatibility client", () => {
           (error: unknown) => error,
         );
         expect(error).toBeInstanceOf(Error);
-        expect(error instanceof CubeApplicationPortError).toBe(mode === "refused");
+        expect(error instanceof GuestApplicationPortError).toBe(mode === "refused");
         await vi.waitFor(() =>
           expect(observed).toContainEqual(
             expect.objectContaining({
@@ -893,7 +908,7 @@ it("accepts only a handoff for the recorded executor boot and operation", async 
       operationId: executionRequest.operationId,
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
-      CubeExecutionRejected,
+      GuestExecutionRejected,
     );
   } finally {
     await client.close();
@@ -908,11 +923,11 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
       rejection: "execution_position_stale",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.toBeInstanceOf(
-      CubeExecutionRejected,
+      GuestExecutionRejected,
     );
     executionStatus = 502;
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
-      CubeExecutionRejected,
+      GuestExecutionRejected,
     );
     executionStatus = 200;
     executionReply = {
@@ -920,7 +935,7 @@ it("distinguishes explicit refusal from an ambiguous HTTP or identity failure", 
       rejection: "handoff_unconfirmed",
     };
     await expect(client.submitTool(executionTarget, executionRequest)).rejects.not.toBeInstanceOf(
-      CubeExecutionRejected,
+      GuestExecutionRejected,
     );
   } finally {
     await client.close();

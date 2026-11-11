@@ -46,6 +46,7 @@ export function kubectlAsync(args, options = {}) {
   });
 }
 export const workloads = {
+  "boxlite-node": "statefulset/pi-cloud-boxlite",
   "workspace-quota": "deployment/pi-cloud-workspace-quota",
   metering: "deployment/pi-cloud-metering",
   "tool-host": "deployment/pi-cloud-tool-host",

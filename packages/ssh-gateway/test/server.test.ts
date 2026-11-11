@@ -83,7 +83,7 @@ describe("SSH gateway", () => {
             input,
             async resize(rows, width) {
               parseWorkspaceTerminalClientFrame({
-                workspaceTerminalProtocolVersion: 1,
+                workspaceTerminalProtocolVersion: 2,
                 type: "workspace_terminal.resize",
                 rows,
                 cols: width,

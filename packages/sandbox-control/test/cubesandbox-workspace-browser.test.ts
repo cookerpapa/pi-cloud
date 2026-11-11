@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import { expect, it } from "vitest";
-import { browseCubeWorkspace } from "../src/cubesandbox-workspace-browser.ts";
+import { browseGuestWorkspace } from "../src/guest-workspace-browser.ts";
 import type {
   CubeSandboxRuntimeClient,
   CubeSandboxInstance,
@@ -49,7 +49,7 @@ it("lists surviving files if a background process removes an entry during enumer
     await writeFile(vanished, "gone");
     await writeFile(join(root, "code.py"), "print(42)");
     await expect(
-      browseCubeWorkspace(client, {} as CubeSandboxInstance, {
+      browseGuestWorkspace(client, {} as CubeSandboxInstance, {
         toolBrokerProtocolVersion: 1,
         type: "workspace.list_directory",
         requestId: crypto.randomUUID(),
@@ -103,7 +103,7 @@ it("reads code outside /home/user with bounded output and does not follow escapi
     await writeFile(join(root, "canary"), "outside");
     await writeFile(join(request.machine.directory, "code.py"), "print(42)\n");
     await symlink(join(root, "canary"), join(request.machine.directory, "escape"));
-    const listing = await browseCubeWorkspace(client, instance, request);
+    const listing = await browseGuestWorkspace(client, instance, request);
     expect(listing.entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "code.py", kind: "file" }),
@@ -116,18 +116,18 @@ it("reads code outside /home/user with bounded output and does not follow escapi
       path: "code.py",
       maximumBytes: 100,
     };
-    expect(await browseCubeWorkspace(client, instance, read)).toMatchObject({
+    expect(await browseGuestWorkspace(client, instance, read)).toMatchObject({
       content: Buffer.from("print(42)\n").toString("base64"),
       sizeBytes: 10,
     });
     await expect(
-      browseCubeWorkspace(client, instance, { ...read, path: "escape" }),
+      browseGuestWorkspace(client, instance, { ...read, path: "escape" }),
     ).rejects.toBeDefined();
     await expect(
-      browseCubeWorkspace(client, instance, { ...read, maximumBytes: 2 }),
+      browseGuestWorkspace(client, instance, { ...read, maximumBytes: 2 }),
     ).rejects.toBeDefined();
     await expect(
-      browseCubeWorkspace(client, instance, { ...read, path: "../canary" }),
+      browseGuestWorkspace(client, instance, { ...read, path: "../canary" }),
     ).rejects.toBeDefined();
   } finally {
     await rm(root, { recursive: true, force: true });

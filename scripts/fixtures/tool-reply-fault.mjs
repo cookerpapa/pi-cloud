@@ -11,7 +11,12 @@ export function wrapCompletionAdapter(Base, configPath, statePath) {
       } catch {
         return accept.call(this, packet);
       }
-      if (!config.tenantId || !config.marker || !config.nonce || config.expiresAt <= Date.now())
+      if (
+        !config.tenantId ||
+        (!config.marker && !config.sessionId) ||
+        !config.nonce ||
+        config.expiresAt <= Date.now()
+      )
         return accept.call(this, packet);
       let state = { nonce: config.nonce, results: [], probes: [] };
       try {
@@ -22,10 +27,12 @@ export function wrapCompletionAdapter(Base, configPath, statePath) {
       const result =
         packet.kind === "result" &&
         context?.scope?.tenantId === config.tenantId &&
-        context.toolName === "bash" &&
-        packet.result?.output?.response?.event?.result?.content?.some(
-          (part) => part.type === "text" && part.text.includes(config.marker),
-        );
+        (config.sessionId
+          ? context.scope.sessionId === config.sessionId && context.toolName === config.toolName
+          : context.toolName === "bash" &&
+            packet.result?.output?.response?.event?.result?.content?.some(
+              (part) => part.type === "text" && part.text.includes(config.marker),
+            ));
       const probe =
         packet.kind === "result" &&
         context?.kind === "execution_probe" &&
@@ -57,6 +64,7 @@ export function wrapCompletionAdapter(Base, configPath, statePath) {
       state.probes = state.probes.slice(-32);
       // Only bounded fixture identities/timing, never Tool bodies or credentials.
       writeFileSync(statePath, JSON.stringify(state), { mode: 0o600 });
+      if (result && config.defer) throw new Error("Owned acceptance: completion delivery deferred");
       if (result && config.dropAck) {
         await accept.call(this, packet);
         if (state.results.filter((row) => row.operationId === packet.operationId).length === 1)

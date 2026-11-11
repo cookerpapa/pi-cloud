@@ -253,7 +253,7 @@ try {
   const terminalMarker = `TERMINAL_ALIVE_${randomUUID().replaceAll("-", "")}`;
   terminalSocket.send(
     JSON.stringify({
-      workspaceTerminalProtocolVersion: 1,
+      workspaceTerminalProtocolVersion: 2,
       type: "workspace_terminal.input",
       data: Buffer.from(`printf '\\n%s\\n' '${terminalMarker}'\r`).toString("base64"),
     }),
@@ -269,7 +269,7 @@ try {
     heldMs: Math.round(performance.now() - terminalOpenedAt),
     sameConnection: true,
     samePhysicalRuntime: true,
-    pid: terminalFrame.pid,
+    terminalId: terminalFrame.terminalId,
   };
   await save();
 

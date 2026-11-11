@@ -153,7 +153,7 @@ export const EnvironmentValidationReportSchema = Type.Object(
   {
     ...EnvironmentValidationCommonSchema,
     isolationBoundary: Type.Literal("microvm"),
-    runtime: Type.Literal("cubesandbox-kvm"),
+    runtime: Type.Union([Type.Literal("cubesandbox-kvm"), Type.Literal("boxlite-kvm")]),
     networkMode: Type.Literal("public_web_proxy_private_denied"),
     // Cube's disposable CoW guest rootfs is writable. The non-root Tool
     // Worker and the independent guest kernel are the effective boundary.

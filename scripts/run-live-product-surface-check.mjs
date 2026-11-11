@@ -324,7 +324,7 @@ async function openHeldTerminal(sessionId, cookieHeader) {
           const command = Buffer.from("printf 'TERMINAL-SURFACE-OK\\n'", "utf8").toString("base64");
           socket.send(
             JSON.stringify({
-              workspaceTerminalProtocolVersion: 1,
+              workspaceTerminalProtocolVersion: 2,
               type: "workspace_terminal.input",
               data: Buffer.from(
                 `printf '%s' '${command}' | base64 -d | /bin/bash\n`,
@@ -356,7 +356,7 @@ async function openHeldTerminal(sessionId, cookieHeader) {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(
           JSON.stringify({
-            workspaceTerminalProtocolVersion: 1,
+            workspaceTerminalProtocolVersion: 2,
             type: "workspace_terminal.close",
           }),
         );
