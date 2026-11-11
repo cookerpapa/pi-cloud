@@ -335,6 +335,9 @@ The fixed Guest launcher submits the bounded result over HTTPS. An independent
 trusted completion service externalizes images and publishes replies after
 validating its scoped capability. Cubelet contains no Kafka/PG/S3 completion client.
 Only the Worker's Pi processing makes a result canonical.
+Worker inventory retirement revokes routing without cancelling accepted Guest
+work. A reachable old management endpoint has the same continuation semantics as
+an unreachable one; explicit chat Stop retains its ordered cancellation path.
 
 The Control Plane lazily prepares an immutable binding to an authorized VM/node/
 boot and working directory. Projector checks its ordered view, confirms its

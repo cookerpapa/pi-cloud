@@ -2,7 +2,7 @@
 
 [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) separates provider
 lifecycle evidence from PiCloud interval calculation and pricing. Delivery status
-and verification are recorded in the [current report](reports/runtime-decoupling-20261109.md).
+and verification are recorded in the [current report](reports/stock-cube-source-20261111.md).
 Statements remain informational: payment collection and production tariffs are disabled.
 
 ## Compute
@@ -18,7 +18,10 @@ native API inventory and the native Redis lifecycle channel. The first successfu
 creation receipt registers its bounded provider-id/tenant/Workspace mapping in
 the existing accounting resource directory. This is attribution metadata, not
 an interval, price or additional resource authority. It survives removal of the
-active management binding.
+active management binding. If native create omits CPU/memory, the same early
+receipt is enriched from the existing native detail read before Guest preparation.
+This preserves verified capacity for VMs shorter than the sampling interval; it
+does not invent a physical start time.
 
 Collection uses bounded pages and normally runs once per minute. Each observation
 page and its opaque cursor commit together in PG. A lost page or stale collector

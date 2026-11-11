@@ -1,6 +1,6 @@
 # Maintained backlog
 
-## Resource admission and stock sandbox boundaries — in progress
+## Resource admission and stock sandbox boundaries — deployed
 
 - [x] #26 source: one unresolved machine application per user; exact retries retain it.
 - [x] #26 source: reject lifecycle mutations until creation is resolved; reflect this in UI.
@@ -19,15 +19,17 @@
 - [x] #26 source: enrich creation receipts with native detail capacity before Guest preparation, including VMs shorter than the sampling interval.
 - [x] #26 source: reachable old-Worker inventory retirement revokes routing without cancelling accepted Guest Tools; two failing regressions now pass with the 79-case controller/API suite.
 - [x] #26 R4: capacity correction, admission/Stop, image/browser and owned-VM recovery acceptance passed.
-- [ ] #26: publish the Worker-retirement correction and verify the reachable inventory path, retention and accounting.
+- [x] #26 R5: publish the Worker-retirement correction and verify the forced reachable-inventory path plus accounting.
 - [x] #26: first stock matched delivery and original-asset preservation; Guest and Provider live gates passed.
-- [ ] #26: publish the capacity correction and complete final model/recovery/retention/accounting acceptance.
+- [x] #26: actual 30-minute expiry, active-wait renewal, retained-file recovery and environment-reset notice passed; final delivery evidence recorded.
+- [ ] #26 maintenance: reconcile four native template deletions that timed out and retire inactive private node-metadata buckets only under a narrow cold guard.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now
-deployed; final follow-up acceptance and subsequent BoxLite adoption remain pending.
+deployed and live-verified. Native cleanup maintenance and subsequent BoxLite
+adoption remain tracked separately. [Delivery](reports/stock-cube-source-20261111.md).
 
 ## Guest execution and Session activity — deployed
 
@@ -40,9 +42,9 @@ deployed; final follow-up acceptance and subsequent BoxLite adoption remain pend
 - [x] Serial verification, matched deployment, preservation and final patch inventory.
 
 [ADR-0307](adr/0307-guest-execution-and-session-activity.md) records the owner's
-revised retention policy and the implementation boundaries. Resource closure and
-Volume protection were assessed; their native implementation remains. A replacement
-requires a separately accepted provider contract; no new sandbox backend is enabled.
+revised retention policy and the implementation boundaries. Its resource/Volume
+assessment was superseded by ADR-0309 and the current stock Cube deployment; no
+new sandbox backend is enabled.
 
 [Source checks, live acceptance and remaining patch verdict](reports/guest-execution-20261110.md).
 
@@ -72,9 +74,9 @@ The scoped Web release preserves existing backend and VM identities.
 [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) and
 [delivery record](reports/runtime-decoupling-20261109.md). The matched release and
 two scoped corrections are deployed on schema 215 / Session v19 / replies v4.
-The [Cube assessment](research/cube-patch-assessment-20261110.md) keeps remaining
-admission, cancellation, lifecycle and Volume protections. Zero execution patches
-needs a separately verified replacement; no alternate runtime is enabled.
+The historical [Cube assessment](research/cube-patch-assessment-20261110.md) retained
+those native protections at that milestone. ADRs 0307/0309 replace them with Guest
+execution and the stock-provider boundary; no alternate runtime is enabled.
 
 ## Execution-owned tools and bindings — deployed
 
@@ -1916,10 +1918,10 @@ local Runs; ordinary active Runs retain the one-second missed-notification fallb
 
 - [ ] Measure cross-Worker Run-queue notification fan-out and ordinary active-Worker
       negative cancellation reads at fleet scale before changing the recovery cadence.
-- [ ] Measure mixed API/image/queue load after the bounded read/stream changes before
-      deciding whether the shared Control Plane needs process separation.
-- [ ] Evaluate upstreaming/narrowing the pinned Cube native execution extensions;
-      declarative release management does not eliminate their maintenance responsibility.
+- [ ] Measure mixed API/image/queue load across the now-independent API, Session
+      execution and management roles at fleet scale.
+- [x] Superseded by #26 / ADR-0309: remove the native Cube extensions and verify
+      the stock-provider boundary with external Guest and Volume integration.
 
 [ADR-0215](adr/0215-unlimited-product-quotas.md) is deployed: default resource and
 product quotas were removed, uploads stream with verified identity, and matched

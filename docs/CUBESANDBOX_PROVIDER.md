@@ -44,9 +44,11 @@ and position through that path to the Guest. It acknowledges only signal accepta
 the fixed guest delivers cancellation to its Tool AbortController. Native Durable
 abort may settle before physical completion and discard the original waiter.
 Already committed results remain; late replies cannot overwrite native abort.
-No cancellation ACK or missing reply proves process exit. Abnormal retirement
-retains a bounded target/run/writer in the existing Outbox so a lost Worker or
-deleted binding cannot erase the cancellation address (ADR-0229).
+No cancellation ACK or missing reply proves process exit. Explicit cancellation
+retains its bounded target/run/writer in the existing Outbox so a lost Worker or
+deleted binding cannot erase that address (ADR-0229). Worker inventory retirement
+itself only revokes routing and preserves accepted Guest work, whether the old
+management endpoint remains reachable or has disappeared.
 
 Normal Agent cancellation follows the Tool's process-group boundary. Completed
 background services and independent setsid groups remain alive. Native Tool
@@ -133,13 +135,17 @@ Initialization and live reads address the bound Volume directly. Subagents never
 copy this Volume: optional temporary Cubes mount it at the same guest path.
 Machine home Volumes use `/home/user`, not the machine's private system disk.
 
-Managed Volume placement records a hold before the node Create. Cubelet's
-synchronous reference metadata retains unfinished detach and a durable
-incarnation/revision; Master materializes the latest node state. Deletion closes
-new attachment admission and checks existing holds plus confirmed node detach.
-Zero local references alone do not prove physical cleanup. Allocation receipt
-loss/GC cannot erase the node identity needed to reconcile Volume state.
-Unreachable nodes and untracked historical references remain held (ADR-0226).
+Cube invokes the supported external [Volume Plugin](../deploy/cubesandbox/cube-volume-picloud-posix.sh)
+through its normal Master/Cubelet extension interface. The plugin maps a Volume
+identity to its persistent Workspace directory and records an opaque attachment
+receipt before returning the mount description. Only a matching Detach receipt
+releases that hold. A repeated Attach with a lost acknowledgement can retain an
+extra hold; missing metadata never means zero references.
+
+The plugin and Volume Gateway share deletion admission. Deletion closes new
+attachments and refuses unresolved holds. Native zero-reference counts alone do
+not authorize erasing bytes. This is external integration under ADR-0309; the
+former private node-reference/incarnation API is no longer part of the contract.
 
 A Workspace-owned Cube runtime may remain warm for one deployment-bounded TTL.
 Its processes, sockets and PTYs survive only while that exact runtime

@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-## Resource admission and stock sandbox boundaries — in progress
+## Resource admission and stock sandbox boundaries — deployed
 
 [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26) implements the
 owner's unresolved-creation restrictions and verifies recovery-aware deletion
@@ -9,8 +9,10 @@ remaining Cube patch before any removal. [#27](https://github.com/cookerpapa/pi-
 tracks BoxLite integration and the Android source audit. The owner subsequently
 accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
 APIs with conservative external ownership and explicit accounting gaps. Stock
-Cube R3 is deployed on schema 217 with original assets preserved. The final
-capacity correction and model/recovery acceptance remain in progress. The
+Cube R5 is deployed on schema 217 with original assets preserved. Capacity,
+image/browser, VM recovery, forced reachable-inventory Worker recovery and accounting
+acceptance passed, including the real 30-minute idle-expiry and retained-file recovery
+check. Native template/node-metadata cleanup remains tracked as maintenance. The
 [delivery report](reports/stock-cube-source-20261111.md) records passing live
 checks, failed samples, limits and the owner-approved exact-image exception.
 
@@ -20,9 +22,8 @@ Delivered [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under
 [ADR-0307](adr/0307-guest-execution-and-session-activity.md): Guest execution admission
 and cancellation, logical Worker activity through the existing Session writer,
 and finite expiry without a busy-Tool veto. Serial source checks, matched r3
-publication and real Guest/Luna/recovery/image acceptance passed. The provider API
-assessment retains native resource/Volume protections pending an equivalent
-contract. [Delivery and remaining patch verdict](reports/guest-execution-20261110.md).
+publication and real Guest/Luna/recovery/image acceptance passed. At that milestone, the provider assessment retained native resource/Volume
+protections; ADR-0309 now replaces them with the accepted stock-provider contract. [Delivery and remaining patch verdict](reports/guest-execution-20261110.md).
 
 ## Runtime decoupling and continuation — deployed
 
@@ -33,8 +34,8 @@ with serial source checks, matched publication and real API/Worker/VM/reply/imag
 completion and compute valuation had moved out, while native execution admission,
 cancellation and physical lifecycle protections remained. ADR-0307 replaces that
 native execution authority with the fixed Guest; the
-[current assessment](research/guest-and-resource-boundaries-20261110.md) documents
-the remaining resource, Volume and lifecycle extensions.
+[assessment at that milestone](research/guest-and-resource-boundaries-20261110.md)
+documents the former resource, Volume and lifecycle extensions; ADR-0309 removes them.
 [Progress and delivery evidence](reports/runtime-decoupling-20261109.md).
 
 ## Execution-owned tools and independent publication — deployed

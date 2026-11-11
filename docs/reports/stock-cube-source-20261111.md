@@ -1,203 +1,137 @@
-# Stock Cube source migration — 2026-11-11
+# Stock Cube deployment — 2026-11-11
 
-Status: **stock Cube R4 is deployed; a Worker-retirement correction and final acceptance are in progress**.
+Status: `stock-cube-20261111-r5` is deployed; maintained live acceptance passed.
 Tracking: [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26),
-[ADR-0309](../adr/0309-stock-sandbox-contract.md).
-The serving installation is `stock-cube-20261111-r4`, schema 217. Old VMs were
-retired with positive deletion evidence; both original development-machine
-identities recovered on new native VMs with their original Workspace bytes.
-Accounts, model/provider configuration, credentials and retained attachments were preserved.
+[ADR-0309](../adr/0309-stock-sandbox-contract.md),
+[ADR-0310](../adr/0310-stock-cube-release-exception.md).
 
-## What changes
+## Delivered boundary
 
-| Former Cube extension | Current source boundary |
+Cube API, Master, TemplateCenter and Cubelet use digest-pinned official v0.7.3
+images. Publication adds OCI labels only: every filesystem layer is checked
+against its official input. Both former Cube patch files, dependency rewrites
+and private allocation/history API consumers are removed. Other native chart
+images are included in the pinned upstream-image inventory.
+
+Pi Managed Agents still owns the Guest application, sandbox adapter, supported
+Volume Plugin and deployment configuration. The Volume Plugin is an executable
+invoked through Cube's normal storage interface: it mounts a persistent Workspace
+into a VM, retains an opaque receipt per attachment, and coordinates deletion
+with the Volume Gateway. Retiring compute alone does not erase that Workspace; explicit Workspace release
+is a separate lifecycle operation. Missing
+or mismatched attachment receipts remain uncertain rather than permitting deletion.
+This external integration is not a Cube source patch.
+
+| Former Cube extension | Maintained replacement |
 | --- | --- |
-| Assigned allocation identity, create retry and irreversible close RPC | PG authorizes one native create send; early encrypted provider receipt; unique read-only recovery; unresolved applications remain pending |
-| Recorded-node observation endpoint | Native inventory/API plus retained explicit native deletion events; an ordinary 404 or missing heartbeat is unknown |
-| Volume admission/reference extensions | Supported external Volume Plugin, persistent per-Attach receipts and shared deletion admission |
-| Allocation retention journal | Native timeout API and provider traffic behavior; fresh Session activity still comes through the existing Kafka writer |
-| Private lifecycle history API/journal | Independent native observation collector, bounded provider attribution and opaque PG cursor |
-| Managed pause/delete bridge | Ordinary provider pause/connect/delete; no diagnostics that implicitly resume a VM |
-| Template/artifact cleanup patches | Native operations; failure remains pending rather than deleting ownership evidence |
-| Dependency patches and Dockerfile rewrites | Pinned official artifacts, with publication metadata only and filesystem-layer parity checks |
+| Assigned allocation identity, create retry and irreversible close RPC | One PG-authorized native create send; encrypted early receipt; unique read-only recovery; unresolved applications remain pending |
+| Recorded-node observation endpoint | Native inventory/status and retained explicit native deletion evidence; ordinary missing inventory is unknown |
+| Private Volume references and admission | Supported external Volume Plugin, exact attachment receipts and shared deletion admission |
+| Allocation retention journal | Native timeout API and provider traffic semantics; fresh resource use arrives through the existing Session writer |
+| Private lifecycle history and compute receipts | Independent observation collector, bounded provider attribution and atomic opaque PG cursor |
+| Custom connection receipt lookup | Retained encrypted connection capsules, scoped to the original native identity |
+| Native execution admission, cancellation and completion | Fixed Guest program, ordinary process API, scoped HTTPS completion and protected original reply references |
 
-Both patch files and their private-API consumers have been removed from the source
-release path. Their historical contents remain linked at the immutable baseline
-[`e1eaeb1d`](../research/cube-patch-inventory-20261110.md). The Guest application,
-provider adapter, storage plugin and ordinary deployment configuration remain
-PiCloud code. This is not a claim that sandbox integration requires no custom code.
+The [original patch inventory](../research/cube-patch-inventory-20261110.md) links
+the immutable old baseline. Pi core is unchanged. No Tool result ledger, second
+scheduler, unsafe shell replay or compatibility runtime was introduced.
 
-Pi core, Session writer/lease ownership, Kafka-before-effect admission, Guest
-operation fencing/cancellation, HTTPS completion, original reply recovery and
-source output limits retain their current contracts. No Tool result ledger or
-second execution scheduler is introduced.
+## Published artifacts and preservation
 
-Schema 216 replaces the private creation deadline/protocol with a single-send
-permit and early receipt; current resource capsules use version 3. Schema 217
-adds a provider alias to the existing accounting resource directory and an opaque
-observation cursor. Session Kafka v20, replies v4, Guest executor 1 and fixed
-Tool protocol 7 are unchanged; resource bindings must nevertheless drain before
-this matched cutover.
+- Final matched artifact and operator revision: `e1cb8c913c6746c0419ff79673651fc37e7406ee`.
+- Application Helm revision 162; infrastructure 123; native Cube 221.
+- PG schema 217; Session Kafka v20; reply protocol v4; Guest executor 1; fixed Tool protocol 7.
+- Guest identity: `96e3d791e039a2d7fb60f3ea296194c122c04b5f`.
+- Fourteen scanned images, complete raw/policy findings, SBOMs and checksums.
+- Four exact official-image exceptions under ADR-0310; all other release gates remain enforced.
 
-## Explicit tradeoffs
+The operator drained writers, confirmed old compute deletion, verified the
+existing XFS Workspace filesystem and restored both original machines on new
+native VMs. Original account/model/credential records, both machine/Workspace
+identities and 394 original source/image files passed the preservation check.
+This is a targeted preservation check, not a full backup or a claim to hash every
+large file. The Workspace byte authority remained the same persistent filesystem.
 
-- Native creation is not exactly once. PiCloud sends once, but an upstream internal
-  retry can still be ambiguous. Missing or multiple lookup matches stay pending.
-- A lost Attach receipt can retain an extra hold. Late or empty Detach metadata
-  never releases a newer attachment. Missing hold directories are not reconstructed
-  as empty during normal operation. Some failures require operator reconciliation.
-- Stock CubeProxy counts routed Guest requests as activity. Periodic management
-  Guest probes were removed so they cannot prevent idle expiry. Native resource
-  reads remain periodic; execution uses on-demand full probes.
-- Stock Cube does not provide verified continuous physical-time coverage. Sampled
-  compute intervals are recorded as `provider_observation` / `unconfirmed` and are
-  **unpriced**. Model and enforced Workspace-capacity metering are unchanged.
-  Billable estimates require a separate explicit product contract.
-- Provider-confirmed deletion follows the native provider contract. PiCloud no
-  longer claims an independent kernel-level absence proof from a private node API.
+Five private Cube SQL tables and their two exact migration versions were removed
+after old writers disappeared. Partial cutover failures kept application writers
+stopped until repair; no mixed-protocol rollback was performed.
 
-## Source and isolated checks
+## Verification
 
-The source changes include real-PG single-send admission, lost reply recovery,
-late receipt/closure handling, preserved resource occupancy, bounded observation
-collection and atomic cursor checks. The shared-VM and dedicated-machine suites
-retain native family occupancy and explicit Stop semantics.
-
-Three isolated Docker checks passed for the actual storage plugin, and all three
-were repeated successfully inside both unchanged official Master and Cubelet images: concurrent
-initialization and killed publication; repeated Attach, late Detach, missing
-metadata and closed admission; root-owned files, interrupted deletion and retained
-original bytes. These checks did not replace a serving Cube engine.
-
-The consolidated source run exposed a migration constraint referencing a
-nonexistent terminal-table capsule column. It was corrected and verified on a
-new database. A startup fixture lacked the now-required private capsule key; it
-was corrected without relaxing production configuration. The affected 82 PG
-regressions passed afterward, as did the nine migration/startup smoke tests.
-The broader source run had 428 passing assertions before those repairs.
-A separate 60-case focused run and the 290-case acceptance-helper suite passed.
-Five final operator/cutover checks also passed.
-Environment-gated live checks remain excluded from those counts.
-
-All-workspace type checks, application build, Helm/distributed/self-hosted/Android
-chart checks, runtime policy and maintained documentation checks passed.
-The [20 targeted fault checks](stock-cube-faults-20261111.md) all passed. These source checks are distinct from the live results below and are not a fleet-scale claim.
-
-## Release gate found in unchanged upstream artifacts
-
-All four candidate images were built from the pinned official inputs with only
-publication labels; each filesystem layer list matched its upstream base exactly.
-After refreshing the vulnerability database, the existing Trivy/exception policy
-produced these fixable package findings:
-
-| Image | HIGH | CRITICAL |
-| --- | ---: | ---: |
-| Cube API | 15 | 1 |
-| Cube Master | 19 | 1 |
-| TemplateCenter | 14 | 0 |
-| Cubelet | 173 | 3 |
-
-These counts can repeat a vulnerability across packages/binaries; they are not
-counts of distinct reachable attacks. [Image identities and summary](stock-cube-images-20261111.json).
-Examples include Brotli, curl/OpenSSL, gRPC 1.80.0,
-quic-go 0.54.0, x/net 0.58.0 and Go 1.25.14. These are scanner findings, not an
-exploit experiment or a claim that each issue is reachable in this deployment.
-
-The existing release gate initially rejected these findings. The owner subsequently
-approved the four exact unchanged upstream inputs. [ADR-0310](../adr/0310-stock-cube-release-exception.md)
-and `514328ef` pin the accepted references and filesystem hashes. Raw/policy scans
-and SBOMs remain in the release evidence. Other image gates and all drain/fencing
-checks remain enforced; no dependency overlay or global scan bypass was introduced.
-
-Official upstream HEAD was checked as
-`84d9cedf806417b8e86794b86e12138503383f70`; its
-[Master dependency file](https://github.com/TencentCloud/CubeSandbox/blob/84d9cedf806417b8e86794b86e12138503383f70/CubeMaster/go.mod)
-still uses the relevant older libraries. Rebuilding OS layers alone cannot fix
-those pinned Go dependencies. An unmodified upstream API Dockerfile/source rebuild
-was also tried; it stopped on a Rust documentation download timeout. That failed
-attempt is not presented as a passing replacement artifact.
-
-## Matched publication and live results
-
-R3 was published with application Helm revision 160, infrastructure revision 121,
-schema 217, artifact revision `fc2f3918` and operator revision `8ec802f0`.
-The complete candidate contains 14 scanned images, with four exact stock-Cube
-exceptions. The Guest identity remains `96e3d791e039a2d7fb60f3ea296194c122c04b5f`.
-
-The operator drained writers and confirmed old compute deletion, preserved the
-existing XFS Workspace filesystem, initialized attachment state under the cold
-storage guard and removed the five private Cube SQL tables and two private
-migration versions. The four official engines and application roles became Ready.
-Both original machines recovered. The preservation check passed for original
-account/model/credential records, both machine/Workspace identities and 394
-original source/image files. This is a targeted preservation check, not a full backup.
-
-| Check | Result |
+| Check | Result and scope |
 | --- | --- |
-| Real Guest restart, exact cancellation, finite expiry with an unfinished Tool | Passed; 89-second live case |
-| Real Provider execution, PTY, reuse, stale-authority refusal, deletion uncertainty and cleanup | Two cases passed; four owned fixture accounts and Workspaces purged |
-| User-facing unresolved-create admission, exact retry and two Ready machines | Passed within the admission fixture |
-| User-facing Stop followed by release | First fixture raced resource-binding retirement; corrected wait still needs the final rerun |
-| Short-lived VM capacity | Real gap fixed in `e0485697`; 37 Provider cases and type checking passed; next matched candidate pending |
-| Full model/image/browser, Worker/VM recovery, production-window retention and accounting acceptance | Pending on the final candidate |
+| Native Guest restart, exact cancellation and expiry during unfinished work | Passed on R3; unchanged Guest and native filesystem inputs retained through R5 |
+| Native Provider execution, PTY, reuse, stale authority, deletion uncertainty and cleanup | Two real cases passed on R3; four owned accounts/Workspaces cleaned |
+| Creation admission and Stop/release | R4 passed unresolved-create restrictions, exact retry, two Ready machines, active-work rejection, native/binding retirement and preservation of the other machine |
+| Browser inputs and images | R4 passed lost-ACK/Stop/returned-input/image resend, direct vision, Chromium screenshot, inline image and named preview link checks |
+| Source output bounds | R4 Read returned 51,200/51,196 bytes from 120,017/140,031-byte ASCII/Unicode sources, preserving UTF-8 and canonical diagnostics |
+| Owned VM failure | R4 resumed the original Run with one original Tool call and an environment-reset record; fixture cleanup passed |
+| Worker failure with original Tool still running | R5 replaced the Worker in 26.8 seconds; the original command was still pending at reacquisition and completed afterward |
+| Reachable old inventory retirement | R5 explicitly invoked the old retirement path while that command was pending; cancellation remained false, the original result arrived and the file recorded exactly one start and finish |
+| Real resource accounting | R5 passed 1 GiB kernel enforcement, growth to 2 GiB, two Sessions sharing one allocation, paused compute with retained storage, stale-cursor refusal and authenticated statements |
+| Receipt deduplication | R5 kept two stored facts after three Workspace deliveries and two stale observation-page attempts; sixteen receipts exported |
+| Actual 30-minute idle policy | R5 passed the actual 1,800,000 ms policy: activity renewed a pending Tool, native deletion was confirmed, and a new VM read the retained file with an environment-reset notice |
 
-Three operator corrections were needed: use the existing Cube schema account for
-retired-table cleanup, check the official `v0.7.3` version manifest, and configure
-the WSL local web socket as its existing user during privileged maintenance.
-All were tested and pushed. Failed partial cutovers kept application writers
-stopped; they did not mix old and new protocols.
+All completed live fixtures confirmed their owned physical cleanup. The
+131 MiB cold model request was excluded as requested. New models were exercised
+with GPT-6 Luna. Tests ran serially; these are single-host results, not fleet-scale
+benchmarks or exactly-once guarantees for arbitrary commands.
 
-The first live fixtures also retained assumptions about private credentials,
-node fields and Cubelet accounting counters. `fab3b760` switches them to retained
-connection capsules, bounded positive deletion evidence and independent collector
-state. Failed samples remain recorded as failures. Two disposable, never-measured
-short-lifetime records required cold cleanup after physical deletion, delivery
-drain and stopping the sampler. No missing quantity or price was invented.
+The source migration also passed all-workspace type checks and application build,
+Helm/runtime-policy/docs checks, corrected migration/startup checks, the affected
+82 PG regressions, acceptance-helper checks and [20 targeted faults](stock-cube-faults-20261111.md).
+Later fixes passed 37 Provider cases, 79 controller/API cases, affected type checks,
+13 cleanup-barrier cases and [three Worker-retirement faults](stock-worker-retirement-20261111.md).
+These suites overlap earlier coverage; their counts are not summed as unique tests.
 
-The capacity correction reuses the already-required native detail read and
-persists verified CPU/memory before Guest preparation. This avoids losing capacity
-when a VM closes before the periodic sample. It adds no per-Tool query and does
-not turn observed compute intervals into confirmed billable time.
+## Failures found and repaired
 
-## Remaining maintenance and acceptance
+The initial operator still assumed a usable MySQL root login and a patched Cube
+version string. It now uses the existing schema account and official version
+manifest. Privileged WSL maintenance configures the localhost web socket under
+its existing runtime owner. These corrections preserve credentials, image checks
+and Workspace guards.
 
-Four obsolete templates were deferred after the native delete API timed out.
-Their ownership is retained. Inactive private node-metadata buckets are not read
-by stock Cube; removing them requires a narrow cold cleanup, never deleting the
-native metadata database or preserved Workspace bytes.
+Some live fixtures still expected private node/credential APIs and Cubelet
+accounting counters. They now use retained connection data, bounded native
+positive-deletion evidence and the independent collector's committed state.
+The accounting fixture uses the current observation cursor before testing that
+an obsolete collector cannot commit a page. Stock observations are not replayable
+raw provider history.
 
-One preserved Workspace has an old upload-cleanup locator whose directory identity
-changed. The fixed input programs work; new uploads re-register their actual
-staging directory. Existing bytes were preserved rather than guessed away.
+A real short-lifetime gap was fixed: native create replies can omit CPU/memory.
+The same early receipt is enriched from the already-required native detail read
+before Guest preparation. No extra per-Tool query, guessed quantity or fabricated
+physical start time is added. Two disposable unmeasured fixture records required
+explicit cold cleanup after physical deletion, receipt drain and stopping the
+sampler; the failed acceptance report was retained.
 
-Android packaging was simplified in `fa342d61`, with 221 upstream driver files/APKs
-byte-checked. Device publication remains pending and its intentionally stopped
-StatefulSet stays stopped. BoxLite remains conditional in #27. The requested
-131 MiB cold model upload is excluded from this acceptance.
+A Worker-loss sample recovered its Run but returned `Command aborted`. Two later
+passes did not explain that failure. A bounded read of the failed Session's Kafka
+interval found cancellation targets before a recoverable seal. The reachable
+old-management inventory path implicitly cancelled accepted Guest work; the
+unreachable path did not. Both regression tests failed before the fix. Routing
+retirement now preserves accepted work, while explicit chat Stop retains its
+ordered cancellation. The final live test forces this reachable path and checks
+the original protected binding, Tool result and execution count.
 
-## R4 follow-up
+Failed samples remain recorded as failures in private release evidence. Reports
+committed to the repository contain summaries, not user transcripts or credentials.
 
-R4 was published from `495b7d9f` with application Helm 161 / infrastructure 122.
-The capacity correction passed live: both short-lived allocations retained their
-verified CPU/memory, received a final absent observation and were cleaned normally.
-Pending-creation restrictions, exact retries, two Ready machines and Stop followed
-by complete binding retirement/release passed. Real browser input return/image
-resend, direct vision, bounded ASCII/Unicode Read, Guest Chromium screenshots,
-inline images and named preview links passed. Owned VM loss resumed the original
-Run with one original Tool call and an environment-reset record. Each fixture
-confirmed cleanup. Original-asset preservation passed again.
+## Deliberate limits and remaining maintenance
 
-One Worker-loss sample failed: the original Run recovered, but its Bash was aborted.
-Two subsequent samples passed, including a 90-second command confirmed still
-running when the replacement acquired the Run, with exactly one execution. These
-passes did not erase the first failure. A bounded read of that Session's retained
-Kafka interval found a cancellation target before a recoverable writer seal.
-
-The reachable management-inventory retirement path still requested cancellation
-of accepted Guest work. The unreachable-endpoint path did not, making the failure
-timing-dependent. Two deterministic controller regressions failed before the fix.
-Removing that cancellation request preserves routing revocation and leaves explicit
-chat Stop unchanged; the full 79-case controller/API run and type checking passed.
-The live fixture now explicitly invokes the old inventory path while the original
-command is pending, and retains bounded Tool evidence before cleanup. Publication
-and this final forced-path acceptance remain pending.
+- Stock Cube cannot prove continuous physical-time coverage. Sampled compute
+  intervals are **unconfirmed and unpriced**; model and verified Workspace-capacity
+  accounting retain their own evidence. Billable estimates need a separate decision.
+- Official-image dependency findings remain present under the explicitly approved
+  four-input exception. This is not remediation or a finding that every vulnerability
+  is unreachable. [Original scan identities and summary](stock-cube-images-20261111.json).
+- Native create is not exactly once. Missing/ambiguous results and lost attachment
+  acknowledgements may require operator reconciliation; uncertain ownership is retained.
+- Four obsolete templates were deferred after native delete timeouts. Inactive
+  private node-metadata buckets are not read by stock Cube; removing them requires
+  narrow cold cleanup, not deletion of the native metadata database.
+- One preserved Workspace has a stale upload-cleanup locator. Current input programs
+  work and new uploads re-register their staging directory; old bytes were preserved.
+- Android packaging was source-audited but its intentionally stopped deployment
+  remains stopped. BoxLite is not enabled. Portability work remains in [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27).

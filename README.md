@@ -195,7 +195,7 @@ continuation. Follow [configuration](docs/CONFIGURATION.md) and
 The stock Cube integration in [#26](https://github.com/cookerpapa/pi-managed-agents/issues/26)
 is deployed using unchanged, digest-pinned official v0.7.3 images. The owner accepted
 the reviewed findings for those four exact images under [ADR-0310](docs/adr/0310-stock-cube-release-exception.md);
-other release gates remain enforced. Final follow-up acceptance is tracked in the
+other release gates remain enforced. Serial deployment and acceptance are recorded in the
 [delivery report](docs/reports/stock-cube-source-20261111.md). Stock compute observations
 are unconfirmed/unpriced; model and Workspace-capacity metering remain independent.
 

@@ -6,20 +6,25 @@ The owner approved the four fixed official images under
 [ADR-0310](adr/0310-stock-cube-release-exception.md). Keep their findings visible,
 record the exact exception in release evidence and verify unchanged filesystem
 layers; other images retain the normal scan gate. Do not introduce a hidden
-source/dependency patch or a global skip flag. Cutover is in progress.
+source/dependency patch or a global skip flag. The stock R5 cutover is deployed;
+its final acceptance status is recorded in the [delivery report](reports/stock-cube-source-20261111.md).
 The new operator first settles applications and pending storage deletion, retires
 old compute, and initializes external Volume attachment state under the cold guard.
 Only after old native writers disappear may it remove private SQL extension tables.
 Accounts, configuration, retained attachments and Workspace bytes remain preserved.
 
-## Serving release before that cutover
+## Current contract
 
-ADR-0307 keeps schema 215 and reply topic v4, and changes the Session topic to v20,
-managed Cube protocol to 10, and fixed Guest executor control to version 1. The
-existing Guest Tool payload remains version 7. Guest admission/cancellation uses
-ordinary envd process APIs; remove native managed execution endpoints and their
-manager. Session activity replaces PG Worker/lease maintenance scans; probes are
-on-demand. [Decision](adr/0307-guest-execution-and-session-activity.md).
+The serving contract is schema 217, Session topic v20, reply topic v4, resource
+capsule 3, provider contract 1, Guest executor 1 and fixed Tool payload 7. There is
+no private managed Cube protocol. Guest admission/cancellation uses ordinary envd
+process APIs. Session activity supplies fresh resource use; native Cube timeout
+semantics own expiry, and on-demand execution probes retain their separate role.
+
+Worker inventory retirement closes routing without cancelling accepted Guest
+work. Explicit chat Stop remains an ordered Tool cancellation. The Worker handoff
+acceptance forces the reachable old-inventory path while the original command is
+still pending, checks that cancellation stays false, and requires one execution.
 
 Drain writers and materialize protected native replay suffixes before replacement.
 Preserve accounts, model/provider configuration, credentials, stable machine intent
@@ -40,7 +45,11 @@ with `scripts/run-live-cube-handoff-restart-check.mjs`; the Worker case must ret
 one logical Run and one start/end pair without redispatching the command. The
 publication is not complete until these maintained live gates pass.
 
-## Earlier release procedures
+## Historical decisions and release safeguards
+
+The older schema/protocol numbers below describe previous cutovers. Their private
+Cube interfaces are superseded by ADR-0309; use the current contract above and the
+maintained operator commands below, not a historical migration recipe.
 
 ADR-0305's earlier cutover installed schema 214, logical environment dispatch,
 ordered binding application acknowledgements, tool-host and the Kafka catalog.
@@ -71,9 +80,10 @@ against the installed explicit values. The private candidate retains the full
 manifest and stable credential additions; no Secret content is printed. New
 defaults are adopted with `--reset-then-reuse-values`, while Pod networking, the
 Master artifact volume and Workspace backing root are preserved. MinIO and
-S3lvol stay disabled; patched TemplateCenter uses the shared filesystem backend.
-Official bootstrap/runtime/CLI images have separate immutable digest and local
-image-ID evidence; they are not counted as part of the fourteen custom scans.
+S3lvol stay disabled; official TemplateCenter uses the shared filesystem backend.
+Upstream chart images have separate immutable digest and local image-ID evidence.
+The four metadata-labelled official engines remain inside the fourteen mandatory
+matched-image scans; the native-image exception is checked separately.
 All chart/image/input checks repeat before writer or VM drain. Native cutover
 refreshes the operator CLI from the matching Ready digest-pinned CLI Pod before
 updating cluster source metadata or registering templates.
@@ -505,9 +515,10 @@ change in this slice.
 
 ADR-0266 adds schema 194 for provisional attachment pins and positive object-write
 completion. Verify uncertain input/edit receipts, old-writer closure, late PUT
-cleanup and cancelled/corrupt source previews. ADR-0265 also requires matching
-Cube patch 0012 and native stale-holder/receipt-retention tests plus owned live
-KVM cleanup. Neither change revokes cleanup evidence by timeout or guessed zero.
+cleanup and cancelled/corrupt source previews. ADR-0265 used Cube patch 0012 for native stale-holder protection. ADR-0309
+replaces it with the supported external Volume Plugin and exact attachment receipts.
+Keep stale-holder/lost-acknowledgement and owned live KVM cleanup coverage. Neither
+contract permits cleanup based on timeout or guessed zero references.
 
 ADR-0264 requires matched schema 193, Session topic v18 and the separated
 `subagent` / `subagent_control` / `workflow` catalog. Drain and close all native
