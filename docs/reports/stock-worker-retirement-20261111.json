@@ -1,0 +1,39 @@
+{
+  "format": "pi-cloud.fault-eval-report.v1",
+  "piCloudRevision": "73f29525b9d38796a0748e51ab2c2c9715b2a387",
+  "dirtyWorktree": false,
+  "generatedAt": "2026-11-11T03:12:29.186Z",
+  "methodology": "deterministic_targeted_fault_injection",
+  "executionGroups": 1,
+  "executionDurationMs": 3207,
+  "durationMetric": "Vitest target assertion duration; shared file setup/process cost is groupDurationMs",
+  "liveChaosExperiment": false,
+  "caseCount": 3,
+  "successful": 3,
+  "successRate": 1,
+  "p50DurationMs": 2,
+  "p95DurationMs": 9,
+  "results": [
+    {
+      "id": "worker-inventory-retirement-reachable",
+      "success": true,
+      "invariant": "Worker inventory retirement revokes routing without cancelling accepted Guest work, independent of endpoint reachability.",
+      "durationMs": 2,
+      "groupDurationMs": 3203
+    },
+    {
+      "id": "worker-inventory-retirement-confirmed",
+      "success": true,
+      "invariant": "Worker inventory retirement revokes routing without cancelling accepted Guest work, independent of endpoint reachability.",
+      "durationMs": 1,
+      "groupDurationMs": 3203
+    },
+    {
+      "id": "shared-binding-explicit-cancellation",
+      "success": true,
+      "invariant": "Explicit cancellation still applies to the selected binding while its sibling and shared VM remain available.",
+      "durationMs": 9,
+      "groupDurationMs": 3203
+    }
+  ]
+}
