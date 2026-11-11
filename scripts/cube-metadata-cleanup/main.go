@@ -21,6 +21,13 @@ var obsolete = map[string]bool{
 	"pi-cloud.resource-usage.v1": true, "volume_reference_state": true,
 }
 
+func allowed(name, native string) bool {
+	if native == "volume_refcounts" {
+		return name == "volume_reference_state"
+	}
+	return obsolete[name] && name != "volume_reference_state"
+}
+
 type Report struct {
 	Removed      []string `json:"removed"`
 	RetainedHash string   `json:"retainedHash"`
@@ -43,10 +50,10 @@ func hashBucket(h hash.Hash, b *bolt.Bucket) error {
 		return nil
 	})
 }
-func retainedHash(tx *bolt.Tx) (string, error) {
+func retainedHash(tx *bolt.Tx, native string) (string, error) {
 	h := sha256.New()
 	err := tx.ForEach(func(k []byte, b *bolt.Bucket) error {
-		if obsolete[string(k)] {
+		if allowed(string(k), native) {
 			return nil
 		}
 		field(h, k)
@@ -54,25 +61,25 @@ func retainedHash(tx *bolt.Tx) (string, error) {
 	})
 	return hex.EncodeToString(h.Sum(nil)), err
 }
-func prune(tx *bolt.Tx) (Report, error) {
+func prune(tx *bolt.Tx, native string) (Report, error) {
 	r := Report{Removed: []string{}}
 	// A database without the native bucket is not the reviewed Cubelet metadata.
-	if tx.Bucket([]byte("volume_refcounts")) == nil {
-		return r, errors.New("native volume_refcounts bucket missing")
+	if tx.Bucket([]byte(native)) == nil {
+		return r, fmt.Errorf("native %s bucket missing", native)
 	}
-	before, err := retainedHash(tx)
+	before, err := retainedHash(tx, native)
 	if err != nil {
 		return r, err
 	}
 	for _, name := range []string{"pi-cloud.allocations.v1", "pi-cloud.lifecycle.v1", "pi-cloud.resource-usage.v1", "volume_reference_state"} {
-		if tx.Bucket([]byte(name)) != nil {
+		if allowed(name, native) && tx.Bucket([]byte(name)) != nil {
 			if err := tx.DeleteBucket([]byte(name)); err != nil {
 				return r, err
 			}
 			r.Removed = append(r.Removed, name)
 		}
 	}
-	after, err := retainedHash(tx)
+	after, err := retainedHash(tx, native)
 	if err != nil {
 		return r, err
 	}
@@ -82,7 +89,7 @@ func prune(tx *bolt.Tx) (Report, error) {
 	r.RetainedHash = after
 	return r, nil
 }
-func cleanup(path string) (Report, error) {
+func cleanup(path string, native string) (Report, error) {
 	var report Report
 	info, err := os.Lstat(path)
 	if err != nil {
@@ -96,15 +103,19 @@ func cleanup(path string) (Report, error) {
 		return report, err
 	}
 	defer db.Close()
-	err = db.Update(func(tx *bolt.Tx) error { var e error; report, e = prune(tx); return e })
+	err = db.Update(func(tx *bolt.Tx) error { var e error; report, e = prune(tx, native); return e })
 	return report, err
 }
 func main() {
-	if len(os.Args) != 3 || os.Args[1] != "--cold-prune" || filepath.Clean(os.Args[2]) != "/data/cubelet/state/io.containerd.metadata.v1.bolt/meta.db" {
-		fmt.Fprintln(os.Stderr, "operator only: --cold-prune /data/cubelet/state/io.containerd.metadata.v1.bolt/meta.db")
+	paths := map[string]string{
+		"/data/cubelet/state/io.containerd.metadata.v1.bolt/meta.db":               "v1",
+		"/data/cubelet/state/io.cubelet.internal.v1.storage/db/volume_refcount.db": "volume_refcounts",
+	}
+	if len(os.Args) != 3 || os.Args[1] != "--cold-prune" || paths[filepath.Clean(os.Args[2])] == "" {
+		fmt.Fprintln(os.Stderr, "operator only: --cold-prune REVIEWED_METADATA_PATH")
 		os.Exit(2)
 	}
-	r, err := cleanup(os.Args[2])
+	r, err := cleanup(os.Args[2], paths[filepath.Clean(os.Args[2])])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

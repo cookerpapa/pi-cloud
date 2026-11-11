@@ -29,6 +29,9 @@ The removed private patch created four top-level bbolt buckets:
 `pi-cloud.allocations.v1`, `pi-cloud.lifecycle.v1`,
 `pi-cloud.resource-usage.v1` and `volume_reference_state`. Pinned stock Cube does
 not use them. In particular, native `volume_refcounts` is **not** in this list.
+The first three belong to containerd `meta.db` (native `v1` bucket); the last
+belongs to `io.cubelet.internal.v1.storage/db/volume_refcount.db` (native
+`volume_refcounts` bucket). Each database has its own exact allowlist and hash.
 
 After compute absence and native writer shutdown, use upstream bbolt 1.4.3's
 exclusive file lock and a single `DeleteBucket` transaction. Require an existing

@@ -248,14 +248,15 @@ try {
       });
       mysql(repair.sql);
       state.repairedLocators = (state.repairedLocators ?? 0) + repair.changed;
-      const nodeReport = JSON.parse(
-        execFileSync(
-          binary,
-          ["--cold-prune", "/data/cubelet/state/io.containerd.metadata.v1.bolt/meta.db"],
-          { encoding: "utf8", timeout: 15_000 },
-        ),
-      );
-      state.node = nodeReport;
+      state.node ??= {};
+      for (const path of [
+        "/data/cubelet/state/io.containerd.metadata.v1.bolt/meta.db",
+        "/data/cubelet/state/io.cubelet.internal.v1.storage/db/volume_refcount.db",
+      ]) {
+        state.node[path] = JSON.parse(
+          execFileSync(binary, ["--cold-prune", path], { encoding: "utf8", timeout: 15_000 }),
+        );
+      }
       await save(state);
       await restore();
       await waitForCubeNodeReadiness({ kubectl });
