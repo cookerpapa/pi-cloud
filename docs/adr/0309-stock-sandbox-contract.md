@@ -198,3 +198,9 @@ resource, plus provider and Workspace receipt delivery. Observation pages and
 derived receipts commit with the cursor; a stale page cannot resurrect a retired
 resource after the cursor advances. There is no Cubelet capture counter or private
 compute outbox to drain. This cleanup guard never authorizes resource deletion.
+
+The create reply can omit resource capacity. Persist its identity and credentials
+immediately, then enrich that same receipt from the already-required native detail
+read before Guest preparation. This bounded creation update preserves verified
+capacity even when the VM closes before the first accounting sample. It does not
+invent a physical start time or make sampled compute intervals billable.

@@ -1654,44 +1654,71 @@ describe("CubeSandbox Provider contract", () => {
     }
   });
 
-  it("persists the original VM receipt before a Guest preparation failure", async () => {
-    const runtime = new FakeCubeRuntimeClient();
-    const cause = new Error("Guest transport disconnected");
-    vi.spyOn(runtime, "runCommand").mockRejectedValue(cause);
-    const provider = testCubeProvider({
-      templateId: "pi-cloud-tool-v1",
-      imageRevision: "development",
-      webProxy: WEB_PROXY,
-      runtimeClient: runtime,
-      workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
-      readyTimeoutMs: 30,
-    });
-    try {
-      const recordCreated = vi.fn(async () => {});
-      await expect(
-        provider.create(
-          {
-            activationId: ACTIVATION_ID,
-            assignment,
-            environment,
-            workspaceSeed: { kind: "sample_java" },
-            policy: provider.defaultPolicy,
-          },
-          { recordCreated },
-        ),
-      ).rejects.toMatchObject({ absenceConfirmed: false });
-      expect(recordCreated).toHaveBeenCalledOnce();
-      expect(recordCreated).toHaveBeenCalledWith(
-        expect.objectContaining({
-          runtimeName: "cube-sandbox-1",
-          capsule: expect.stringMatching(/^pcvm1_/),
-        }),
-      );
-      expect(runtime.destroyed).toEqual([]);
-    } finally {
-      await provider.close();
-    }
-  });
+  it.each([false, true])(
+    "persists identity and available capacity before Guest preparation fails (detail capacity: %s)",
+    async (detailCapacity) => {
+      const runtime = new FakeCubeRuntimeClient();
+      const create = runtime.create.bind(runtime);
+      vi.spyOn(runtime, "create").mockImplementation(async (input) => {
+        const instance = { ...(await create(input)) };
+        delete instance.cpuCount;
+        delete instance.memoryMB;
+        runtime.instances.set(instance.sandboxId, instance);
+        return instance;
+      });
+      if (detailCapacity) {
+        const read = runtime.read.bind(runtime);
+        vi.spyOn(runtime, "read").mockImplementation(async (id) => {
+          const value = await read(id);
+          return value ? { ...value, cpuCount: 2, memoryMB: 4096 } : value;
+        });
+      }
+      const cause = new Error("Guest transport disconnected");
+      vi.spyOn(runtime, "runCommand").mockRejectedValue(cause);
+      const provider = testCubeProvider({
+        templateId: "pi-cloud-tool-v1",
+        imageRevision: "development",
+        webProxy: WEB_PROXY,
+        runtimeClient: runtime,
+        workspaceVolumeGateway: fakeWorkspaceVolumeGateway(),
+        readyTimeoutMs: 30,
+      });
+      try {
+        const recordCreated = vi.fn(
+          async (_receipt: import("../src/sandbox-provider.ts").SandboxCreationReceipt) => {},
+        );
+        await expect(
+          provider.create(
+            {
+              activationId: ACTIVATION_ID,
+              assignment,
+              environment,
+              workspaceSeed: { kind: "sample_java" },
+              policy: provider.defaultPolicy,
+            },
+            { recordCreated },
+          ),
+        ).rejects.toMatchObject({ absenceConfirmed: false });
+        expect(recordCreated).toHaveBeenCalledTimes(detailCapacity ? 2 : 1);
+        expect(recordCreated.mock.calls[0]?.[0]).not.toHaveProperty("quantity");
+        if (detailCapacity)
+          expect(recordCreated).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+              quantity: { kind: "compute", cpuMillis: 2000, memoryBytes: 4096 * 1024 * 1024 },
+            }),
+          );
+        expect(recordCreated).toHaveBeenCalledWith(
+          expect.objectContaining({
+            runtimeName: "cube-sandbox-1",
+            capsule: expect.stringMatching(/^pcvm1_/),
+          }),
+        );
+        expect(runtime.destroyed).toEqual([]);
+      } finally {
+        await provider.close();
+      }
+    },
+  );
 
   it("retains guest continuity and observes a reboot after capsule adoption", async () => {
     const runtime = new FakeCubeRuntimeClient();

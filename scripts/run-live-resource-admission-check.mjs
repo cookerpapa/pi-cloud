@@ -170,6 +170,14 @@ try {
   );
   await api.cancelTurn(session.sessionId, run.turnId, newIdempotencyKey("stop"));
   assert.equal((await settled(run.runId)).state, "cancelled");
+  await until(async () => {
+    const machine = await db
+      .selectFrom("development_environments")
+      .select(["agent_activation_id", "terminal_active"])
+      .where("id", "=", first.environmentId)
+      .executeTakeFirstOrThrow();
+    return !machine.agent_activation_id && !machine.terminal_active;
+  }, "native owner and resource binding retirement");
   await api.developmentEnvironmentAction(
     first.environmentId,
     "release",

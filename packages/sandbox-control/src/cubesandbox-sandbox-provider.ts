@@ -855,7 +855,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       throw new SandboxCreationError(error, false);
     }
     await this.#recordCreated(spec.activationId, spec.assignment, instance, context);
-    return this.#prepareCreated(spec, instance);
+    return this.#prepareCreated(spec, instance, context);
   }
 
   async recoverCreation(
@@ -912,7 +912,7 @@ export class CubeSandboxProvider implements SandboxProvider {
       state: current.state,
     };
     await this.#recordCreated(spec.activationId, spec.assignment, restored, context);
-    return this.#prepareCreated(spec, restored);
+    return this.#prepareCreated(spec, restored, context);
   }
 
   async #recordCreated(
@@ -998,6 +998,7 @@ export class CubeSandboxProvider implements SandboxProvider {
   async #prepareCreated(
     spec: SandboxCreateSpec,
     instance: CubeSandboxInstance,
+    context: SandboxCreateContext,
   ): Promise<SandboxHandle> {
     const exclusiveMachine = spec.lifetime === "development_environment";
     const toolRoot = spec.toolRoot ?? (exclusiveMachine ? "/home/user" : "/workspace");
@@ -1023,7 +1024,10 @@ export class CubeSandboxProvider implements SandboxProvider {
         )
       )
         throw new Error("Cube runtime node identity was unavailable or changed");
+      const missingQuantity = !instance.cpuCount || !instance.memoryMB;
       instance = { ...current, ...instance, nodeId, state: current.state };
+      if (missingQuantity && instance.cpuCount && instance.memoryMB)
+        await this.#recordCreated(spec.activationId, spec.assignment, instance, context);
       const executionTarget = await this.#client.executionTarget(
         instance.sandboxId,
         nodeId,
