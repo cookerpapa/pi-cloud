@@ -2,7 +2,7 @@
 
 [ADR-0314](0314-platform-owned-elastic-expiry.md) moves elastic idle expiry to
 the existing PG-backed resource manager in #29, before #27 provider integration.
-It supersedes the native expiry portion of ADR-0309 after matched cutover.
+It supersedes ADR-0309's native expiry after the verified schema-218 cutover.
 
 [ADR-0312](0312-unmodified-alternate-sandbox-validation.md) permits explicitly
 owned BoxLite/Android validation while retaining Cube as the production default.
@@ -15,7 +15,7 @@ exception for four exact stock Cube image inputs; all other publication gates re
 
 [ADR-0309](0309-stock-sandbox-contract.md) records the owner's accepted zero-Cube-
 patch implementation boundary: native APIs, external ownership, pending uncertainty
-and unpriced accounting gaps. Implementation is in progress in #26–#27.
+and unpriced accounting gaps. #26 is deployed; #27 tracks alternate providers.
 
 [ADR-0308](0308-unresolved-resource-admission.md) records unresolved machine
 admission and recovery-aware deletion, with conditional stock Cube/BoxLite and

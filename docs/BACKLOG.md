@@ -1,16 +1,18 @@
 # Maintained backlog
 
-## Platform-owned elastic idle expiry — active prerequisite
+## Platform-owned elastic idle expiry — deployed
 
 - [x] #29 source: durable, indexed deadlines on existing elastic resource records.
 - [x] #29 source: coalesced Session/interactive usage updates PG without native timeout calls.
 - [x] #29 source: conditional expiry admission, existing physical cleanup and outage recovery.
 - [x] #29 source: disable Cube native expiry and remove native renewal/capsule timer fields.
-- [ ] #29: publish the matched schema-218/resource-capsule-v4 release.
-- [ ] #29: serial failure/live acceptance and original-asset preservation.
+- [x] #29: publish the matched schema-218/resource-capsule-v4 release.
+- [x] #29: serial failure/live acceptance and original-asset preservation.
 
-[ADR-0314](adr/0314-platform-owned-elastic-expiry.md). #27 production integration
-is explicitly sequenced after this prerequisite; its unfinished source is parked.
+[ADR-0314](adr/0314-platform-owned-elastic-expiry.md) is
+[live-verified](reports/platform-idle-expiry-20261111.md), including the actual
+30-minute deadline across management downtime. #27 production integration may
+now resume against this common expiry policy.
 
 ## Resource admission and stock sandbox boundaries — deployed
 
@@ -42,7 +44,7 @@ is explicitly sequenced after this prerequisite; its unfinished source is parked
 - [x] #27 source: owned BoxLite SDK/Guest probe and explicit ADR-0312 boundary; no engine patches or production fallback.
 - [x] #27 source: Android target access follows the separate Session API/Runtime; egress configuration uses the maintained execution service.
 - [x] #27 acceptance: seven BoxLite Guest/HTTPS scenarios and six real Android tools, retained images/browser rendering and device restart passed; original stopped target state restored. [Evidence](reports/sandbox-portability-20261111.md).
-- [ ] #27 promotion: general BoxLite provider/Workspace/quota integration, accepted host isolation and native elastic expiry; Android pending-operation wait continuation. These are outside the completed operator experiment.
+- [ ] #27 promotion: general BoxLite provider/Workspace/quota integration, accepted host isolation and ADR-0314 platform expiry; Android pending-operation wait continuation. These are outside the completed operator experiment.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now

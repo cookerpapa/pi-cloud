@@ -1,12 +1,14 @@
 # Implementation roadmap
 
-## Platform-owned elastic idle expiry — current priority
+## Platform-owned elastic idle expiry — deployed
 
-Implement [#29](https://github.com/cookerpapa/pi-managed-agents/issues/29) under
-[ADR-0314](adr/0314-platform-owned-elastic-expiry.md) first. One PG-backed resource
-manager will own deadlines and use ordinary provider deletion APIs; Cube's native
-expiry/renewal path is removed at cutover. Resume #27 BoxLite/Android integration
-only after serial deployment acceptance of this common policy.
+Delivered [#29](https://github.com/cookerpapa/pi-managed-agents/issues/29) under
+[ADR-0314](adr/0314-platform-owned-elastic-expiry.md). One PG-backed resource
+manager owns deadlines and uses ordinary provider deletion APIs; Cube's native
+expiry/renewal path is removed. [Serial live acceptance](reports/platform-idle-expiry-20261111.md)
+includes the actual 30-minute deadline across management downtime, Worker
+continuation and retained Workspace data. Resume #27 BoxLite/Android integration
+against this common policy; native AutoStop is no longer a prerequisite.
 
 ## Resource admission and stock sandbox boundaries — deployed
 

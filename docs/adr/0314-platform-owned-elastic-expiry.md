@@ -1,12 +1,13 @@
 # ADR-0314: Platform-owned elastic idle expiry
 
-Date: 2026-11-11. Status: accepted for implementation.
+Date: 2026-11-11. Status: implemented and deployed.
 Tracking: [#29](https://github.com/cookerpapa/pi-managed-agents/issues/29), prerequisite
 to the full alternate-provider integration in #27.
 
 The owner chooses one platform retention policy across sandbox providers. This
-supersedes ADR-0309's native-provider expiry authority. Stop #27 implementation
-until this slice is deployed and verified; retain its unfinished source separately.
+supersedes ADR-0309's native-provider expiry authority. The prerequisite to #27 is
+complete; [delivery evidence](../reports/platform-idle-expiry-20261111.md) records
+the matched release and serial acceptance.
 
 ## Authority and flow
 

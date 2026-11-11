@@ -62,9 +62,9 @@ protocol, record the decision under `docs/adr/` before implementation.
   for maintenance. Cold resource metadata bootstrap is allowed. On-demand probes
   register their original reply waiter before entering that same Session path.
   Diagnostic evidence never becomes native history or authorizes destruction,
-  replay, lease renewal or quota release. ADR-0314 now authorizes moving elastic
-  expiry to the existing PG-backed resource manager in #29 before #27 integration.
-  Until that matched cutover, ADR-0309's native timeout remains the serving behavior.
+  replay, lease renewal or quota release. Under ADR-0314 the existing PG-backed
+  resource manager owns elastic idle expiry; managed native timeouts are disabled.
+  Activity renews the recorded deadline without calling a provider timeout API.
   Without fresh activity, expiry may reclaim an unconfirmed Tool. Management
   observations must not generate Guest traffic that refreshes native idle time.
   Dedicated machines do not expire. Positive provider deletion evidence gates quota release.

@@ -563,7 +563,8 @@ or change cancellation/admission. See [OBSERVABILITY](OBSERVABILITY.md#worker-st
 | Long-term native state, semantic history and query indexes | PostgreSQL materialization |
 | Live views and routing observations | Rebuildable Worker/Projector memory |
 | Workspace files and physical Volume references | Cube persistent Volume / node evidence |
-| Guest processes and elastic idle expiry | Cubelet and the guest |
+| Guest processes | Provider runtime and fixed Guest |
+| Elastic idle deadline and expiry admission | PostgreSQL and resource management |
 | Provider credentials, account selection and upstream continuation | CLIProxyAPI |
 | Retained conversation attachments | Private S3 objects with PG/native references |
 

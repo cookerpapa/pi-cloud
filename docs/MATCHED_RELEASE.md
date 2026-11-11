@@ -1,12 +1,12 @@
 # Matched release
 
-ADR-0314's next matched cutover targets schema 218 and resource capsule 4.
+ADR-0314 is deployed as `platform-idle-20261111-r1`, schema 218 and resource capsule 4.
 Session v20, replies v4, provider contract 1, Guest executor 1 and Tool payload 7
 stay unchanged. Retire old physical allocations before switching: new managed
 Cube instances disable native timeout, and PG/resource management becomes the
 sole idle-expiry authority. Do not mix the two lifetime policies or retain a
-capsule compatibility reader. #29's deployment/acceptance status is tracked in
-[the backlog](BACKLOG.md).
+capsule compatibility reader. [Delivery evidence](reports/platform-idle-expiry-20261111.md)
+records the actual 30-minute test, management outage and Worker continuation.
 
 In addition to the relevant source/PG and existing live gates, run the actual
 30-minute retention scope with
@@ -31,11 +31,11 @@ Accounts, configuration, retained attachments and Workspace bytes remain preserv
 
 ## Current contract
 
-The preceding stock-R5 serving contract is schema 217, Session topic v20, reply topic v4, resource
-capsule 3, provider contract 1, Guest executor 1 and fixed Tool payload 7. There is
+The serving contract is schema 218, Session topic v20, reply topic v4, resource
+capsule 4, provider contract 1, Guest executor 1 and fixed Tool payload 7. There is
 no private managed Cube protocol. Guest admission/cancellation uses ordinary envd
-process APIs. Its native-expiry behavior is replaced by the schema-218 cutover
-above; on-demand execution probes retain their separate role.
+process APIs. Resource management owns idle expiry; on-demand execution probes
+retain their separate diagnostic role and never renew deadlines.
 
 Worker inventory retirement closes routing without cancelling accepted Guest
 work. Explicit chat Stop remains an ordered Tool cancellation. The Worker handoff

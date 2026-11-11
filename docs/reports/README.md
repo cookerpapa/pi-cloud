@@ -1,5 +1,8 @@
 # Delivery and research evidence
 
+- [Platform-owned elastic expiry](platform-idle-expiry-20261111.md): PG deadlines,
+  matched rollout, actual 30-minute management-outage test, original Worker reply
+  recovery and small-image/preview acceptance.
 - [Stock sandbox portability](sandbox-portability-20261111.md): real BoxLite
   Guest/HTTPS checks, official-configuration limits, Android publication and live
   device/image/restart acceptance; no new production default.
