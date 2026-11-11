@@ -27,8 +27,7 @@ Session writer. Its authorized change follows the existing Kafka Session path
 into the Projector's memory view. Subsequent dispatches read that view, not PG.
 The shared Projector confirms its dispatch position before sending an operation.
 The trusted executor acknowledges admission, invokes Appium/UiAutomator2, and
-publishes to the original operation's Worker reply topic. Replacement Workers
-retain protected original reply subscriptions under ADR-0306. The Worker
+publishes to the original operation's Worker reply topic. The Worker
 passes the reply to Pi before a canonical Tool Result enters native history.
 No independent broker, executor command queue or Tool-result database is added.
 
@@ -50,6 +49,10 @@ An action or reply lost in transit is UNKNOWN. Unsafe UI actions are not retried
 The current Run stops accepting further device work/model continuation on that
 uncertainty; a later Run can explicitly observe the device and decide what to do.
 Per-operation transport deadlines do not impose a total Run-duration limit.
+The retained Android prototype does not yet use the fixed Linux Guest's pending
+operation recovery descriptor. Do not infer full replacement-Worker wait
+continuation from its reply topic: interrupted device actions remain uncertain
+and are not automatically repeated. That is a separate promotion requirement.
 
 Chat Stop retains Pi Durable settlement and ordered operation cancellation. It
 can prevent a pending action or abort cancellable I/O, but does not undo a tap,
