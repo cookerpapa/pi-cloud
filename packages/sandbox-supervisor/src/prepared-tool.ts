@@ -10,6 +10,8 @@ export type PreparedToolExecution = Readonly<{
 }>;
 
 export type PreparedAgentTool = ToolRegistration & {
+  /** Recovery consumes the persisted original reply, never invokes a Tool again. */
+  recoverySource?: "reply";
   prepareExecution?: (
     callId: string,
     args: unknown,

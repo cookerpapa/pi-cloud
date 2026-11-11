@@ -148,6 +148,34 @@ it.skipIf(!postgres)(
         "closed",
       );
       revoke.mockResolvedValue();
+      // The old endpoint is still the cancellation target while Pi owns a
+      // pending original reply, even after destination admission is closed.
+      await sql`insert into pi_sessions(tenant_id,id) values(${tenant.tenantId}::uuid,${row.pi_session_id}) on conflict do nothing`.execute(
+        db,
+      );
+      await sql`insert into pi_durable_owned_records(tenant_id,session_id,id,kind,seq,ordinal,fields)
+        values(${tenant.tenantId}::uuid,${row.pi_session_id},999,'task',1,0,
+          ${JSON.stringify({ replyTopic: "original-topic", replyBinding: id, status: "running" })}::jsonb)`.execute(
+        db,
+      );
+      await service.cleanup();
+      expect((await service.read(id))?.closed).toBe(true);
+      await view.load([0], () => true);
+      expect(view.get(id, scope)).toBeUndefined();
+      const replacement = {
+        ...scope,
+        writerId: randomUUID(),
+        fencingToken: scope.fencingToken + 1,
+      };
+      expect(view.getCancellation(id, replacement, scope.writerId)?.id).toBe(id);
+      expect(
+        view.getCancellation(id, { ...replacement, tenantId: randomUUID() }, scope.writerId),
+      ).toBeUndefined();
+      expect(view.getCancellation(id, replacement, randomUUID())).toBeUndefined();
+      await sql`update pi_durable_owned_records set fields=fields||'{"status":"terminal"}'::jsonb
+        where tenant_id=${tenant.tenantId}::uuid and session_id=${row.pi_session_id} and id=999`.execute(
+        db,
+      );
       await service.cleanup();
       expect(await service.read(id)).toBeUndefined();
       release();

@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0313](0313-alternate-runtime-production-integration.md) authorizes full
+alternate-provider integration and shared original-operation reply recovery in
+#27, with serial deployment acceptance and no upstream engine patches.
+
 [ADR-0314](0314-platform-owned-elastic-expiry.md) moves elastic idle expiry to
 the existing PG-backed resource manager in #29, before #27 provider integration.
 It supersedes ADR-0309's native expiry after the verified schema-218 cutover.

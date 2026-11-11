@@ -1,7 +1,7 @@
 import { createServer } from "node:https";
 import { randomUUID, createHash } from "node:crypto";
 import { expect, it } from "vitest";
-import { GuestCompletionClient } from "../src/completion-client.ts";
+import { GuestCompletionClient } from "@pi-cloud/workspace-runtime/tool-completion-client";
 import { testTls } from "../../cube-completion/test/tls-fixture.ts";
 
 it("retries the identical finalized result after a lost HTTP ACK without executing another command", async () => {

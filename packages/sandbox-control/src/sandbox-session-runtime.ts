@@ -448,6 +448,7 @@ export async function createSandboxSessionRuntime(options: {
     cleanup.push(() => server.close());
     await server.listen();
     return {
+      completion,
       retention,
       sessionActivity,
       dispatcher,

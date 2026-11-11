@@ -1,5 +1,17 @@
 # Maintained backlog
 
+## Alternate runtime production integration — in progress
+
+- [x] #27 source: Android original-reply recovery, immutable cancellation targets and admission-only Worker retirement.
+- [x] #27 source: scoped HTTPS device completion, removing receiver Kafka/PG/S3 credentials.
+- [ ] #27: explicit BoxLite provider selection and managed Workspace/resource integration.
+- [ ] #27: serial real-deployment recovery, isolation, output/image and cleanup acceptance.
+
+[ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
+owner authorization beyond the earlier operator-only experiment.
+Android source/PG/Harness checks pass; matched publication and live device
+continuation remain part of the open acceptance item, not the old operator proof.
+
 ## Platform-owned elastic idle expiry — deployed
 
 - [x] #29 source: durable, indexed deadlines on existing elastic resource records.

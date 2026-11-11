@@ -3,16 +3,14 @@ import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 import {
   androidToolDefinitions,
-  ANDROID_OPERATION_TIMEOUT_MS,
+  parseExecutorOperation,
   type ExecutorBinding,
   type ExecutorOperation,
   type ExecutorCancellation,
   type ExecutorPosition,
   type ToolResultData,
-  type ImagePacked,
-  type ToolResultPayload,
+  type ExecutorCompletion,
 } from "@pi-cloud/protocol";
-import { TOOL_REPLY_TOPIC_PATTERN, type WorkerReply } from "@pi-cloud/event-log";
 import { AndroidToolError } from "./appium-driver.ts";
 
 export class ExecutorRefusal extends Error {
@@ -43,12 +41,7 @@ export class AndroidExecutionManager {
         args: Record<string, unknown>,
         signal: AbortSignal,
       ): Promise<ToolResultData>;
-      pack(
-        binding: ExecutorBinding,
-        result: ToolResultPayload,
-        signal: AbortSignal,
-      ): Promise<ImagePacked<ToolResultPayload>>;
-      publish(topic: string, reply: WorkerReply): Promise<void>;
+      complete(command: ExecutorOperation, output: ExecutorCompletion): Promise<void>;
       onError?(code: string): void;
     },
   ) {}
@@ -60,7 +53,6 @@ export class AndroidExecutionManager {
     if (binding.targetId !== this.options.targetId || binding.bootId !== this.options.bootId)
       throw new ExecutorRefusal("executor_replaced");
     if (!this.#binding || BigInt(binding.generation) > BigInt(this.#binding.generation)) {
-      this.#active?.abort.abort(new Error("Execution binding replaced"));
       this.#binding = structuredClone(binding);
       this.#closedBinding = false;
       this.#position = undefined;
@@ -80,8 +72,12 @@ export class AndroidExecutionManager {
     );
   }
   submit(command: ExecutorOperation): { accepted: true } {
-    if (!TOOL_REPLY_TOPIC_PATTERN.test(command.replyTopic))
-      throw new ExecutorRefusal("executor_invalid_reply_topic");
+    try {
+      parseExecutorOperation(command);
+    } catch {
+      throw new ExecutorRefusal("executor_invalid_completion");
+    }
+    if (command.deadlineAt <= Date.now()) throw new ExecutorRefusal("executor_deadline_elapsed");
     if (this.options.ready && !this.options.ready())
       throw new ExecutorRefusal("executor_unavailable");
     this.#authorize(command.binding);
@@ -118,10 +114,30 @@ export class AndroidExecutionManager {
     return { accepted: true };
   }
   cancel(value: ExecutorCancellation): void {
+    // Recovery keeps the original immutable target. A newer admission generation
+    // must not prevent cancelling that exact old action, nor let it cancel a new one.
+    const original = this.#active?.command;
+    if (
+      original &&
+      original.operationId === value.operationId &&
+      isDeepStrictEqual(original.binding, value.binding)
+    ) {
+      const p = original.position,
+        q = value.position;
+      if (
+        p.topic !== q.topic ||
+        p.partition !== q.partition ||
+        BigInt(q.offset) < BigInt(p.offset) ||
+        (q.offset === p.offset && q.index <= p.index)
+      )
+        throw new ExecutorRefusal("executor_cancel_position_stale");
+      if (isDeepStrictEqual(this.#binding, value.binding) && this.#positionAfter(q))
+        this.#position = { ...q };
+      this.#active!.abort.abort(new Error("Tool cancelled"));
+      return;
+    }
     this.#authorize(value.binding);
     if (this.#positionAfter(value.position)) this.#position = { ...value.position };
-    if (this.#active?.command.operationId === value.operationId)
-      this.#active.abort.abort(new Error("Tool cancelled"));
   }
   closeBinding(binding: ExecutorBinding): void {
     try {
@@ -137,15 +153,14 @@ export class AndroidExecutionManager {
       throw error;
     }
     this.#closedBinding = true;
-    this.#active?.abort.abort(new Error("Binding closed"));
   }
   async #run(active: Active): Promise<void> {
     const call = active.command;
     const signal = AbortSignal.any([
       active.abort.signal,
-      AbortSignal.timeout(ANDROID_OPERATION_TIMEOUT_MS),
+      AbortSignal.timeout(Math.max(1, call.deadlineAt - Date.now())),
     ]);
-    let reply: WorkerReply;
+    let reply: ExecutorCompletion;
     try {
       signal.throwIfAborted();
       let isError = false;
@@ -157,39 +172,16 @@ export class AndroidExecutionManager {
           return { content: [{ type: "text" as const, text: error.message }] };
         });
       signal.throwIfAborted();
-      const packed = await this.options.pack(
-        call.binding,
-        { toolName: call.toolName, toolCallId: call.nativeCallId, result, isError },
-        signal,
-      );
-      reply = { kind: "tool_result", operationId: call.operationId, sequence: 1, result: packed };
-    } catch {
       reply = {
-        kind: "execution_failure",
-        operationId: call.operationId,
-        sequence: 1,
-        toolCallId: call.nativeCallId,
-        toolName: call.toolName,
-        failure: {
-          code: "executor_result_unknown",
-          effect: "unknown",
-          message:
-            "The device did not return a confirmed result. The operation may have happened. Inspect its current state before repeating it.",
-        },
+        type: "executor.result",
+        result: { toolName: call.toolName, toolCallId: call.nativeCallId, result, isError },
       };
+    } catch {
+      reply = { type: "executor.unknown" };
     }
-    // Repeat only the immutable result. Reopening an Appium request would repeat
-    // an external action, even if the original HTTP/Kafka receipt was lost.
-    const until = Date.now() + 30000;
-    do {
-      try {
-        await this.options.publish(call.replyTopic, reply);
-        return;
-      } catch {
-        if (this.#closed || Date.now() >= until) throw new Error("Result delivery ended");
-        await new Promise<void>((resolve) => setTimeout(resolve, 500));
-      }
-    } while (true);
+    // The shared HTTPS client retries only this immutable result through its
+    // original absolute deadline. It never reopens an Appium action.
+    await this.options.complete(call, reply);
   }
   async close(): Promise<void> {
     this.#closed = true;

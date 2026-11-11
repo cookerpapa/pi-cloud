@@ -434,6 +434,70 @@ it("offers phone capabilities only to the granted root and lazily prepares its o
     content: [{ type: "text", text: "screen" }],
   });
   prepared.dispose();
+  const reply = {
+    topic: `pi-cloud.tool-replies.v4.${crypto.randomUUID()}`,
+    partition: 0 as const,
+    offset: "17",
+    deadlineAt: Date.now() + 18000,
+    toolCallId: "phone-call",
+    toolName: "android_observe",
+  };
+  const source: import("@pi-cloud/protocol").OriginalRemoteToolIntent = {
+    sequence: 12,
+    taskId: 8,
+    conversationId: 1,
+    reply,
+    command: {
+      kind: "executor_tool",
+      target: "executor",
+      operationId: crypto.randomUUID(),
+      bindingId: "original-binding",
+      taskId: 8,
+      conversationId: 1,
+      toolName: "android_observe",
+      nativeCallId: "phone-call",
+      arguments: {},
+      occurredAt: new Date().toISOString(),
+      scope: {
+        tenantId: "tenant",
+        runId: "run",
+        sessionId: "session",
+        turnId: "turn",
+        piSessionId: "physical",
+        writerId: "old-writer",
+        fencingToken: 1,
+      },
+      replyTopic: reply.topic,
+      replyRecovery: reply,
+    },
+  };
+  const wait = vi.spyOn(runtime.options, "wait");
+  const recovered = await withToolInvocation({ id: "task:8", nativeToolCallId: "phone-call" }, () =>
+    tool.prepareRecovery!("phone-call", {}, undefined, source),
+  );
+  expect(tool.recoverySource).toBe("reply");
+  expect(wait.mock.calls.at(-1)?.[5]).toBe(source.reply);
+  expect(recovered.command).toMatchObject({
+    operationId: (source.command as import("@pi-cloud/protocol").AcceptedExecutorToolCommand)
+      .operationId,
+    bindingId: "original-binding",
+    originalWriterId: "old-writer",
+  });
+  expect(prepareTarget).toHaveBeenCalledTimes(1);
+  mailbox.accept({
+    kind: "tool_result",
+    sequence: 1,
+    operationId: (source.command as import("@pi-cloud/protocol").AcceptedExecutorToolCommand)
+      .operationId,
+    result: {
+      toolName: "android_observe",
+      toolCallId: "phone-call",
+      isError: false,
+      result: { content: [{ type: "text", text: "original" }] },
+    },
+  });
+  expect(await recovered.result()).toMatchObject({ content: [{ text: "original" }] });
+  recovered.dispose();
   catalog.update(controlToolCatalog([]));
   expect(root.current().some((t) => t.tool.name === "android_observe")).toBe(false);
   await expect(

@@ -672,7 +672,7 @@ export class PiCloudTurnRunner {
           const prepare = invocation.recovery ? tool?.prepareRecovery : tool?.prepareExecution;
           if (!tool || !prepare) throw new Error("Remote Tool has no matching preparation port");
           const original =
-            invocation.recovery && ["bash", "read", "write", "edit"].includes(invocation.toolName)
+            invocation.recovery && tool.recoverySource === "reply"
               ? await owner.remoteToolIntent(invocation.taskId, invocation.conversationId)
               : undefined;
           const prepared = await withToolInvocation(

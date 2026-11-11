@@ -163,6 +163,7 @@ export class DurableRemoteTools {
             activationId: command.bindingId,
             operationId: command.operationId,
             target: "executor",
+            ...(command.originalWriterId ? { originalWriterId: command.originalWriterId } : {}),
           });
         else if (!isControlToolCommand(command))
           cancellations.push({

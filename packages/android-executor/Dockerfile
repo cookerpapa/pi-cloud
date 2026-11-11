@@ -1,4 +1,4 @@
-# The matched Control Plane image supplies pinned protocol/Kafka/image libraries.
+# The matched Control Plane image supplies pinned protocol/HTTPS completion libraries.
 ARG PI_CLOUD_CONTROL_IMAGE
 FROM ${PI_CLOUD_CONTROL_IMAGE}
 COPY packages/android-executor/package.json packages/android-executor/package.json

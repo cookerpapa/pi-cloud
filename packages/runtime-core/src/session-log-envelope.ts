@@ -162,6 +162,8 @@ export function expandSessionLogEnvelope(input: unknown): SessionLogFact {
             "conversationId",
             "toolName",
             "view",
+            "occurredAt",
+            "replyRecovery",
           ]);
           const { view: address, ...reference } = tool;
           return { ...reference, scope: scope(root, address), replyTopic };

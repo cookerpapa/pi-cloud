@@ -12,7 +12,7 @@ import { captureNativePresentation } from "./frozen-history.ts";
 
 function cloudMetadata(fact: AcceptedDurableCommitFact) {
   const controlTools = fact.tools.filter((tool) => tool.target === "control");
-  const remoteTools = fact.tools.filter((tool) => tool.target === "cube" && tool.replyRecovery);
+  const remoteTools = fact.tools.filter((tool) => tool.target !== "control" && tool.replyRecovery);
   return controlTools.length || remoteTools.length
     ? {
         ...(controlTools.length ? { controlTools } : {}),

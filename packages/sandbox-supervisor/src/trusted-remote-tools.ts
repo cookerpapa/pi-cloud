@@ -459,6 +459,7 @@ export function createTrustedRemoteAgentTools(
     if (!allowedTools.has(tool.name as CloudToolName)) continue;
     tools.push({
       ...tool,
+      recoverySource: "reply",
       async execute() {
         throw new Error("Remote Tool must be prepared and committed by the trusted Runner");
       },
@@ -466,6 +467,7 @@ export function createTrustedRemoteAgentTools(
         signal?.throwIfAborted();
         if (
           !original ||
+          original.command.kind !== "tool_command" ||
           original.reply.toolCallId !== id ||
           original.reply.toolName !== tool.name ||
           original.command.request.operation !== "tool.execute" ||
@@ -473,6 +475,7 @@ export function createTrustedRemoteAgentTools(
           !runtime.waitForToolReply
         )
           throw new Error("Remote Tool recovery has no matching original operation");
+        const originalCommand = original.command;
         const controller = new AbortController();
         const lifetime = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]);
         const pending = runtime.waitForToolReply(
@@ -504,7 +507,7 @@ export function createTrustedRemoteAgentTools(
               throw failure;
             });
             const evidence = pending.executionEvidence?.();
-            if (evidence && evidence.bindingId === original.command.request.activationId)
+            if (evidence && evidence.bindingId === originalCommand.request.activationId)
               await runtime.recordExecution?.(evidence, original.command.scope.writerId);
             if (
               !runtime.supportsImages &&

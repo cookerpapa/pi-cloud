@@ -3,7 +3,7 @@ import type { AcceptedToolCommand } from "./tool-command.ts";
 import type { ExecutionEvidence } from "./execution-probe.ts";
 
 export type ToolCompletionContext = {
-  kind?: never;
+  kind?: "executor_tool";
   scope: AcceptedToolCommand["scope"];
   replyTopic: string;
   toolCallId: string;

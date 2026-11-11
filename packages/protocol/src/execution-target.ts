@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
+import { parseToolReplyRecovery, type ToolReplyRecovery } from "./tool-recovery.ts";
 
 export const ExecutionCapabilitySchema = Type.String({ pattern: "^[a-z][a-z0-9_.-]{0,63}$" });
 export const ExecutionTargetGrantSchema = Type.Object(
@@ -101,6 +102,9 @@ export type CandidateExecutorToolCommand = Readonly<{
   toolName: string;
   arguments: Record<string, unknown>;
   occurredAt: string;
+  /** Recovery reattaches to this original effect; it does not dispatch it again. */
+  originalWriterId?: string;
+  replyRecovery?: ToolReplyRecovery;
 }>;
 export type ExecutorToolDispatch = Readonly<{
   target: "executor";
@@ -110,6 +114,8 @@ export type ExecutorToolDispatch = Readonly<{
   conversationId: number;
   toolName: string;
   replyTopic: string;
+  occurredAt: string;
+  replyRecovery: ToolReplyRecovery;
 }>;
 const ExecutorToolDispatchSchema = Type.Object(
   {
@@ -120,6 +126,8 @@ const ExecutorToolDispatchSchema = Type.Object(
     conversationId: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
     toolName: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     replyTopic: Type.String({ minLength: 1, maxLength: 249 }),
+    occurredAt: Type.String({ minLength: 1, maxLength: 64 }),
+    replyRecovery: Type.Unknown(),
   },
   { additionalProperties: false },
 );
@@ -128,7 +136,14 @@ export function parseExecutorToolDispatch(value: unknown): ExecutorToolDispatch 
   const { scope: _scope, ...descriptor } = value as ExecutorToolDispatch & { scope?: unknown };
   if (!Value.Check(ExecutorToolDispatchSchema, descriptor))
     throw new TypeError("Invalid executor Tool dispatch");
-  return descriptor;
+  const reply = parseToolReplyRecovery(descriptor.replyRecovery);
+  if (
+    !Number.isFinite(Date.parse(descriptor.occurredAt)) ||
+    reply.topic !== descriptor.replyTopic ||
+    reply.toolName !== descriptor.toolName
+  )
+    throw new TypeError("Invalid executor Tool recovery identity");
+  return { ...descriptor, replyRecovery: reply };
 }
 
 export type ExecutorCallScope = Readonly<{

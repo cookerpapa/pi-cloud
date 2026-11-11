@@ -62,21 +62,14 @@ spec:
             - { name: PI_CLOUD_EXECUTION_TARGET_ID, value: {{ required "targetId is required" .Values.targetId | quote }} }
             - { name: PI_CLOUD_APPIUM_URL, value: "http://127.0.0.1:4723" }
             - { name: PI_CLOUD_ANDROID_UDID, value: "127.0.0.1:6520" }
-            - { name: PI_CLOUD_DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
-            - { name: PI_CLOUD_KAFKA_BROKERS, value: {{ .Values.kafkaBrokers | quote }} }
-            - { name: PI_CLOUD_IMAGE_S3_ENDPOINT, value: {{ .Values.imageEndpoint | quote }} }
-            - { name: PI_CLOUD_IMAGE_S3_BUCKET, value: {{ .Values.imageBucket | quote }} }
-            - { name: PI_CLOUD_IMAGE_S3_CREDENTIALS_FILE, value: /run/pi-cloud-secrets/session-image-s3-credentials.json }
           ports: [{ name: executor, containerPort: 8090 }]
           readinessProbe: { tcpSocket: { port: executor }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /health/live, port: executor }, initialDelaySeconds: 200, periodSeconds: 10 }
           resources:
             requests: { cpu: 100m, memory: 128Mi }
           volumeMounts:
-            - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: database-url, readOnly: true }
             - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/supervisor-management-token, subPath: supervisor-management-token, readOnly: true }
-            - { name: executor-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: session-image-s3-credentials.json, readOnly: true }
         - name: egress
           image: {{ required "Pinned egress image is required" .Values.images.egress | quote }}
           imagePullPolicy: IfNotPresent
@@ -102,9 +95,7 @@ spec:
             secretName: {{ .Values.existingSecret }}
             defaultMode: 292
             items:
-              - { key: database-url, path: database-url }
               - { key: supervisor-management-token, path: supervisor-management-token }
-              - { key: session-image-s3-credentials.json, path: session-image-s3-credentials.json }
         - name: egress-secrets
           secret:
             secretName: {{ .Values.existingSecret }}

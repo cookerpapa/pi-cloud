@@ -17,6 +17,7 @@ import {
   type OriginalControlToolIntent,
   type OriginalRemoteToolIntent,
   type AcceptedToolCommand,
+  type AcceptedExecutorToolCommand,
   type PendingToolReplyRecovery,
   parseToolReplyRecovery,
   durableToolIntent,
@@ -82,13 +83,18 @@ export type ManagedNativeRuntime = {
     view?: ConversationWorkView;
   }): Promise<number>;
 };
-type RemoteToolMetadata = Omit<AcceptedToolCommand, "kind" | "toolCallId" | "request"> & {
-  taskId: number;
-  request: Omit<
-    Extract<AcceptedToolCommand["request"], { operation: "tool.execute" }>,
-    "args" | "toolCallId"
-  >;
-};
+type RemoteToolMetadata =
+  | (Omit<AcceptedToolCommand, "kind" | "toolCallId" | "request"> & {
+      target: "cube";
+      taskId: number;
+      request: Omit<
+        Extract<AcceptedToolCommand["request"], { operation: "tool.execute" }>,
+        "args" | "toolCallId"
+      >;
+    })
+  | (Omit<AcceptedExecutorToolCommand, "kind" | "arguments" | "nativeCallId" | "operationIndex"> & {
+      target: "executor";
+    });
 type Owner = {
   authority: ActiveExecutionAuthority & { start(): void; assertActive(): void };
   storage: Promise<PublishedDurableStorage>;
@@ -102,7 +108,10 @@ type Owner = {
   closing?: Promise<void>;
   interruption: AbortController;
   readSignal: AbortSignal;
-  recoveredOperations: Map<number, { operationId: string; activationId: string; writerId: string }>;
+  recoveredOperations: Map<
+    number,
+    { operationId: string; activationId: string; writerId: string; target: "cube" | "executor" }
+  >;
 };
 export type DurableSessionHandle = {
   binding: DurableRunBinding;
@@ -308,7 +317,9 @@ export class PostgresDurableSessionHost {
           source.scope.sessionId !== binding.sessionId ||
           source.scope.turnId !== binding.turnId ||
           write.value?.conversationId !== conversationId ||
-          source.request?.operation !== "tool.execute"
+          (source.target === "cube"
+            ? source.request?.operation !== "tool.execute"
+            : source.target !== "executor" || source.conversationId !== conversationId)
         )
           throw new Error("Remote Tool recovery changed native work identity");
         const sequence = Number(row.seq);
@@ -320,7 +331,7 @@ export class PostgresDurableSessionHost {
         if (
           reply.topic !== source.replyTopic ||
           reply.toolCallId !== intent.callId ||
-          reply.toolName !== source.request.toolName
+          reply.toolName !== (source.target === "cube" ? source.request.toolName : source.toolName)
         )
           throw new Error("Remote Tool recovery changed reply identity");
         return {
@@ -328,20 +339,37 @@ export class PostgresDurableSessionHost {
           taskId,
           conversationId,
           reply,
-          command: {
-            kind: "tool_command",
-            scope: source.scope,
-            toolCallId: `task:${taskId}`,
-            replyTopic: source.replyTopic,
-            replyRecovery: reply,
-            occurredAt: source.occurredAt,
-            ...(source.environment ? { environment: source.environment } : {}),
-            request: parseToolSandboxOperationRequest({
-              ...source.request,
-              args: intent.arguments,
-              toolCallId: intent.callId,
-            }),
-          },
+          command:
+            source.target === "executor"
+              ? {
+                  kind: "executor_tool",
+                  target: "executor",
+                  scope: source.scope,
+                  operationId: source.operationId,
+                  bindingId: source.bindingId,
+                  taskId,
+                  conversationId,
+                  toolName: source.toolName,
+                  nativeCallId: intent.callId,
+                  arguments: intent.arguments,
+                  replyTopic: source.replyTopic,
+                  replyRecovery: reply,
+                  occurredAt: source.occurredAt,
+                }
+              : {
+                  kind: "tool_command",
+                  scope: source.scope,
+                  toolCallId: `task:${taskId}`,
+                  replyTopic: source.replyTopic,
+                  replyRecovery: reply,
+                  occurredAt: source.occurredAt,
+                  ...(source.environment ? { environment: source.environment } : {}),
+                  request: parseToolSandboxOperationRequest({
+                    ...source.request,
+                    args: intent.arguments,
+                    toolCallId: intent.callId,
+                  }),
+                },
         };
       },
       owner.readSignal,
@@ -373,15 +401,17 @@ export class PostgresDurableSessionHost {
         source.scope.runId !== binding.runId
       )
         throw new Error("Pending Tool replay scope changed");
+      if (source.target !== "cube" && source.target !== "executor")
+        throw new Error("Pending Tool recovery target changed");
+      const operationId =
+        source.target === "cube" ? source.request.operationId : source.operationId;
       operations.set(Number(row.id), {
-        operationId: source.request.operationId,
-        activationId: source.request.activationId,
+        operationId,
+        activationId: source.target === "cube" ? source.request.activationId : source.bindingId,
         writerId: source.scope.writerId,
+        target: source.target,
       });
-      return {
-        operationId: source.request.operationId as string,
-        reply: parseToolReplyRecovery(source.replyRecovery),
-      };
+      return { operationId, reply: parseToolReplyRecovery(source.replyRecovery) };
     });
     if (!stopOnResume && references.length) {
       if (!this.options.restoreReplies)
@@ -626,6 +656,7 @@ export class PostgresDurableSessionHost {
                     activationId: original.activationId,
                     operationId: original.operationId,
                     originalWriterId: original.writerId,
+                    ...(original.target === "executor" ? { target: "executor" as const } : {}),
                   });
                 if (task.terminal) completedRecoveries.push(task.id);
               }

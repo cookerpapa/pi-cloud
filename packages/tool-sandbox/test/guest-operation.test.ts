@@ -83,7 +83,7 @@ it.each(["normal", "lost_ack", "child_exit", "cancel_before_start", "cleanup_fai
             b.onResolve(
               {
                 filter:
-                  /(execution-cgroup|completion-client|guest-executor-ipc|guest-executor-store)\.ts$/,
+                  /(execution-cgroup|guest-executor-ipc|guest-executor-store)\.ts$|@pi-cloud\/workspace-runtime\/tool-completion-client$/,
               },
               (a) => ({ path: a.path, namespace: "fixture" }),
             );

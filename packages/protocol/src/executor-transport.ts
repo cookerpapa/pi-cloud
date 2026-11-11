@@ -2,6 +2,11 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { UuidSchema } from "./protocol-primitives.ts";
 import { ExecutionCapabilitySchema } from "./execution-target.ts";
+import {
+  parseToolCompletionDestination,
+  type ToolCompletionDestination,
+} from "./completion-transport.ts";
+import { ToolResultPayloadSchema } from "./tool-result.ts";
 
 const decimal = Type.String({ pattern: "^(0|[1-9][0-9]{0,18})$" });
 export const ExecutorBindingSchema = Type.Object(
@@ -33,14 +38,15 @@ export const ExecutorPositionSchema = Type.Object(
 export type ExecutorPosition = Static<typeof ExecutorPositionSchema>;
 export const ExecutorOperationSchema = Type.Object(
   {
-    version: Type.Literal(1),
+    version: Type.Literal(2),
     binding: ExecutorBindingSchema,
     position: ExecutorPositionSchema,
     operationId: UuidSchema,
     toolName: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     nativeCallId: Type.String({ minLength: 1, maxLength: 512 }),
     arguments: Type.Record(Type.String(), Type.Unknown()),
-    replyTopic: Type.String({ minLength: 1, maxLength: 249 }),
+    deadlineAt: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+    completion: Type.Unsafe<ToolCompletionDestination>(Type.Unknown()),
   },
   { additionalProperties: false },
 );
@@ -52,6 +58,21 @@ export const ExecutorCancellationSchema = Type.Object(
 export type ExecutorCancellation = Static<typeof ExecutorCancellationSchema>;
 export function parseExecutorOperation(value: unknown): ExecutorOperation {
   if (!Value.Check(ExecutorOperationSchema, value)) throw new Error("Invalid executor operation");
+  parseToolCompletionDestination(value.completion);
+  if (value.deadlineAt > value.completion.expiresAt) throw new Error("Invalid executor deadline");
+  return value;
+}
+
+const ExecutorCompletionSchema = Type.Union([
+  Type.Object(
+    { type: Type.Literal("executor.result"), result: ToolResultPayloadSchema },
+    { additionalProperties: false },
+  ),
+  Type.Object({ type: Type.Literal("executor.unknown") }, { additionalProperties: false }),
+]);
+export type ExecutorCompletion = Static<typeof ExecutorCompletionSchema>;
+export function parseExecutorCompletion(value: unknown): ExecutorCompletion {
+  if (!Value.Check(ExecutorCompletionSchema, value)) throw new Error("Invalid executor completion");
   return value;
 }
 export function parseExecutorBinding(value: unknown): ExecutorBinding {

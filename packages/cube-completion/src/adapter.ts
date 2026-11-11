@@ -1,6 +1,7 @@
 import {
   parseGuestToolPreview,
   parseToolWorkerOutput,
+  parseExecutorCompletion,
   type NativeToolEnd,
   type ToolProgressDelivery,
   parseGuestProbeReply,
@@ -65,6 +66,7 @@ export class CubeCompletionAdapter {
       result: { content: [{ type: "text", text: `${code}: ${message}` }], details: undefined },
     });
     if (packet.kind === "progress") {
+      if (context.kind === "executor_tool") throw new Error("Device progress is not supported");
       const raw = parseGuestToolPreview(packet.output);
       if (
         raw.operationId !== packet.operationId ||
@@ -103,42 +105,60 @@ export class CubeCompletionAdapter {
         failure: { code, message: message.slice(0, 4096), effect },
       });
     };
-    let output: ReturnType<typeof parseToolWorkerOutput>;
-    try {
-      output = parseToolWorkerOutput(packet.result.output);
-    } catch {
-      await fail(
-        "tool_reply_protocol_error",
-        "Guest completion did not match the fixed Tool protocol",
-      );
-      return;
+    let event: NativeToolEnd;
+    if (context.kind === "executor_tool") {
+      let output: ReturnType<typeof parseExecutorCompletion>;
+      try {
+        output = parseExecutorCompletion(packet.result.output);
+      } catch {
+        return fail("executor_reply_protocol_error", "Device completion protocol changed");
+      }
+      if (output.type === "executor.unknown")
+        return fail(
+          "executor_result_unknown",
+          "The device did not return a confirmed result. The action may have happened; inspect its state before repeating it.",
+        );
+      event = { type: "tool_execution_end", ...output.result };
+    } else {
+      let output: ReturnType<typeof parseToolWorkerOutput>;
+      try {
+        output = parseToolWorkerOutput(packet.result.output);
+      } catch {
+        await fail(
+          "tool_reply_protocol_error",
+          "Guest completion did not match the fixed Tool protocol",
+        );
+        return;
+      }
+      if (output.type === "worker.failed") {
+        await fail(output.code, output.message);
+        return;
+      }
+      if (
+        output.type !== "worker.operation_result" ||
+        output.response.operationId !== packet.operationId
+      )
+        return fail("tool_reply_protocol_error", "Guest completion identity changed");
+      const response = output.response;
+      if (response.type === "tool_sandbox.operation_failed") {
+        await fail(response.code, response.message);
+        return;
+      }
+      if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
+        return fail(
+          "tool_reply_protocol_error",
+          "Fixed tool completion requires a native final result",
+        );
+      event = response.event;
     }
-    if (output.type === "worker.failed") {
-      await fail(output.code, output.message);
-      return;
-    }
-    if (
-      output.type !== "worker.operation_result" ||
-      output.response.operationId !== packet.operationId
-    )
-      return fail("tool_reply_protocol_error", "Guest completion identity changed");
-    const response = output.response;
-    if (response.type === "tool_sandbox.operation_failed") {
-      await fail(response.code, response.message);
-      return;
-    }
-    if (response.operation !== "tool.execute" || response.event.type !== "tool_execution_end")
-      return fail(
-        "tool_reply_protocol_error",
-        "Fixed tool completion requires a native final result",
-      );
-    const event = response.event;
     if (event.toolCallId !== context.nativeToolCallId || event.toolName !== context.toolName)
       return fail("tool_reply_protocol_error", "Native completion identity changed");
     const images = event.result.content.filter((p) => p.type === "image");
     const encoded = await (
-      images.length > 1 || (images.length && event.toolName !== "read")
-        ? Promise.reject(new Error("Fixed tools return at most one read image"))
+      images.length > 1 ||
+      (images.length &&
+        event.toolName !== (context.kind === "executor_tool" ? "android_observe" : "read"))
+        ? Promise.reject(new Error("The declared observation Tool returns at most one image"))
         : encodeSessionImages(
             this.options.images,
             { tenantId: context.scope.tenantId, runId: context.scope.runId },

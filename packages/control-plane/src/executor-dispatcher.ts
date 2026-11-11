@@ -3,6 +3,11 @@ import { ExecutorTransportFailure, type ExecutorTransport } from "@pi-cloud/sand
 import { type ToolReply } from "@pi-cloud/event-log";
 import { type AcceptedExecutorToolCommand } from "@pi-cloud/protocol";
 import { ExecutionBindingView, executionBinding } from "./execution-target-service.ts";
+import {
+  ANDROID_OPERATION_TIMEOUT_MS,
+  type ToolCompletionGrant,
+  type ToolCompletionDestination,
+} from "@pi-cloud/protocol";
 
 /** Shared consumer/dispatch boundary, with provider-specific execution adapters.
  * This dispatcher never owns an Android UI action or a second command queue. */
@@ -16,6 +21,7 @@ export class ExecutorDispatcher {
       routes: ExecutionBindingView;
       transport: ExecutorTransport;
       publish(topic: string, reply: ToolReply): Promise<void>;
+      completion: { issue(grant: ToolCompletionGrant): Promise<ToolCompletionDestination> };
     },
   ) {}
   async consume(
@@ -30,7 +36,11 @@ export class ExecutorDispatcher {
       return;
     }
     if (fact.kind === "tool_cancel" && fact.request.target === "executor") {
-      const row = this.options.routes.get(fact.request.activationId, fact.scope);
+      const row = this.options.routes.getCancellation(
+        fact.request.activationId,
+        fact.scope,
+        fact.request.originalWriterId,
+      );
       if (!row) return;
       try {
         await this.options.transport.cancel(row.endpoint, {
@@ -62,10 +72,25 @@ export class ExecutorDispatcher {
       });
       return;
     }
+    let attempted = false;
     try {
+      const completion = await this.options.completion.issue({
+        operationId: fact.operationId,
+        expiresAt: fact.replyRecovery.deadlineAt,
+        context: {
+          kind: "executor_tool",
+          scope: fact.scope,
+          replyTopic: fact.replyTopic,
+          toolCallId: `task:${fact.taskId}`,
+          nativeToolCallId: fact.nativeCallId,
+          toolName: fact.toolName,
+          partition: record.partition,
+        },
+      });
       if (!current()) return;
+      attempted = true;
       await this.options.transport.submit(row.endpoint, {
-        version: 1,
+        version: 2,
         binding: executionBinding(row),
         position: {
           topic: record.topic,
@@ -77,7 +102,8 @@ export class ExecutorDispatcher {
         toolName: fact.toolName,
         nativeCallId: fact.nativeCallId,
         arguments: fact.arguments,
-        replyTopic: fact.replyTopic,
+        completion,
+        deadlineAt: Date.parse(fact.occurredAt) + ANDROID_OPERATION_TIMEOUT_MS,
       });
     } catch (error) {
       await this.#failure(
@@ -86,9 +112,10 @@ export class ExecutorDispatcher {
           ? error.failure
           : {
               code: "executor_handoff_unconfirmed",
-              effect: "unknown",
-              message:
-                "Device handoff was not confirmed. Inspect its state before repeating this operation.",
+              effect: attempted ? "unknown" : "not_started",
+              message: attempted
+                ? "Device handoff was not confirmed. Inspect its state before repeating this operation."
+                : "Device reply delivery was unavailable before execution admission; no action was sent.",
             },
       );
     }

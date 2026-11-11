@@ -1,26 +1,29 @@
-import { encodeSessionImages } from "@pi-cloud/session-attachments";
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { ANDROID_CAPABILITIES, type ExecutorOperation } from "@pi-cloud/protocol";
-import { toolReplyTopic } from "@pi-cloud/event-log";
 import { AndroidExecutionManager } from "../src/execution-manager.ts";
 import { AndroidToolError } from "../src/appium-driver.ts";
 import { createExecutorServer } from "../src/server.ts";
 function fixture() {
   const targetId = randomUUID(),
     bootId = randomUUID();
-  const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ok" }] }));
-  const publish = vi.fn(async () => {});
+  const execute = vi.fn<AndroidExecutionManager["options"]["execute"]>(async () => ({
+    content: [{ type: "text" as const, text: "ok" }],
+  }));
+  const complete = vi.fn(
+    async (
+      _command: ExecutorOperation,
+      _output: import("@pi-cloud/protocol").ExecutorCompletion,
+    ) => {},
+  );
   const manager = new AndroidExecutionManager({
     targetId,
     bootId,
     execute,
-    pack: async (binding, result) =>
-      encodeSessionImages(undefined, { tenantId: binding.tenantId }, result),
-    publish,
+    complete,
   });
   const command: ExecutorOperation = {
-    version: 1,
+    version: 2,
     binding: {
       bindingId: randomUUID(),
       targetId,
@@ -39,22 +42,100 @@ function fixture() {
     toolName: "android_tap",
     nativeCallId: "call",
     arguments: { x: 2, y: 3 },
-    replyTopic: toolReplyTopic(randomUUID()),
+    deadlineAt: Date.now() + 30000,
+    completion: {
+      url: "https://completion.test/v1/completions",
+      address: "127.0.0.1",
+      ca: "-----BEGIN CERTIFICATE-----fixture",
+      capability: "opaque",
+      expiresAt: Date.now() + 90000,
+    },
   };
-  return { manager, command, execute, publish };
+  return { manager, command, execute, complete };
 }
 async function settled(f: ReturnType<typeof fixture>) {
   await vi.waitFor(() => expect(f.manager.busy).toBe(false));
 }
 describe("Android external effect boundary", () => {
-  it("retries only immutable Kafka replies, never the UI action", async () => {
+  it("retiring admission preserves an accepted action and exact old cancellation survives a newer binding", async () => {
     const f = fixture();
-    f.publish.mockRejectedValueOnce(new Error("lost acknowledgement"));
+    let signal: AbortSignal | undefined;
+    let finish: () => void = () => {};
+    f.execute.mockImplementation(async (_name, _args, s) => {
+      signal = s;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { content: [{ type: "text", text: "done" }] };
+    });
+    f.manager.submit(f.command);
+    await Promise.resolve();
+    f.manager.closeBinding(f.command.binding);
+    expect(signal?.aborted).toBe(false);
+    const next = {
+      ...f.command,
+      operationId: randomUUID(),
+      binding: { ...f.command.binding, bindingId: randomUUID(), generation: "2" },
+    };
+    expect(() => f.manager.submit(next)).toThrow("executor_busy");
+    expect(signal?.aborted).toBe(false);
+    expect(() =>
+      f.manager.cancel({
+        binding: f.command.binding,
+        operationId: f.command.operationId,
+        position: f.command.position,
+      }),
+    ).toThrow("executor_cancel_position_stale");
+    f.manager.cancel({
+      binding: f.command.binding,
+      operationId: f.command.operationId,
+      position: { ...f.command.position, offset: "121" },
+    });
+    expect(signal?.aborted).toBe(true);
+    finish();
+    await settled(f);
+    expect(f.execute).toHaveBeenCalledTimes(1);
+    await f.manager.close();
+  });
+  it("a recovered old cancellation cannot abort a newer action", async () => {
+    const f = fixture();
+    f.manager.submit(f.command);
+    await settled(f);
+    let signal: AbortSignal | undefined;
+    let finish: () => void = () => {};
+    f.execute.mockImplementation(async (_name, _args, s) => {
+      signal = s;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { content: [{ type: "text", text: "done" }] };
+    });
+    const next = {
+      ...f.command,
+      operationId: randomUUID(),
+      binding: { ...f.command.binding, bindingId: randomUUID(), generation: "2" },
+    };
+    f.manager.submit(next);
+    await Promise.resolve();
+    expect(() =>
+      f.manager.cancel({
+        binding: f.command.binding,
+        operationId: f.command.operationId,
+        position: { ...f.command.position, offset: "121" },
+      }),
+    ).toThrow("executor_binding_stale");
+    expect(signal?.aborted).toBe(false);
+    finish();
+    await settled(f);
+    await f.manager.close();
+  });
+  it("failed completion never reexecutes the UI action", async () => {
+    const f = fixture();
+    f.complete.mockRejectedValueOnce(new Error("lost acknowledgement"));
     f.manager.submit(f.command);
     await settled(f);
     expect(f.execute).toHaveBeenCalledTimes(1);
-    expect(f.publish).toHaveBeenCalledTimes(2);
-    expect(f.publish.mock.calls[0]).toEqual(f.publish.mock.calls[1]);
+    expect(f.complete).toHaveBeenCalledTimes(1);
     expect(() => f.manager.submit(f.command)).toThrow("executor_position_stale");
     await f.manager.close();
   });
@@ -85,13 +166,19 @@ describe("Android external effect boundary", () => {
     expect(f.execute).toHaveBeenCalledTimes(1);
     await f.manager.close();
   });
-  it("rejects old boot identity, invalid capability and invalid reply destinations before an action", async () => {
+  it("rejects old boot identity, expired deadlines and invalid completion before an action", async () => {
     const f = fixture();
     expect(() =>
       f.manager.submit({ ...f.command, binding: { ...f.command.binding, bootId: randomUUID() } }),
     ).toThrow("executor_replaced");
-    expect(() => f.manager.submit({ ...f.command, replyTopic: "business-events" })).toThrow(
-      "executor_invalid_reply_topic",
+    expect(() =>
+      f.manager.submit({
+        ...f.command,
+        completion: { ...f.command.completion, url: "http://wrong/v1/completions" },
+      }),
+    ).toThrow("executor_invalid_completion");
+    expect(() => f.manager.submit({ ...f.command, deadlineAt: Date.now() - 1 })).toThrow(
+      "executor_deadline_elapsed",
     );
     expect(() => f.manager.submit({ ...f.command, arguments: { x: -1, y: 4 } })).toThrow(
       "executor_invalid_arguments",
@@ -124,11 +211,10 @@ describe("Android external effect boundary", () => {
     });
     reject(new Error("interrupted"));
     await settled(f);
-    expect(f.publish).toHaveBeenCalledWith(
-      f.command.replyTopic,
+    expect(f.complete).toHaveBeenCalledWith(
+      f.command,
       expect.objectContaining({
-        kind: "execution_failure",
-        failure: expect.objectContaining({ effect: "unknown" }),
+        type: "executor.unknown",
       }),
     );
     await f.manager.close();
@@ -138,10 +224,10 @@ describe("Android external effect boundary", () => {
     f.execute.mockRejectedValueOnce(new AndroidToolError("Select a field"));
     f.manager.submit(f.command);
     await settled(f);
-    expect(f.publish).toHaveBeenCalledWith(
-      f.command.replyTopic,
+    expect(f.complete).toHaveBeenCalledWith(
+      f.command,
       expect.objectContaining({
-        kind: "tool_result",
+        type: "executor.result",
         result: expect.objectContaining({ isError: true }),
       }),
     );
@@ -153,9 +239,12 @@ describe("Android external effect boundary", () => {
     });
     await settled(f);
     expect(f.execute).toHaveBeenCalledTimes(2);
-    expect(f.publish).toHaveBeenLastCalledWith(
-      f.command.replyTopic,
-      expect.objectContaining({ kind: "execution_failure" }),
+    expect(f.complete).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        toolName: f.command.toolName,
+        position: { ...f.command.position, index: 1 },
+      }),
+      expect.objectContaining({ type: "executor.unknown" }),
     );
     await f.manager.close();
   });
@@ -186,7 +275,7 @@ describe("Android external effect boundary", () => {
         headers: { authorization: "Bearer test-token" },
       });
       expect(response.json()).toEqual({ accepted: true });
-      expect(f.publish).not.toHaveBeenCalled();
+      expect(f.complete).not.toHaveBeenCalled();
       resolve({ content: [{ type: "text", text: "ok" }] });
       await settled(f);
     } finally {

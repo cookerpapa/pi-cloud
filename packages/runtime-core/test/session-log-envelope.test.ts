@@ -192,6 +192,15 @@ it("routes Android using the native intent once, with ordered position and no du
         conversationId: 1,
         toolName: "android_input_text",
         replyTopic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+        occurredAt: new Date(1000).toISOString(),
+        replyRecovery: {
+          topic: "pi-cloud.tool-replies.v4.10000000-0000-4000-8000-000000000009",
+          partition: 0,
+          offset: "17",
+          deadlineAt: 91000,
+          toolCallId: "provider-1",
+          toolName: "android_input_text",
+        },
       },
     ],
     cancellations: [

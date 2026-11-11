@@ -11,7 +11,7 @@ import {
   processStart,
 } from "./guest-executor-ipc.ts";
 import { GuestExecutorStore, type GuestOperation } from "./guest-executor-store.ts";
-import { GuestCompletionClient } from "./completion-client.ts";
+import { GuestCompletionClient } from "@pi-cloud/workspace-runtime/tool-completion-client";
 import { stopExecutionCgroup } from "./execution-cgroup.ts";
 import {
   parseToolWorkerInput,

@@ -1,4 +1,5 @@
 import type { AcceptedToolCommand } from "./tool-command.ts";
+import type { AcceptedExecutorToolCommand } from "./execution-target.ts";
 
 export const TOOL_REPLY_DELIVERY_MARGIN_MS = 120_000;
 
@@ -47,6 +48,6 @@ export type OriginalRemoteToolIntent = Readonly<{
   sequence: number;
   taskId: number;
   conversationId: number;
-  command: AcceptedToolCommand;
+  command: AcceptedToolCommand | Omit<AcceptedExecutorToolCommand, "operationIndex">;
   reply: ToolReplyRecovery;
 }>;

@@ -16,6 +16,15 @@ function fixture() {
     toolName: "android_tap",
     replyTopic: "test-replies",
     nativeCallId: "call-12",
+    occurredAt: new Date().toISOString(),
+    replyRecovery: {
+      topic: "test-replies",
+      partition: 0,
+      offset: "0",
+      deadlineAt: Date.now() + 90000,
+      toolCallId: "call-12",
+      toolName: "android_tap",
+    },
     arguments: { x: 20, y: 30 },
     operationIndex: 1,
     scope: {
@@ -57,13 +66,29 @@ function fixture() {
     close: vi.fn(),
   };
   const cube = { consume: vi.fn(async () => {}) },
-    publish = vi.fn(async () => {});
-  const dispatcher = new ExecutorDispatcher({ cube, routes, transport, publish });
+    publish = vi.fn<ExecutorDispatcher["options"]["publish"]>(async () => {});
+  const completion = {
+    issue: vi.fn(async () => ({
+      url: "https://completion.test/v1/completions",
+      address: "127.0.0.1",
+      ca: "-----BEGIN CERTIFICATE-----fixture",
+      capability: "opaque",
+      expiresAt: fact.replyRecovery.deadlineAt,
+    })),
+  };
+  const dispatcher = new ExecutorDispatcher({ cube, routes, transport, publish, completion });
   const record = { fact, topic: "session-log", partition: 2, offset: 120n };
-  return { fact, row, get, transport, cube, publish, dispatcher, record };
+  return { fact, row, get, transport, cube, publish, completion, dispatcher, record };
 }
 
 describe("Android dispatch through the existing committed Session consumer", () => {
+  it("does not start device work when its original completion deadline cannot be granted", async () => {
+    const f = fixture();
+    f.completion.issue.mockRejectedValue(new Error("original deadline expired"));
+    await f.dispatcher.consume(f.record);
+    expect(f.transport.submit).not.toHaveBeenCalled();
+    expect(f.publish.mock.calls[0]?.[1]).toMatchObject({ failure: { effect: "not_started" } });
+  });
   it("uses only the binding view and retains the batch operation index", async () => {
     const f = fixture();
     await f.dispatcher.consume(f.record);

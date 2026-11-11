@@ -13,6 +13,7 @@ import {
   parseDurableDisplayDescription,
   parseToolEnvironmentRequest,
   TOOL_REPLY_DELIVERY_MARGIN_MS,
+  ANDROID_REPLY_TIMEOUT_MS,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -87,7 +88,8 @@ export class DurableSessionPublisher {
           const index = new DurableCommitIndex(publication.commit);
           const hasRemote = publication.tools.some(
             ({ command }) =>
-              !isNamedToolCommand(command) && command.request.operation === "tool.execute",
+              isExecutorToolCommand(command) ||
+              (!isNamedToolCommand(command) && command.request.operation === "tool.execute"),
           );
           const replyPosition = hasRemote ? await this.options.replyPosition?.() : undefined;
           if (hasRemote && (!replyPosition || replyPosition.topic !== this.options.replyTopic))
@@ -127,6 +129,13 @@ export class DurableSessionPublisher {
                 toolName: command.toolName,
                 scope: identity,
                 replyTopic: this.options.replyTopic,
+                occurredAt: command.occurredAt,
+                replyRecovery: {
+                  ...replyPosition!,
+                  deadlineAt: Date.parse(command.occurredAt) + ANDROID_REPLY_TIMEOUT_MS,
+                  toolCallId: intent.callId,
+                  toolName: command.toolName,
+                },
               };
             }
             if (isControlToolCommand(command)) {

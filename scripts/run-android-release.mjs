@@ -132,9 +132,6 @@ if (action === "prepare") {
     images,
     existingSecret: "pi-cloud-platform-secrets",
     sessionRuntimeUrl: "http://session-runtime:3000",
-    kafkaBrokers: "kafka-1:9092,kafka-2:9092,kafka-3:9092",
-    imageEndpoint: "http://session-images:8333",
-    imageBucket: "pi-cloud-session-images",
   };
   writeFileSync(resolve(directory, "values.json"), JSON.stringify(values, null, 2) + "\n", {
     mode: 0o600,

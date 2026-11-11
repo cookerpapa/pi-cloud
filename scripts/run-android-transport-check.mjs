@@ -10,6 +10,12 @@ import { AndroidExecutionManager } from "../packages/android-executor/src/execut
 import { createExecutorServer } from "../packages/android-executor/src/server.ts";
 import { HttpExecutorTransport } from "../packages/sandbox-control/src/executor-transport.ts";
 import { ImageAttachmentCodec } from "../packages/session-attachments/src/codec.ts";
+import { GuestCompletionClient } from "../packages/workspace-runtime/src/tool-completion-client.ts";
+import { CubeCompletionAdapter } from "../packages/cube-completion/src/adapter.ts";
+import { completionServer } from "../packages/cube-completion/src/http-server.ts";
+import { ToolCompletionCapabilities } from "../packages/protocol/src/completion-capability.ts";
+import { testTls } from "../packages/cube-completion/test/tls-fixture.ts";
+
 // This checks actual Android + RF3 transport. Attachment bytes use an owned
 // in-memory test store; production S3/native history is verified after rollout.
 if (process.env.PI_CLOUD_ANDROID_TRANSPORT_CHECK !== "1")
@@ -47,7 +53,7 @@ const codec = new ImageAttachmentCodec({
 const token = randomUUID(),
   targetId = randomUUID(),
   bootId = randomUUID();
-let server, manager;
+let server, manager, completion;
 const transport = new HttpExecutorTransport(token);
 const report = { at: new Date().toISOString(), passed: false, replyCount: 0 };
 try {
@@ -59,9 +65,8 @@ try {
     bootId,
     ready: () => driver.ready,
     execute: (n, a, s) => driver.execute(n, a, s),
-    pack: (binding, value, signal) =>
-      codec.pack({ tenantId: binding.tenantId, runId: binding.runId }, value, signal),
-    publish: (topic, reply) => publisher.publish(topic, reply),
+    complete: (call, output) =>
+      new GuestCompletionClient(call.completion, call.operationId).complete(output),
   });
   server = createExecutorServer({
     token,
@@ -83,6 +88,42 @@ try {
     fencingToken: 1,
     capabilities: [...ANDROID_CAPABILITIES],
   };
+  const tls = await testTls();
+  const authority = new ToolCompletionCapabilities(randomUUID());
+  completion = completionServer({
+    ...tls,
+    authority,
+    ready: async () => {},
+    adapter: new CubeCompletionAdapter({
+      images: codec,
+      publish: (topic, reply) => publisher.publish(topic, reply),
+      progress: { update() {}, forget() {} },
+    }),
+  });
+  await completion.listen({ host: "127.0.0.1", port: 0 });
+  const completionPort = completion.server.address().port;
+  const destination = (operationId, callId, toolName) => {
+    const expiresAt = Date.now() + 90000;
+    return {
+      url: `https://localhost:${completionPort}/v1/completions`,
+      address: "127.0.0.1",
+      ca: tls.cert,
+      expiresAt,
+      capability: authority.issue({
+        operationId,
+        expiresAt,
+        context: {
+          kind: "executor_tool",
+          scope: { ...binding, turnId: randomUUID() },
+          replyTopic: mailbox.topic,
+          toolCallId: "task:1",
+          nativeToolCallId: callId,
+          toolName,
+          partition: 0,
+        },
+      }),
+    };
+  };
   const operationId = randomUUID();
   const pending = mailbox.wait(
     operationId,
@@ -91,14 +132,15 @@ try {
     AbortSignal.timeout(90000),
   );
   await transport.submit(endpoint, {
-    version: 1,
+    version: 2,
     binding,
     position: { topic: "android-source-fixture", partition: 0, offset: "1", index: 0 },
     operationId,
     nativeCallId: "observe-1",
     toolName: "android_observe",
     arguments: {},
-    replyTopic: mailbox.topic,
+    deadlineAt: Date.now() + 30000,
+    completion: destination(operationId, "observe-1", "android_observe"),
   });
   const result = await pending.result;
   assert.equal(result.isError, false);
@@ -107,14 +149,15 @@ try {
   await transport.revoke(endpoint, binding);
   await assert.rejects(
     transport.submit(endpoint, {
-      version: 1,
+      version: 2,
       binding,
       position: { topic: "android-source-fixture", partition: 0, offset: "2", index: 0 },
       operationId: randomUUID(),
       nativeCallId: "old-call",
       toolName: "android_key",
       arguments: { key: "home" },
-      replyTopic: mailbox.topic,
+      deadlineAt: Date.now() + 30000,
+      completion: destination(randomUUID(), "old-call", "android_key"),
     }),
     /closed/,
   );
@@ -126,6 +169,7 @@ try {
 } finally {
   await server?.close();
   await manager?.close();
+  await completion?.close();
   await driver.close();
   await transport.close();
   await publisher.close();

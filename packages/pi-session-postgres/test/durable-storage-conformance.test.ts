@@ -136,6 +136,90 @@ it("retains cloud dispatch references with the native commit and rejects changed
   }
 });
 
+it("pins a device's original reply and binding across later task writes and cold rebuild", async () => {
+  const operationId = randomUUID(),
+    bindingId = randomUUID();
+  const reply = {
+    topic: `pi-cloud.tool-replies.v4.${randomUUID()}`,
+    partition: 0,
+    offset: "18",
+    deadlineAt: Date.now() + 90000,
+    toolCallId: "device-call",
+    toolName: "android_tap",
+  };
+  let metadata: Record<string, unknown> | undefined = {
+    remoteTools: [
+      {
+        target: "executor",
+        taskId: 2,
+        operationId,
+        bindingId,
+        replyTopic: reply.topic,
+        replyRecovery: reply,
+      },
+    ],
+  };
+  const f = await fixture({
+    publish: (batch, projection) => projection.apply(batch, [], undefined, metadata).then(() => {}),
+  });
+  const task: Extract<StorageWrite, { type: "task" }>["value"] = {
+    id: 2 as never,
+    conversationId: 1 as never,
+    kind: "pi.tool",
+    version: 1,
+    input: { assistant: 3, callId: "device-call" },
+    owner: 4 as never,
+    background: false,
+    abortRequested: false,
+    state: {
+      status: "running",
+      checkpoint: { phase: "execute", replay: "safe", arguments: { x: 2, y: 3 } },
+    },
+  };
+  const fields = async () =>
+    (
+      await sql<{ fields: Record<string, string> }>`select fields from pi_durable_owned_records
+    where tenant_id=${f.tenantId}::uuid and session_id=${f.sessionId} and id=2`.execute(database)
+    ).rows[0]!.fields;
+  try {
+    await f.store.commit(
+      [
+        { type: "conversation", value: { id: 1 } },
+        { type: "task", value: task },
+      ] as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    const expected = {
+      replyTopic: reply.topic,
+      replyOffset: "18",
+      replyOperation: operationId,
+      replyBinding: bindingId,
+      replyIntentSeq: "1",
+    };
+    expect(await fields()).toMatchObject(expected);
+    metadata = undefined;
+    await f.store.commit(
+      [{ type: "task", value: { ...task, abortRequested: true } }] as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    expect(await fields()).toMatchObject(expected);
+    await f.projection.rebuild();
+    expect(await fields()).toMatchObject(expected);
+    await f.store.commit(
+      [
+        {
+          type: "task",
+          value: { ...task, state: { status: "terminal", outcome: { status: "aborted" } } },
+        },
+      ] as StorageWrite[],
+      BACKGROUND_CONTEXT,
+    );
+    expect((await fields()).status).toBe("terminal");
+  } finally {
+    await f.close();
+  }
+});
+
 for (const cold of [false, true])
   describe.sequential(
     `Pi Durable 1.0 real PG contract (${cold ? "cold indexed reads" : "acknowledged overlay"})`,

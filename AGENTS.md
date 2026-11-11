@@ -177,6 +177,9 @@ protocol, record the decision under `docs/adr/` before implementation.
   suite; it must not enter as a silent fallback.
   ADR-0312 authorizes isolated operator validation of pinned BoxLite and Android
   with unchanged upstream code; it does not enable a second production default.
+  The subsequent owner request and ADR-0313 authorize complete alternate-provider
+  integration and matched acceptance. Providers remain explicit, with no automatic
+  fallback; document and verify their actual capabilities and isolation.
 - Do not mount the Docker socket, host home directory, or long-lived provider
   credentials into an agent sandbox.
 - Do not add a second event broker, cache, workflow scheduler or cluster layer

@@ -109,24 +109,29 @@ function toolRecoveryFields(
       replyTopic: string;
       replyRecovery: unknown;
       request: { operation: string; operationId: string; activationId: string };
+      operationId?: string;
+      bindingId?: string;
     };
     const reply = parseToolReplyRecovery(tool.replyRecovery);
+    const operationId = tool.target === "executor" ? tool.operationId : tool.request?.operationId;
+    const bindingId = tool.target === "executor" ? tool.bindingId : tool.request?.activationId;
     if (
-      tool.target !== "cube" ||
-      tool.request?.operation !== "tool.execute" ||
+      (tool.target !== "executor" &&
+        (tool.target !== "cube" || tool.request?.operation !== "tool.execute")) ||
       !Number.isSafeInteger(tool.taskId) ||
       tool.taskId < 1 ||
       tool.replyTopic !== reply.topic ||
-      !/^[0-9a-f-]{36}$/.test(tool.request.operationId) ||
+      !/^[0-9a-f-]{36}$/.test(operationId ?? "") ||
+      !/^[0-9a-f-]{36}$/.test(bindingId ?? "") ||
       result.has(tool.taskId)
     )
       throw new Error("Invalid Tool recovery identity");
     result.set(tool.taskId, {
       replyTopic: reply.topic,
       replyOffset: reply.offset,
-      replyOperation: tool.request.operationId,
+      replyOperation: operationId!,
       replyIntentSeq: String(seq),
-      replyBinding: tool.request.activationId,
+      replyBinding: bindingId!,
     });
   }
   return result;

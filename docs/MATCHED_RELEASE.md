@@ -1,5 +1,10 @@
 # Matched release
 
+ADR-0313's Android continuation source targets schema 219, Session v21 and executor
+protocol 2. Drain native writers/replay suffixes and all device bindings before
+switching; publish the matching Android receiver with HTTPS completion and remove
+its Kafka/PG/S3 credentials. This cutover remains pending while #27 proceeds.
+
 ADR-0314 is deployed as `platform-idle-20261111-r1`, schema 218 and resource capsule 4.
 Session v20, replies v4, provider contract 1, Guest executor 1 and Tool payload 7
 stay unchanged. Retire old physical allocations before switching: new managed

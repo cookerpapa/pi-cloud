@@ -406,6 +406,7 @@ export const migrationProvider: MigrationProvider = {
       "216_native_resource_requests": nativeResourceRequests,
       "217_native_lifecycle_observations": nativeLifecycleObservations,
       "218_platform_idle_expiry": platformIdleExpiry,
+      "219_executor_reply_continuation": executorReplyContinuation,
     };
   },
 };
@@ -454,3 +455,4 @@ import * as nativeResourceRequests from "./216_native_resource_requests.ts";
 import * as nativeLifecycleObservations from "./217_native_lifecycle_observations.ts";
 
 import * as platformIdleExpiry from "./218_platform_idle_expiry.ts";
+import * as executorReplyContinuation from "./219_executor_reply_continuation.ts";

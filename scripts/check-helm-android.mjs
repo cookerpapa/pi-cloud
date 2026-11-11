@@ -39,6 +39,12 @@ try {
   assert.equal(pod.hostNetwork, undefined);
   assert.equal(pod.automountServiceAccountToken, false);
   const guest = pod.containers.find((c) => c.name === "android");
+  const executor = pod.containers.find((c) => c.name === "executor");
+  assert.deepEqual(
+    executor.volumeMounts.map((m) => m.subPath),
+    ["supervisor-management-token"],
+  );
+  assert(!executor.env.some((e) => /DATABASE|KAFKA|IMAGE_S3/.test(e.name)));
   assert.equal(
     pod.containers
       .find((c) => c.name === "egress")

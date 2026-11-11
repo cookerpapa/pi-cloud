@@ -117,6 +117,54 @@ it("externalizes the guest image before the boot reply and preserves the origina
   );
 });
 
+it("routes device observations through the same HTTPS image and original-reply boundary", async () => {
+  const f = fixture();
+  const context = { ...f.context, kind: "executor_tool" as const, toolName: "android_observe" };
+  const output = {
+    type: "executor.result",
+    result: {
+      toolName: "android_observe",
+      toolCallId: context.nativeToolCallId,
+      isError: false,
+      result: {
+        content: [
+          { type: "image", mimeType: "image/png", data: Buffer.from("picture").toString("base64") },
+        ],
+      },
+    },
+  };
+  await f.adapter.accept({ ...f.packet, context, result: { output } });
+  expect(f.put).toHaveBeenCalledOnce();
+  expect(f.publish.mock.calls[0]).toMatchObject([
+    context.replyTopic,
+    {
+      kind: "tool_result",
+      operationId: f.packet.operationId,
+      result: { toolName: "android_observe", result: { content: [{ type: "pi_cloud_image_v1" }] } },
+    },
+  ]);
+  await f.adapter.accept({
+    ...f.packet,
+    context,
+    result: { output: { type: "executor.unknown" } },
+  });
+  expect(f.publish.mock.calls.at(-1)?.[1]).toMatchObject({
+    kind: "execution_failure",
+    failure: { effect: "unknown", code: "executor_result_unknown" },
+  });
+  // The operation-scoped grant cannot be used to return another Tool's result.
+  await f.adapter.accept({
+    ...f.packet,
+    context,
+    result: { output: { ...output, result: { ...output.result, toolName: "android_tap" } } },
+  });
+  expect(f.publish.mock.calls.at(-1)?.[1]).toMatchObject({
+    kind: "execution_failure",
+    failure: { code: "tool_reply_protocol_error" },
+  });
+  expect(f.put).toHaveBeenCalledOnce();
+});
+
 it("retries only immutable reply delivery when the publisher loses its acknowledgement", async () => {
   const f = fixture();
   f.publish.mockRejectedValueOnce(new Error("Kafka reply ACK lost"));

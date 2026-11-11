@@ -290,9 +290,10 @@ export class ExecutionTargetService {
     if (!this.options.transport) return;
     try {
       await this.options.transport.revoke(row.endpoint, executionBinding(row));
-      await sql`delete from execution_target_bindings where id=${row.id}::uuid and closed`.execute(
-        this.options.database,
-      );
+      await sql`delete from execution_target_bindings b where b.id=${row.id}::uuid and b.closed
+        and not exists(select 1 from pi_durable_owned_records r where r.tenant_id=b.tenant_id
+          and r.kind='task' and r.fields ? 'replyTopic' and r.fields->>'status'<>'terminal'
+          and r.fields->>'replyBinding'=b.id::text)`.execute(this.options.database);
     } catch {
       /* Closed routing remains durable until endpoint closure can be confirmed. */
     }
@@ -347,7 +348,7 @@ export class ExecutionBindingView {
     let e = this.#entries.get(id);
     if (e) return e;
     if (this.#entries.size >= 65536) {
-      const disposable = [...this.#entries].find(([, v]) => v.closed && !v.readers);
+      const disposable = [...this.#entries].find(([, v]) => v.closed && !v.row && !v.readers);
       if (!disposable) throw new Error("Execution binding view capacity exceeded");
       this.#entries.delete(disposable[0]);
     }
@@ -358,15 +359,14 @@ export class ExecutionBindingView {
   #apply(entry: BindingEntry, row: ExecutionBindingRow | undefined, version: bigint) {
     if (entry.closed && row && !row.closed) return;
     if (row && version < entry.version) return;
-    const active = row && !row.closed ? row : undefined;
-    const bytes = active ? Buffer.byteLength(JSON.stringify(active)) : 0;
+    const bytes = row ? Buffer.byteLength(JSON.stringify(row)) : 0;
     if (this.#bytes - entry.bytes + bytes > 64 * 1024 * 1024)
       throw new Error("Execution binding view byte capacity exceeded");
     this.#bytes += bytes - entry.bytes;
     entry.bytes = bytes;
     entry.closed ||= !row || row.closed;
     entry.version = version > entry.version ? version : entry.version;
-    if (active) entry.row = structuredClone(active);
+    if (row) entry.row = structuredClone(row);
     else delete entry.row;
   }
   async load(partitions: readonly number[], current: () => boolean) {
@@ -376,7 +376,7 @@ export class ExecutionBindingView {
     let after = "00000000-0000-0000-0000-000000000000";
     for (;;) {
       const { rows } =
-        await sql<ExecutionBindingRow>`select * from execution_target_bindings where not closed and id>${after}::uuid order by id limit 128`.execute(
+        await sql<ExecutionBindingRow>`select * from execution_target_bindings where id>${after}::uuid order by id limit 128`.execute(
           this.service.options.database,
         );
       if (!current() || generation !== this.#generation) return;
@@ -457,8 +457,26 @@ export class ExecutionBindingView {
         row.pi_session_id === scope.piSessionId &&
         row.writer_id === scope.writerId
       )
-        this.#apply(entry, undefined, entry.version);
+        this.#apply(entry, { ...row, closed: true }, entry.version);
     }
     await this.service.closeWriter(scope.tenantId, scope.piSessionId, scope.writerId);
+  }
+
+  getCancellation(
+    id: string,
+    scope: Parameters<ExecutionBindingView["get"]>[1],
+    originalWriterId?: string,
+  ): ExecutionBindingRow | undefined {
+    if (!originalWriterId) return this.get(id, scope);
+    if (!this.#ready) throw new Error("Execution binding view has not recovered");
+    const row = this.#entries.get(id)?.row;
+    return row &&
+      row.tenant_id === scope.tenantId &&
+      row.run_id === scope.runId &&
+      row.session_id === scope.sessionId &&
+      row.pi_session_id === scope.piSessionId &&
+      row.writer_id === originalWriterId
+      ? row
+      : undefined;
   }
 }

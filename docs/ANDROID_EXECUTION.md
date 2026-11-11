@@ -6,6 +6,11 @@ with device `android-7aa30c34`; those identifiers describe historical acceptance
 [Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
 model calls, Web binding/images, device restart and original-asset preservation.
 
+ADR-0313 now extends this target to original-operation continuation and scoped
+HTTPS completion. The source change requires schema 219, Session topic v21 and
+executor protocol 2 in one drained matched release; it has not yet replaced the
+`stock-android-20261111-r2` operator deployment. The phone picker remains hidden.
+
 The October 27 owner decision withdraws the cloud-phone picker/screen controls
 from the product page. The execution-target abstraction and operator API remain
 as a verified alternate-sandbox prototype; no backend/device data is deleted.
@@ -27,12 +32,15 @@ Session writer. Its authorized change follows the existing Kafka Session path
 into the Projector's memory view. Subsequent dispatches read that view, not PG.
 The shared Projector confirms its dispatch position before sending an operation.
 The trusted executor acknowledges admission, invokes Appium/UiAutomator2, and
-publishes to the original operation's Worker reply topic. The Worker
+delivers a bounded result through the same scoped HTTPS completion client as the
+Linux Guest. Completion stores images and publishes to the original operation's
+Worker reply topic. The Worker
 passes the reply to Pi before a canonical Tool Result enters native history.
 No independent broker, executor command queue or Tool-result database is added.
 
-Android itself has no Kafka, database or model credential. The external executor
-is trusted private infrastructure. Screenshots use the existing attachment
+Android and its executor have no Kafka, database, object-store or model credential.
+The executor keeps only its private command-admission credential; each operation
+carries an expiring completion capability. Screenshots use the existing attachment
 inventory/object store; Kafka carries references. The operator screen endpoint
 reads a disposable screenshot directly and does not add it to model context.
 Android application data lives in its own persistent device state directory;
@@ -49,10 +57,14 @@ An action or reply lost in transit is UNKNOWN. Unsafe UI actions are not retried
 The current Run stops accepting further device work/model continuation on that
 uncertainty; a later Run can explicitly observe the device and decide what to do.
 Per-operation transport deadlines do not impose a total Run-duration limit.
-The retained Android prototype does not yet use the fixed Linux Guest's pending
-operation recovery descriptor. Do not infer full replacement-Worker wait
-continuation from its reply topic: interrupted device actions remain uncertain
-and are not automatically repeated. That is a separate promotion requirement.
+The pending native Tool keeps its original reply topic/offset, operation identity,
+absolute deadline and cancellation binding in the existing native storage fields.
+A replacement Worker restores that subscription and reattaches its Tool proxy
+to the original wait. It does not request the action again or reset its deadline.
+Worker retirement closes admission without aborting an accepted action. A closed
+binding remains available for exact cancellation until native settlement, and
+an old cancellation cannot affect a newer operation. Device/executor loss can
+still yield UNKNOWN; no result source is invented and UI effects are not replayed.
 
 Chat Stop retains Pi Durable settlement and ordered operation cancellation. It
 can prevent a pending action or abort cancellable I/O, but does not undo a tap,

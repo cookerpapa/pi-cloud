@@ -317,6 +317,7 @@ export async function startSessionRuntime(): Promise<void> {
       routes: executionBindings,
       transport: executorTransport,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
+      completion: sandboxControl.completion,
     });
     executorCleanupTimer = setInterval(() => {
       executorCleanup ??= executionTargets

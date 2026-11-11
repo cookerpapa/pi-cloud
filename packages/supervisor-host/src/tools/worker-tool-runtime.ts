@@ -12,6 +12,8 @@ import {
   isControlToolName,
   parseSubagentTaskId,
   type OriginalControlToolIntent,
+  type OriginalRemoteToolIntent,
+  type ToolReplyRecovery,
   validateSubagentControl,
   validateSubagentTask,
   type ExecuteTurnCommandMessage,
@@ -24,6 +26,7 @@ import {
   type ToolEnvironmentRequirement,
   type CandidateToolEffect,
   ToolExecutionFailure,
+  ToolResultAttachmentError,
   ANDROID_REPLY_TIMEOUT_MS,
 } from "@pi-cloud/protocol";
 import {
@@ -69,6 +72,7 @@ export class WorkerToolRuntime {
         toolName: string,
         signal: AbortSignal,
         scope: { tenantId: string; runId: string },
+        recovery?: ToolReplyRecovery,
       ): ToolReplyWait<ToolResultPayload>;
     },
   ) {}
@@ -215,6 +219,79 @@ export class WorkerToolRuntime {
     const createBinding = (definition: Definition, ordinary: boolean): TrustedAgentTool => {
       const environment = definition.environment ?? { kind: "none" as const };
       const target = toolExecutionTarget(definition, capabilities);
+      const recoverDeviceReply = async (
+        nativeCallId: string,
+        args: unknown,
+        signal?: AbortSignal,
+        original?: OriginalRemoteToolIntent,
+      ) => {
+        signal?.throwIfAborted();
+        const call = original?.command;
+        if (
+          !original ||
+          call?.kind !== "executor_tool" ||
+          original.taskId !== parseSubagentTaskId(toolInvocationId(nativeCallId)) ||
+          original.conversationId !== scope.piSession.conversationId ||
+          call.scope.tenantId !== scope.tenantId ||
+          call.scope.runId !== scope.runId ||
+          call.scope.sessionId !== scope.sessionId ||
+          call.nativeCallId !== nativeCallId ||
+          call.toolName !== definition.name ||
+          original.reply.toolCallId !== nativeCallId ||
+          original.reply.toolName !== definition.name ||
+          !isDeepStrictEqual(call.arguments, args)
+        )
+          throw new Error("Device recovery has no matching original operation");
+        const lifetime = new AbortController();
+        const activeSignal = signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal;
+        const pending = this.options.wait(
+          call.operationId,
+          nativeCallId,
+          definition.name,
+          activeSignal,
+          { tenantId: scope.tenantId, runId: scope.runId },
+          original.reply,
+        );
+        void pending.result.catch(() => {});
+        return {
+          command: {
+            target: "executor" as const,
+            executionReference: scope.executionReference,
+            operationId: call.operationId,
+            bindingId: call.bindingId,
+            toolCallId: toolInvocationId(nativeCallId),
+            nativeCallId,
+            conversationId: scope.piSession.conversationId,
+            toolName: definition.name,
+            arguments: call.arguments,
+            occurredAt: call.occurredAt,
+            originalWriterId: call.scope.writerId,
+            replyRecovery: original.reply,
+          },
+          completed: pending.executionSettled,
+          dispose: () => lifetime.abort(new Error("Recovered device wait closed")),
+          result: async () => {
+            try {
+              const reply = await pending.result;
+              return { ...reply.result, isError: reply.isError };
+            } catch (error) {
+              if (activeSignal.aborted) throw activeSignal.reason;
+              if (error instanceof ToolResultAttachmentError) throw error;
+              const failure =
+                error instanceof ToolExecutionFailure
+                  ? error
+                  : new ToolExecutionFailure({
+                      code: "executor_result_unknown",
+                      effect: "unknown",
+                      message:
+                        "The original device result is unavailable. Inspect its state before repeating the action.",
+                    });
+              if (failure.effect === "unknown") context.onExecutionUnavailable?.(failure);
+              throw failure;
+            }
+          },
+        };
+      };
       const prepare = async (
         nativeCallId: string,
         raw: unknown,
@@ -388,17 +465,22 @@ export class WorkerToolRuntime {
         offered: isConversationToolOffered(definition, capabilities),
         tool: {
           ...definition,
+          ...(environment.kind === "target"
+            ? { replay: "safe" as const, recoverySource: "reply" as const }
+            : {}),
           async execute() {
             throw new Error("Tool requires its committed native invocation");
           },
           prepareExecution: (callId: string, args: unknown, signal?: AbortSignal) =>
             prepare(callId, args, signal),
-          ...(definition.replay === "safe"
-            ? {
-                prepareRecovery: (callId: string, args: unknown, signal?: AbortSignal) =>
-                  prepare(callId, args, signal, true),
-              }
-            : {}),
+          ...(environment.kind === "target"
+            ? { prepareRecovery: recoverDeviceReply }
+            : definition.replay === "safe"
+              ? {
+                  prepareRecovery: (callId: string, args: unknown, signal?: AbortSignal) =>
+                    prepare(callId, args, signal, true),
+                }
+              : {}),
         } as PreparedAgentTool,
       };
     };

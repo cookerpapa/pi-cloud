@@ -535,8 +535,15 @@ export class PiWorkerRuntime {
       control: this.#subagentControl,
       maximumDepth: this.#config.subagentMaximumDepth,
       prepareTarget: (command, target, signal) => executionTargets.bind(command, target, signal),
-      wait: (id, callId, name, signal, scope) =>
-        restoreToolReply(toolReplies.wait(id, callId, name, signal), images?.codec, scope, signal),
+      wait: (id, callId, name, signal, scope, recovery) =>
+        restoreToolReply(
+          recovery
+            ? toolReplies.resumeWait(id, recovery, signal)
+            : toolReplies.wait(id, callId, name, signal),
+          images?.codec,
+          scope,
+          signal,
+        ),
     });
     const modelPermits = new FamilyModelPermits({
       maximum: this.#config.modelConcurrency,

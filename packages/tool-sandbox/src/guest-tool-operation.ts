@@ -6,7 +6,7 @@ import {
   type ToolWorkerOutput,
   type GuestToolPreview,
 } from "@pi-cloud/protocol/guest";
-import { GuestCompletionClient } from "./completion-client.ts";
+import { GuestCompletionClient } from "@pi-cloud/workspace-runtime/tool-completion-client";
 import {
   GUEST_STATE,
   operationInput,

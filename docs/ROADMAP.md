@@ -1,5 +1,13 @@
 # Implementation roadmap
 
+## Alternate runtime production integration — active
+
+The owner has authorized #27's full integration under
+[ADR-0313](adr/0313-alternate-runtime-production-integration.md). Android will
+reuse the Linux Guest's original reply-reference recovery and HTTPS completion;
+BoxLite will enter the owned provider/resource ports explicitly. Keep vendor
+source unchanged and run resource-intensive acceptance serially on WSL.
+
 ## Platform-owned elastic idle expiry — deployed
 
 Delivered [#29](https://github.com/cookerpapa/pi-managed-agents/issues/29) under
