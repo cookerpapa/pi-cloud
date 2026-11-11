@@ -15,6 +15,7 @@
 - [x] #26: record the owner's explicit four-image exception under ADR-0310, without hidden dependency changes or a global scan bypass.
 - [x] #26 operator: retire old SQL through the existing Cube schema account and check the official version manifest; preserve image and mount guards.
 - [x] #26 operator: privileged WSL maintenance configures the local web socket as the existing runtime owner.
+- [x] #26 acceptance: use retained Guest credentials, bounded native delete evidence and the independent collector's committed state in live fixtures and cleanup.
 - [ ] #26: serial verification, matched delivery and original-asset preservation.
 - [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
 - [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.

@@ -4,8 +4,7 @@ import { resolve } from "node:path";
 import { isIP } from "node:net";
 import { Agent, fetch } from "undici";
 import { kubectl, runtimeDirectory } from "./production-kubernetes.mjs";
-import { CubeLifecycleSource } from "../../packages/accounting/src/cube-lifecycle-source.ts";
-import { parseComputeCaptureMetrics } from "./source-delivery-barrier.mjs";
+import { sql } from "kysely";
 
 const dispatcher = new Agent();
 const hasContainer = (pod, name) =>
@@ -79,22 +78,14 @@ export function lifecycleProviderId(pod) {
     typeof domain === "string" && domain.length > 0,
     "Metering source identity is unavailable",
   );
-  return `cube:${domain}`;
+  return `cubesandbox:${domain}`;
 }
 
 /** Operator-only private reader. Kubernetes is used only to discover existing
  * source Pods/Services. Source calls only read metrics/history and the accounting cursor; no lifecycle mutation. */
-export async function createDeployedSourceDeliveryReader({ database }) {
+export async function createDeployedSourceDeliveryReader({ database, tenantId }) {
   assert(database, "Accounting cursor database is required");
-  const cluster = JSON.parse(
-    await readFile(resolve(runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
-  );
-  const sourceOptions = {
-    url: `http://${cluster.api.host}:${cluster.api.port}`,
-    apiKey: (
-      await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
-    ).trim(),
-  };
+  assert(typeof tenantId === "string" && /^[0-9a-f-]{36}$/.test(tenantId), "Invalid receipt owner");
   const [receiptToken, quotaToken] = await Promise.all([
     readFile(resolve(runtimeDirectory, "secrets/metering-ingest-token"), "utf8"),
     readFile(resolve(runtimeDirectory, "secrets/workspace-volume-gateway-token"), "utf8"),
@@ -106,86 +97,47 @@ export async function createDeployedSourceDeliveryReader({ database }) {
   return async (signal) => {
     signal?.throwIfAborted();
     const { items } = JSON.parse(
-      kubectl(["get", "pods,daemonsets,services", "-o", "json"], { timeout: 10_000 }),
+      kubectl(["get", "pods,services", "-o", "json"], { timeout: 10_000 }),
     );
     assert(Array.isArray(items), "Missing deployed receipt source inventory");
     const pods = items.filter((item) => item.kind === "Pod"),
-      services = items.filter((item) => item.kind === "Service"),
-      nodes = items.filter(
-        (item) => item.kind === "DaemonSet" && hasContainer(item.spec?.template, "cubelet"),
-      );
-    assert(nodes.length > 0, "Cube receipt source DaemonSet is missing");
-    let expected = 0;
-    for (const node of nodes) {
-      const desired = node.status?.desiredNumberScheduled;
-      assert(
-        Number.isSafeInteger(desired) && desired > 0 && node.status.numberReady === desired,
-        "Not all recorded Cube source nodes are Ready",
-      );
-      expected += desired;
-    }
-    const cubePods = pods.filter((pod) => hasContainer(pod, "cubelet"));
-    assert(
-      cubePods.length === expected && expected <= 256,
-      "Cube receipt source node coverage is incomplete",
-    );
+      services = items.filter((item) => item.kind === "Service");
     const providerPod = onePod(pods, "cli-proxy-api"),
-      quotaPod = onePod(pods, "workspace-quota");
-    const source = new CubeLifecycleSource({
-      ...sourceOptions,
-      // The accounting domain ID is independent of Cube's sandbox DNS suffix.
-      id: lifecycleProviderId(onePod(pods, "metering")),
-    });
-    const captures = await Promise.all(
-      cubePods.map(async (pod) => {
-        ready(pod);
-        assert(
-          nodes.some((node) =>
-            pod.metadata.ownerReferences?.some((owner) => owner.uid === node.metadata.uid),
-          ),
-          "Cube source Pod has an unrecognized owner",
-        );
-        const port = pod.spec.containers
-          .find((container) => container.name === "cubelet")
-          .ports?.find((value) => value.name === "cubelet-http")?.containerPort;
-        const text = await boundedRead(
-          endpoint(pod.status.podIP, port, "/v1/metrics"),
-          null,
-          1_048_576,
-          signal,
-        );
-        return parseComputeCaptureMetrics(text, pod.metadata.uid);
-      }),
+      quotaPod = onePod(pods, "workspace-quota"),
+      meteringPod = onePod(pods, "metering");
+    const provider = lifecycleProviderId(meteringPod);
+    const cursor = await database
+      .selectFrom("resource_lifecycle_sources")
+      .select(["epoch", "checked_at", "failed_at"])
+      .where("provider", "=", provider)
+      .where("node_id", "=", "observations")
+      .executeTakeFirst();
+    const {
+      rows: [owned],
+    } = await sql`select count(*)::int as resources,
+      count(*) filter(where lifecycle_state->'event'->>'state' is distinct from 'absent')::int as pending
+      from resource_metering_resources where tenant_id=${tenantId}::uuid and kind='compute'`.execute(
+      database,
     );
-    const lifecycleNodes = await source.list(signal ?? AbortSignal.timeout(28000));
-    assert.equal(lifecycleNodes.length, captures.length, "Lifecycle source coverage changed");
-    const compute = [];
-    for (const node of lifecycleNodes) {
-      assert(node.available, "Lifecycle source is unavailable");
-      // Metrics precede the raw head read; the latter covers all completed
-      // captures reported in that scrape, including a final absent observation.
-      const page = await source.read(node.id, undefined, signal ?? AbortSignal.timeout(28000));
-      const matching = captures.filter((capture) => capture.sourceId === page.epoch);
-      assert.equal(matching.length, 1, "Lifecycle epoch cannot be mapped to a Ready node");
-      const capture = matching[0];
-      const cursor = await database
-        .selectFrom("resource_lifecycle_sources")
-        .select(["epoch", "after_sequence", "failed_at"])
-        .where("node_id", "=", node.id)
-        .where("provider", "=", source.id)
-        .executeTakeFirst();
-      compute.push({
-        ...capture,
-        sourceId: node.id,
-        deliveredCycles:
-          cursor &&
+    // Stock observations and derived receipts commit in one PG transaction.
+    // Once an owned resource is absent, future pages exclude it; stale pages
+    // cannot pass the collector's cursor CAS. No Cubelet journal remains to drain.
+    const compute = [
+      {
+        sourceId: `${provider}:observations`,
+        podId: meteringPod.metadata.uid,
+        epoch: cursor?.epoch ?? "uninitialized",
+        checkedAt: cursor?.checked_at ? new Date(cursor.checked_at).getTime() : 0,
+        healthy: Boolean(
+          cursor?.epoch &&
+          cursor.checked_at &&
           !cursor.failed_at &&
-          cursor.epoch === page.epoch &&
-          BigInt(cursor.after_sequence) >= BigInt(page.high)
-            ? capture.completedCycles
-            : null,
-      });
-    }
+          Date.now() - new Date(cursor.checked_at).getTime() <= 180000,
+        ),
+        resources: owned.resources,
+        pending: owned.pending,
+      },
+    ];
     const [quotaText, providerText] = await Promise.all([
       boundedRead(
         serviceURL(services, "workspace-quota", "quota", "/v1/delivery"),

@@ -1,21 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { lifecycleProviderId } from "./source-delivery-observation.mjs";
-import {
-  parseComputeCaptureMetrics,
-  waitForOwnedReceiptDelivery,
-} from "./source-delivery-barrier.mjs";
-
-function snapshot(cycles, change = {}) {
+import { waitForOwnedReceiptDelivery } from "./source-delivery-barrier.mjs";
+function snapshot(pending = 0) {
   return {
     compute: [
       {
-        sourceId: "owned-node",
-        bootId: "compute-boot",
-        podId: "compute-pod",
-        completedCycles: cycles,
-        deliveredCycles: cycles,
-        captureFailures: 0,
+        sourceId: "cubesandbox:domain:observations",
+        epoch: "native-v1",
+        podId: "metering-pod",
+        checkedAt: 10000,
+        healthy: true,
+        resources: 1,
+        pending,
       },
     ],
     quota: { podId: "quota-pod", pending: 0, pendingClosures: 0 },
@@ -27,27 +24,8 @@ function snapshot(cycles, change = {}) {
       active: 0,
       captureFailures: 0,
     },
-    ...change,
   };
 }
-
-it("reads the deployed accounting domain rather than guessing it from sandbox DNS", () => {
-  const pod = {
-    spec: {
-      containers: [
-        {
-          name: "metering",
-          env: [
-            { name: "PI_CLOUD_SANDBOX_DOMAIN_ID", value: "sandbox-domain-0001" },
-            { name: "PI_CLOUD_CUBESANDBOX_DOMAIN", value: "cube.example.com" },
-          ],
-        },
-      ],
-    },
-  };
-  expect(lifecycleProviderId(pod)).toBe("cube:sandbox-domain-0001");
-  expect(() => lifecycleProviderId({ spec: { containers: [] } })).toThrow("source identity");
-});
 function fixture(rows) {
   let elapsed = 0,
     reads = 0;
@@ -65,119 +43,104 @@ function fixture(rows) {
     });
   return { run, tenantId, reads: () => reads };
 }
-
-it("requires two completed post-disposal sweeps and coherent receipt acknowledgement", async () => {
-  const f = fixture([snapshot(10), snapshot(11), snapshot(12)]);
-  expect(await f.run()).toMatchObject({
-    verified: true,
-    tenantId: f.tenantId,
-    compute: [{ sourceId: "owned-node", bootId: "compute-boot", deliveredCycles: 12 }],
-  });
+it("reads the deployed accounting domain rather than guessing from sandbox DNS", () => {
+  expect(
+    lifecycleProviderId({
+      spec: {
+        containers: [
+          {
+            name: "metering",
+            env: [
+              { name: "PI_CLOUD_SANDBOX_DOMAIN_ID", value: "domain-1" },
+              { name: "PI_CLOUD_CUBESANDBOX_DOMAIN", value: "cube.example.com" },
+            ],
+          },
+        ],
+      },
+    }),
+  ).toBe("cubesandbox:domain-1");
+  expect(() => lifecycleProviderId({ spec: { containers: [] } })).toThrow("source identity");
+});
+it("waits until owned compute has a committed absent observation", async () => {
+  const f = fixture([snapshot(1), snapshot(1), snapshot(0)]);
+  expect(await f.run()).toMatchObject({ verified: true, tenantId: f.tenantId });
   expect(f.reads()).toBe(3);
 });
-
-it("does not combine a newer cycle counter with an older empty-outbox observation", async () => {
-  const mixed = snapshot(12);
-  mixed.compute[0].deliveredCycles = 11;
-  const f = fixture([snapshot(10), snapshot(11), mixed, snapshot(12)]);
+it("does not require synthetic receipts for a fixture with no attributed compute", async () => {
+  const empty = snapshot();
+  empty.compute[0].resources = 0;
+  const f = fixture([empty]);
+  expect((await f.run()).verified).toBe(true);
+  expect(f.reads()).toBe(2);
+});
+it("waits for two zero quota observations after pending closure and delivery", async () => {
+  const closure = snapshot(),
+    pending = snapshot();
+  closure.quota.pendingClosures = 1;
+  pending.quota.pending = 1;
+  const f = fixture([closure, pending, snapshot(), snapshot()]);
   await f.run();
   expect(f.reads()).toBe(4);
 });
-
-it("waits for pending closures and two zero quota snapshots", async () => {
-  const pendingClosure = snapshot(11),
-    pendingReceipt = snapshot(12);
-  pendingClosure.quota.pendingClosures = 1;
-  pendingReceipt.quota.pending = 1;
-  const f = fixture([snapshot(10), pendingClosure, pendingReceipt, snapshot(13), snapshot(14)]);
-  await f.run();
-  expect(f.reads()).toBe(5);
-});
-
 it("waits for active model requests and durable provider delivery", async () => {
-  const active = snapshot(12),
-    pending = snapshot(13);
+  const active = snapshot(),
+    pending = snapshot();
   active.provider.active = 1;
-  pending.provider.pending = 2;
-  const f = fixture([snapshot(10), snapshot(11), active, pending, snapshot(14)]);
+  pending.provider.pending = 1;
+  const f = fixture([active, pending, snapshot()]);
   await f.run();
-  expect(f.reads()).toBe(5);
+  expect(f.reads()).toBe(3);
 });
-
-it.each(["bootId", "podId", "sourceId"])("rejects a changed compute %s", async (field) => {
-  const changed = snapshot(12);
+it.each(["epoch", "podId", "sourceId"])("refuses a changed compute %s", async (field) => {
+  const changed = snapshot();
   changed.compute[0][field] = "replacement";
-  const f = fixture([snapshot(10), changed]);
-  await expect(f.run()).rejects.toThrow("restarted or changed");
+  await expect(fixture([snapshot(1), changed]).run()).rejects.toThrow("restarted or changed");
 });
-
-it("rejects source disappearance and capture loss", async () => {
-  const first = snapshot(10);
-  first.compute.push({ ...first.compute[0], sourceId: "second", podId: "second-pod" });
-  await expect(fixture([first, snapshot(12)]).run()).rejects.toThrow("inventory changed");
-  const failed = snapshot(12);
-  failed.compute[0].captureFailures = 1;
-  await expect(fixture([snapshot(10), failed]).run()).rejects.toThrow("capture failed");
-  const modelFailed = snapshot(12);
-  modelFailed.provider.captureFailures = 1;
-  await expect(fixture([snapshot(10), modelFailed]).run()).rejects.toThrow("lost capture");
+it("refuses disappearing sources and a reset checkpoint", async () => {
+  const missing = snapshot();
+  missing.compute = [];
+  await expect(fixture([snapshot(1), missing]).run()).rejects.toThrow("ledger retained");
+  const reset = snapshot();
+  reset.compute[0].checkedAt = 1;
+  await expect(fixture([snapshot(1), reset]).run()).rejects.toThrow("checkpoint reset");
 });
-
-it("times out without treating unavailable observation as successful delivery", async () => {
-  const busy = snapshot(10);
-  busy.compute[0].deliveredCycles = null;
-  await expect(fixture([busy]).run()).rejects.toThrow("ledger retained");
+it("does not purge on failed, stale, missing or unresolved observation", async () => {
+  const failed = snapshot();
+  failed.compute[0].healthy = false;
+  await expect(fixture([failed]).run()).rejects.toThrow("ledger retained");
+  await expect(fixture([snapshot(1)]).run()).rejects.toThrow("ledger retained");
   await expect(
-    fixture([snapshot(10)]).run({
+    fixture([]).run({
       readSources: async () => {
-        throw new Error("source offline");
+        throw Error("source offline");
       },
     }),
   ).rejects.toThrow("ledger retained");
 });
-
-it("does not require a fabricated terminal PG row for a never-metered short lifetime", async () => {
-  // The port has only source delivery observations. No ledger row lookup or
-  // synthetic terminal receipt is needed to prove the post-disposal sweeps.
-  const f = fixture([snapshot(0), snapshot(1), snapshot(2)]);
-  expect((await f.run()).verified).toBe(true);
+it("refuses provider capture loss and identity changes", async () => {
+  for (const field of ["bootId", "podId", "captureFailures"]) {
+    const changed = snapshot();
+    changed.provider[field] = field === "captureFailures" ? 1 : "replacement";
+    await expect(fixture([snapshot(1), changed]).run()).rejects.toThrow("lost capture");
+  }
 });
-
-it("uses an immutable baseline even if an injected reader reuses its object", async () => {
-  const value = snapshot(10);
-  let reads = 0;
-  const f = fixture([]);
-  await f.run({
-    readSources: async () => {
-      value.compute[0].completedCycles = value.compute[0].deliveredCycles = 10 + reads++;
-      return value;
-    },
-  });
-  expect(reads).toBe(3);
+it("keeps its baseline immutable when a reader reuses an object", async () => {
+  const value = snapshot(1),
+    f = fixture([]);
+  let count = 0;
+  await expect(
+    f.run({
+      readSources: async () => {
+        if (count++) value.compute[0].podId = "new";
+        return value;
+      },
+    }),
+  ).rejects.toThrow("restarted or changed");
 });
-
-it("honors cancellation before receipt purge can be authorized", async () => {
-  const f = fixture([snapshot(10)]),
+it("honors cancellation before granting disposable ledger cleanup", async () => {
+  const f = fixture([snapshot()]),
     abort = new AbortController();
-  abort.abort(new Error("owned cancellation"));
+  abort.abort(Error("owned cancellation"));
   await expect(f.run({ signal: abort.signal })).rejects.toThrow("owned cancellation");
   expect(f.reads()).toBe(0);
-});
-
-it("keeps raw capture counters separate from delivery evidence", () => {
-  const text = [
-    'picloud_lifecycle_collection_cycles_total{boot_id="boot-1",source_id="epoch-1"} 12',
-    "picloud_lifecycle_capture_failures_total 0",
-  ].join("\n");
-  expect(parseComputeCaptureMetrics(text, "pod-1")).toEqual({
-    sourceId: "epoch-1",
-    bootId: "boot-1",
-    podId: "pod-1",
-    completedCycles: 12,
-    captureFailures: 0,
-  });
-  expect(() =>
-    parseComputeCaptureMetrics(text + "\npicloud_lifecycle_collection_cycles_total 13", "pod-1"),
-  ).toThrow("ambiguous");
-  expect(() => parseComputeCaptureMetrics("", "pod-1")).toThrow("Missing");
 });

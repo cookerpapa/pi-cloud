@@ -16,11 +16,13 @@ function checked(value) {
   for (const source of value.compute) {
     assert(
       identity(source.sourceId) &&
-        identity(source.bootId) &&
+        identity(source.epoch) &&
         identity(source.podId) &&
-        integer(source.completedCycles) &&
-        integer(source.captureFailures) &&
-        (source.deliveredCycles === null || integer(source.deliveredCycles)),
+        integer(source.checkedAt) &&
+        typeof source.healthy === "boolean" &&
+        integer(source.resources) &&
+        integer(source.pending) &&
+        source.pending <= source.resources,
       "Invalid compute delivery evidence",
     );
     assert(!keys.has(source.sourceId), "Duplicate compute source identity");
@@ -63,7 +65,7 @@ export async function waitForOwnedReceiptDelivery({
   if (!readSources) {
     const { createDeployedSourceDeliveryReader } =
       await import("./source-delivery-observation.mjs");
-    readSources = await createDeployedSourceDeliveryReader({ database });
+    readSources = await createDeployedSourceDeliveryReader({ database, tenantId });
   }
   const deadline = monotonicNow() + timeoutMs;
   let baseline,
@@ -89,13 +91,12 @@ export async function waitForOwnedReceiptDelivery({
       for (const source of current.compute) {
         const first = previous.get(source.sourceId);
         assert(
-          first && source.bootId === first.bootId && source.podId === first.podId,
+          first && source.epoch === first.epoch && source.podId === first.podId,
           "Compute source restarted or changed during delivery drain",
         );
         assert(
-          source.completedCycles >= first.completedCycles &&
-            source.captureFailures === first.captureFailures,
-          "Compute source capture failed or reset during delivery drain",
+          source.checkedAt >= first.checkedAt,
+          "Compute observation checkpoint reset during delivery drain",
         );
       }
       assert(
@@ -113,9 +114,7 @@ export async function waitForOwnedReceiptDelivery({
       quotaReady =
         current.quota.pending === 0 && current.quota.pendingClosures === 0 ? quotaReady + 1 : 0;
       const computeReady = current.compute.every(
-        (source) =>
-          source.deliveredCycles !== null &&
-          source.deliveredCycles >= previous.get(source.sourceId).completedCycles + 2,
+        (source) => source.healthy && source.pending === 0,
       );
       if (
         computeReady &&
@@ -127,10 +126,11 @@ export async function waitForOwnedReceiptDelivery({
         return {
           verified: true,
           tenantId,
-          compute: current.compute.map(({ sourceId, bootId, deliveredCycles }) => ({
+          compute: current.compute.map(({ sourceId, epoch, checkedAt, resources }) => ({
             sourceId,
-            bootId,
-            deliveredCycles,
+            epoch,
+            checkedAt,
+            resources,
           })),
           providerBootId: current.provider.bootId,
         };
@@ -144,38 +144,4 @@ export async function waitForOwnedReceiptDelivery({
       });
     await sleep(Math.min(1000, Math.max(1, deadline - monotonicNow())), signal);
   }
-}
-
-function metric(text, name) {
-  const rows = text
-    .split("\n")
-    .filter((line) => line.startsWith(`${name} `) || line.startsWith(`${name}{`));
-  assert.equal(rows.length, 1, `Missing or ambiguous source metric: ${name}`);
-  const match = /^\S+?(?:\{(.*)\})?\s+(\S+)(?:\s+\d+)?$/.exec(rows[0]);
-  assert(match, "Invalid source metric");
-  const labels = {};
-  if (match[1]) {
-    const parts = [...match[1].matchAll(/([a-z_][a-z0-9_]*)="((?:[^"\\]|\\.)*)"(?:,|$)/g)];
-    assert(parts.map((part) => part[0]).join("") === match[1], "Invalid source metric labels");
-    for (const part of parts) labels[part[1]] = JSON.parse(`"${part[2]}"`);
-  }
-  return { value: match[2] === "NaN" ? null : Number(match[2]), labels };
-}
-
-/** Capture completion is local evidence only. The deployed reader must also
- * read the raw journal head and the accounting cursor before declaring delivery. */
-export function parseComputeCaptureMetrics(text, podId) {
-  assert(
-    typeof text === "string" && Buffer.byteLength(text) <= 1_048_576,
-    "Source metrics exceed their bound",
-  );
-  const cycles = metric(text, "picloud_lifecycle_collection_cycles_total");
-  const failures = metric(text, "picloud_lifecycle_capture_failures_total");
-  return {
-    sourceId: cycles.labels.source_id,
-    bootId: cycles.labels.boot_id,
-    podId,
-    completedCycles: cycles.value,
-    captureFailures: failures.value,
-  };
 }

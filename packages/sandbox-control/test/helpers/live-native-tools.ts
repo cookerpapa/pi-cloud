@@ -14,12 +14,15 @@ import {
 } from "../../src/cubesandbox-runtime-client.ts";
 import { SandboxControlError } from "../../src/sandbox-provider.ts";
 import { InMemorySandboxBindings } from "./in-memory-sandbox-bindings.ts";
+import { CubePersistentCapsuleCodec } from "../../src/cube-persistent-capsule.ts";
+import { connectionFromCapsule } from "../../src/cube-connection-capsules.ts";
 
 /** Live backend contract fixture: native Cube takeover + real Kafka completion.
  * Source-log admission and canonical Pi after-hooks are tested by the Worker gate. */
 export async function liveNativeTools(
   runtime: OfficialCubeSandboxRuntimeClientOptions,
   bindings: InMemorySandboxBindings,
+  persistentStateKey: Uint8Array,
 ) {
   const brokers = process.env.PI_CLOUD_KAFKA_BROKERS?.split(",");
   if (!brokers?.length)
@@ -34,7 +37,27 @@ export async function liveNativeTools(
     ca: await readFile(caFile, "utf8"),
     secret: (await readFile(secretFile, "utf8")).trim(),
   });
-  const client = new OfficialCubeSandboxRuntimeClient(runtime);
+  const codec = new CubePersistentCapsuleCodec(persistentStateKey);
+  const client = new OfficialCubeSandboxRuntimeClient({
+    ...runtime,
+    async resolveExecutionConnection(target) {
+      for (const { descriptor, snapshot } of bindings.rows.values()) {
+        if (!descriptor.dataCapsule) continue;
+        const connection = connectionFromCapsule(
+          codec,
+          {
+            id: snapshot.physicalActivationId,
+            tenant_id: snapshot.assignment.tenantId,
+            workspace_id: snapshot.assignment.workspaceId,
+            runtime_capsule: descriptor.dataCapsule,
+          },
+          target,
+        );
+        if (connection) return connection;
+      }
+      return undefined;
+    },
+  });
   const mailbox = new KafkaToolReplyMailbox({
     brokers,
     bootId: randomUUID(),

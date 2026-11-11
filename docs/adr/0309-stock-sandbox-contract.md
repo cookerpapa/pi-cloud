@@ -191,3 +191,10 @@ expiry. Resource health now samples native inventory/status/deletion evidence
 only; it never opens a Guest process just to keep health green. Execution-side
 on-demand full probes and real Tool evidence remain, and native Tool admission
 still rejects changed Guest boots. Pure API observations do not renew the VM.
+
+Disposable acceptance-ledger cleanup also uses this boundary. It waits for the
+independent collector's committed `absent` state for every attributed compute
+resource, plus provider and Workspace receipt delivery. Observation pages and
+derived receipts commit with the cursor; a stale page cannot resurrect a retired
+resource after the cursor advances. There is no Cubelet capture counter or private
+compute outbox to drain. This cleanup guard never authorizes resource deletion.

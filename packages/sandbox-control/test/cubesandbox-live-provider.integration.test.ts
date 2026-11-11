@@ -330,6 +330,20 @@ async function waitForNoManagedInstances(
   }
 }
 
+async function waitForNativeDeletion(
+  client: OfficialCubeSandboxRuntimeClient,
+  sandboxId: string,
+  nodeId?: string,
+): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  do {
+    if ((await client.observe(sandboxId, nodeId)).presence === "absent") return;
+    // A cold reader must catch up through bounded native lifecycle pages.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  } while (Date.now() < deadline);
+  throw new Error("Owned native deletion remains unconfirmed");
+}
+
 describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
   it("does not claim cleanup when deletion of a real owned VM is unconfirmed", async () => {
     const config = await configuration();
@@ -400,11 +414,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
             instance.metadata["picloud.workspace_id"] === assigned.workspaceId
           ) {
             await cleanup.destroy(instance.sandboxId);
-            if (
-              !instance.nodeId ||
-              (await cleanup.observe(instance.sandboxId, instance.nodeId)).presence !== "absent"
-            )
-              throw new Error("Owned physical absence was not confirmed");
+            await waitForNativeDeletion(cleanup, instance.sandboxId, instance.nodeId);
           }
         }
         await waitForNoManagedInstances(config, [assigned]);
@@ -454,6 +464,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
           required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE"),
         ),
       };
+      const persistentStateKey = randomBytes(32);
       const provider = new CubeSandboxProvider({
         templateId: config.templateId,
         developmentTemplateIds: {
@@ -464,7 +475,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         imageRevision: config.imageRevision,
         webProxy: config.webProxy,
         runtime: config.runtime,
-        persistentStateKey: randomBytes(32),
+        persistentStateKey,
         workspaceVolumeGateway: new HttpWorkspaceVolumeGateway(volumeGatewayOptions),
       });
       const bindings = new InMemorySandboxBindings();
@@ -483,7 +494,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       const failures: unknown[] = [];
       let execution: Awaited<ReturnType<typeof liveNativeTools>> | undefined;
       try {
-        execution = await liveNativeTools(config.runtime, bindings);
+        execution = await liveNativeTools(config.runtime, bindings, persistentStateKey);
         await provider.checkHealth();
         const terminalEnvironment = createRequest(
           terminalAssignment,
@@ -881,12 +892,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
               )
             ) {
               await cleanupClient.destroy(instance.sandboxId);
-              if (
-                !instance.nodeId ||
-                (await cleanupClient.observe(instance.sandboxId, instance.nodeId)).presence !==
-                  "absent"
-              )
-                throw new Error("Owned live runtime absence was not confirmed on its node");
+              await waitForNativeDeletion(cleanupClient, instance.sandboxId, instance.nodeId);
             }
           }
           await waitForNoManagedInstances(config, [
