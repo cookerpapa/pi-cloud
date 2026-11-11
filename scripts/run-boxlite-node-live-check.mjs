@@ -53,7 +53,7 @@ let tenant, api, project, instance, failure;
 const command = (c) =>
   box.runCommand(instance, {
     command: c,
-    cwd: "/workspace",
+    cwd: "/home/user",
     user: "1000:1000",
     timeoutMs: 10000,
     maximumOutputBytes: 16384,
@@ -86,7 +86,7 @@ try {
       "picloud.tenant_id": tenant.tenantId,
       "picloud.workspace_id": project.workspaceId,
     },
-    volumeMounts: [{ name: volumeId, path: "/workspace" }],
+    volumeMounts: [{ name: volumeId, path: "/home/user" }],
   };
   report.request = request;
   await save();
@@ -95,7 +95,7 @@ try {
   await save();
   console.log("Owned Box VM created");
   const first = await command(
-    "id -u; printf 'WORKSPACE_RETAINED' > /workspace/box-node-marker; cat /workspace/box-node-marker",
+    "id -u; printf 'WORKSPACE_RETAINED' > /home/user/box-node-marker; cat /home/user/box-node-marker",
   );
   assert.equal(first.exitCode, 0);
   assert.match(first.stdout, /^1000\nWORKSPACE_RETAINED/);
@@ -111,6 +111,16 @@ try {
   report.checks.push("host-and-guest-uid1000-aligned");
   report.checks.push("native-exec-and-workspace");
   await save();
+  // Dedicated initialization removes the unused elastic directory. The native
+  // init process must not inherit that removable image WORKDIR on its next boot.
+  const removed = await box.runCommand(instance, {
+    command: "rmdir /workspace; test ! -e /workspace",
+    cwd: "/",
+    user: "0:0",
+    timeoutMs: 10000,
+    maximumOutputBytes: 8192,
+  });
+  assert.equal(removed.exitCode, 0);
   await box.pause(instance.sandboxId);
   assert.equal((await box.read(instance.sandboxId)).state, "paused");
   await assert.rejects(() => command("true"));
@@ -118,7 +128,7 @@ try {
   instance = await box.connect(instance.sandboxId);
   report.instance = instance;
   await save();
-  assert.equal((await command("cat /workspace/box-node-marker")).stdout, "WORKSPACE_RETAINED");
+  assert.equal((await command("cat /home/user/box-node-marker")).stdout, "WORKSPACE_RETAINED");
   report.checks.push("explicit-resume-retains-workspace");
   await save();
   const before = instance.connection;
@@ -158,7 +168,7 @@ try {
   assert(instance);
   assert.equal(instance.state, "running");
   assert.equal(instance.connection.processes[0].startTime, before.processes[0].startTime);
-  assert.equal((await command("cat /workspace/box-node-marker")).stdout, "WORKSPACE_RETAINED");
+  assert.equal((await command("cat /home/user/box-node-marker")).stdout, "WORKSPACE_RETAINED");
   report.checks.push("api-restart-retains-vm");
   await save();
 } catch (e) {

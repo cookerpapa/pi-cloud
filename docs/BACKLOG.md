@@ -25,6 +25,10 @@ the terminal test uses that assembly instead of manually supplying the plugin.
 The following live preview check found that the embedded BoxLite SDK rejects its
 hosted private-tunnel option. The node now uses the native local connected stream
 and verifies that it has no published URI; real preview revalidation is pending.
+Public terminal/preview now pass. Pause/resume exposed an inherited image WORKDIR:
+dedicated preparation removes `/workspace`, so the next native init failed its
+chdir. The Box init cwd is now `/`; the node gate reproduces removal of the old
+directory before pause/resume. Live revalidation is pending.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.

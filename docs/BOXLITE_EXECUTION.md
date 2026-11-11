@@ -55,6 +55,11 @@ Workspace IDs and break shared access. Infrastructure commands explicitly use
 root without changing the container default. The live node check verifies host
 and Guest ownership, not only the command's exit status.
 
+The VM init process starts in `/`, independently of the image's `/workspace`
+working directory, which dedicated-machine preparation removes. Tools and human
+terminals select their own cwd. A missing working folder must not prevent the
+native VM itself from resuming.
+
 Supervisor manages only the node API child, allowing that process to restart
 without ending its container or detached VMM children. It does not schedule
 Agents, Tools or resource expiry. Full Pod or host loss is a VM-failure boundary.

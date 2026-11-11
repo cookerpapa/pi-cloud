@@ -193,6 +193,10 @@ export class BoxLiteNodeBackend {
           // chown(1000) and ordinary Tool IO retain the same host/Guest identity.
           // Infrastructure exec still explicitly requests root below.
           user: "1000:1000",
+          // Dedicated preparation removes the image's empty /workspace. Keep
+          // the VM init process independent of any replaceable working folder;
+          // every Tool/human execution selects its own cwd explicitly.
+          workingDir: "/",
           entrypoint: ["/bin/sleep"],
           cmd: ["infinity"],
           advanced: { privileged: true },
