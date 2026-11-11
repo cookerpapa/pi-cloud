@@ -13,6 +13,9 @@ operator-only repairs retain the scanned runtime revision without relabeling it.
 Real node checks passed creation, retained Workspace pause/resume, API-child
 replacement and confirmed deletion. Cold maintenance also waits for OnDelete
 node Pods directly; an unready node keeps the resumable maintenance receipt.
+Full-path acceptance found BoxLite's automatic volume UID mapping conflicted
+with a root default container user. The adapter now selects UID 1000 to preserve
+the platform Workspace identity; live ownership and Tool checks are pending.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.

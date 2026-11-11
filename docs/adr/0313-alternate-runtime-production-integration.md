@@ -166,3 +166,21 @@ Adoption evidence: [ADR-0312](0312-unmodified-alternate-sandbox-validation.md),
 the [real stock-provider experiments](../reports/sandbox-portability-20261111.md),
 and ADR-0306/0307/0309's existing reply, Guest and ownership mechanisms. This
 extends existing authorities instead of introducing another infrastructure stack.
+## Workspace UID mapping discovered during live acceptance
+
+BoxLite 0.12.0's [container lifecycle](https://github.com/boxlite-ai/boxlite/blob/v0.12.0/src/guest/src/container/lifecycle.rs) automatically maps a
+read/write host Volume's owner to the configured container user. Its
+[mount ID mapping](https://github.com/boxlite-ai/boxlite/blob/v0.12.0/src/guest/src/storage/idmap.rs) swaps the two IDs rather than translating only
+one direction. Configuring the container's default user as root therefore made
+the platform's UID-1000 Workspace appear root-owned inside the Guest; a Guest
+`chown(1000)` then changed its host owner to root. Elastic initialization failed,
+and dedicated Workspace access through the Volume Gateway lost permission.
+
+The adapter configures the container default user as `1000:1000`, matching the
+managed Workspace owner and avoiding that remapping. Infrastructure execution
+still explicitly requests root; fixed Tools remain UID 1000. This is a native
+SDK option, not a vendor patch. Live acceptance must verify both host and Guest
+ownership across creation, API replacement and VM resume, in addition to content
+preservation. The affected development allocation is retired before restoring
+the managed directory's original owner; no recursive file ownership rewrite is
+authorized by this repair.

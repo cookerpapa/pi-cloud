@@ -188,7 +188,11 @@ export class BoxLiteNodeBackend {
           cpus: profile.cpus,
           memoryMib: profile.memoryMiB,
           diskSizeGb: profile.diskGiB,
-          user: "0:0",
+          // Native BoxLite auto-idmaps host volume owners to this default
+          // container user. Match the platform's Workspace UID so control-side
+          // chown(1000) and ordinary Tool IO retain the same host/Guest identity.
+          // Infrastructure exec still explicitly requests root below.
+          user: "1000:1000",
           entrypoint: ["/bin/sleep"],
           cmd: ["infinity"],
           advanced: { privileged: true },
