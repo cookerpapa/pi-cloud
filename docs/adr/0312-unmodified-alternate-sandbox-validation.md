@@ -3,6 +3,10 @@
 Date: 2026-11-11. Status: accepted for isolated operator validation.
 Tracking: [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27).
 
+[Completed operator evidence](../reports/sandbox-portability-20261111.md) records
+the passing rootful BoxLite configuration and stock Android live publication;
+production promotion remains separate.
+
 The owner requests actual BoxLite and Android trials after stock Cube cleanup.
 Cube remains the default supported production runtime. An operator-selected,
 owned test target is permitted; it is never an automatic fallback. Promotion to
@@ -26,8 +30,10 @@ The comparative local probe may explicitly run the trusted SDK as host root
 with `SecurityOptions(jailer_enabled=False, seccomp_enabled=True)`. The default
 rootless jailer's UID mapping did not support the managed Workspace's UID-1000
 ownership, and detached cleanup left shim processes in this environment. This
-alternative retains the KVM boundary, seccomp and isolated mounts, but disables
-the optional host shim jailer; record that tradeoff rather than claiming equal
+alternative retains the KVM boundary and the selected Guest mounts, but disables
+the optional host shim jailer. In this pinned revision the VMM seccomp filter is
+also gated by `jailer_enabled`, so setting `seccomp_enabled=True` does not activate
+it in this configuration. Record that tradeoff rather than claiming equal
 defense in depth. It is an opt-in research configuration, not a production switch.
 
 The local SDK does not implement native idle AutoStop. Standalone `boxlite serve`

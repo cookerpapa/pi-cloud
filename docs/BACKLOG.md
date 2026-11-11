@@ -25,11 +25,12 @@
 - [x] #28 maintenance: four obsolete templates/rootfs artifacts deleted through native APIs; three private buckets retired with native-data hashes preserved.
 - [x] #28 source: guarded one-time locator repair and offline bbolt bucket retirement; preserve native records and use official template deletion.
 - [x] #28 acceptance: cold maintenance completed; original 394 files/configuration and both recovered machines verified. [Evidence](reports/cube-metadata-cleanup-20261111.md).
-- [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; device rollout remains pending.
-- [ ] #27: evaluate BoxLite against the stock-provider boundary before enabling it.
+- [x] #27 source: audit Android upstream artifacts and remove the driver manifest rewrite; stock-driver target images are published and live-verified.
+- [x] #27: evaluate BoxLite against the stock-provider boundary; record default-jailer failures and passing explicit rootful configuration without enabling production selection.
 - [x] #27 source: owned BoxLite SDK/Guest probe and explicit ADR-0312 boundary; no engine patches or production fallback.
 - [x] #27 source: Android target access follows the separate Session API/Runtime; egress configuration uses the maintained execution service.
-- [ ] #27 acceptance: compare BoxLite native configurations and publish/verify the unmodified Android automation image with retained userdata.
+- [x] #27 acceptance: seven BoxLite Guest/HTTPS scenarios and six real Android tools, retained images/browser rendering and device restart passed; original stopped target state restored. [Evidence](reports/sandbox-portability-20261111.md).
+- [ ] #27 promotion: general BoxLite provider/Workspace/quota integration, accepted host isolation and native elastic expiry; Android pending-operation wait continuation. These are outside the completed operator experiment.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now

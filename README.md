@@ -10,6 +10,10 @@ Pi Managed Agents is a personal infrastructure project with integration and fail
 acceptance on a single-host K3s deployment. It has not been validated at fleet
 scale or as a highly available production service.
 
+[Portability validation](docs/reports/sandbox-portability-20261111.md) also runs the
+fixed Guest on unmodified BoxLite and verifies the retained Android operator
+prototype. These experiments do not enable an alternate production default.
+
 ## What it does
 
 - **Coding conversations:** streamed text, tool results, hosted search where the

@@ -20,6 +20,12 @@ and private node buckets are gone, original assets and machines preserved. The
 [delivery report](reports/stock-cube-source-20261111.md) records passing live
 checks, failed samples, limits and the owner-approved exact-image exception.
 
+The subsequent [BoxLite / Android validation](reports/sandbox-portability-20261111.md)
+passed real Guest execution and Android model/image/restart checks with unchanged
+upstream engines. It records the BoxLite host-jailer tradeoff and local resource
+API gaps. #27 retains production promotion work; Cube remains the default, and
+the Android target was returned to its original stopped state.
+
 ## Guest execution and Session activity — deployed
 
 Delivered [#25](https://github.com/cookerpapa/pi-managed-agents/issues/25) under

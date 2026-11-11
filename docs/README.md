@@ -62,7 +62,9 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest delivery: [Stock Cube deployment](reports/stock-cube-source-20261111.md).
+Latest validation: [Stock BoxLite / Android portability](reports/sandbox-portability-20261111.md).
+Latest maintenance: [Obsolete Cube metadata cleanup](reports/cube-metadata-cleanup-20261111.md).
+Serving runtime delivery: [Stock Cube deployment](reports/stock-cube-source-20261111.md).
 Previous delivery: [Guest execution and Session activity](reports/guest-execution-20261110.md).
 Previous delivery: [Runtime decoupling and continuation](reports/runtime-decoupling-20261109.md).
 Previous delivery: [Execution-owned tools and independent publication](reports/execution-tools-20261108.md).

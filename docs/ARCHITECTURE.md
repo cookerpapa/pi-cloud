@@ -10,6 +10,13 @@ This document describes the current runtime, not its release chronology.
 record evidence at named revisions, and [BACKLOG](BACKLOG.md) lists unresolved
 limits. Historical migrations and reports are not alternate production modes.
 
+[ADR-0312](adr/0312-unmodified-alternate-sandbox-validation.md) permits isolated
+BoxLite/Android portability checks. The fixed Guest runs on stock BoxLite through
+an ordinary SDK adapter, but the production resource/Workspace/expiry integration
+is not enabled. The retained Android target uses its own trusted external
+receiver and official automation APK; it does not inherit the Linux Guest's
+pending-wait recovery guarantees. [Evidence and limits](reports/sandbox-portability-20261111.md).
+
 ## One message
 
 ```text

@@ -1,5 +1,11 @@
 # Delivery and research evidence
 
+- [Stock sandbox portability](sandbox-portability-20261111.md): real BoxLite
+  Guest/HTTPS checks, official-configuration limits, Android publication and live
+  device/image/restart acceptance; no new production default.
+- [Obsolete Cube metadata cleanup](cube-metadata-cleanup-20261111.md): native
+  template deletion, bounded private-bucket cleanup and original-asset preservation.
+
 - [Complete Cube patch inventory](../research/cube-patch-inventory-20261110.md):
   every current source/dependency patch, seven runtime responsibility groups,
   cold-connection consumers and build transformations outside patch files.

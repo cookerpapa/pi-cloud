@@ -95,6 +95,9 @@ step is removed. Root dependency overrides remain ordinary deployment configurat
 No Android/Cuttlefish, Appium/UiAutomator runtime code or APK is patched.
 The #27 packaging change requires its own image and device acceptance; historical
 deployment evidence at the top of this guide is not proof of that new release.
+That acceptance is now recorded in the [2026-11-11 stock-driver publication](reports/sandbox-portability-20261111.md):
+all six tools, retained screenshots/browser display and device restart passed.
+The original userdata remains, and the operator target was returned to zero replicas.
 The target chart authorizes private calls from the independent Session Runtime
 and Session API as well as resource administration; it no longer assumes those
 roles share the Control Plane process. This concerns only the existing target
