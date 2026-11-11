@@ -7,6 +7,10 @@
 - [ ] #27: explicit BoxLite provider selection and managed Workspace/resource integration.
 - [ ] #27: serial real-deployment recovery, isolation, output/image and cleanup acceptance.
 
+Alternate images have passed their release scans. Live rollout is in progress;
+the BoxLite operator now uses the maintained temporary registry forward, and
+operator-only repairs retain the scanned runtime revision without relabeling it.
+
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.
 Android source/PG/Harness checks pass; matched publication and live device

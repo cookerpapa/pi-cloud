@@ -1,5 +1,7 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/run-boxlite-release.mjs",
+  "scripts/run-android-release.mjs",
   "scripts/retire-obsolete-cube-metadata.mjs",
   "scripts/lib/obsolete-cube-metadata.mjs",
   "scripts/lib/obsolete-cube-metadata.test.mjs",

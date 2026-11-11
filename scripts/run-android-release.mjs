@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
+import { assertOperatorRevisionChanges } from "./lib/component-release.mjs";
 import {
   runtimeDirectory,
   kubectl,
@@ -78,10 +79,17 @@ if (action === "prepare") {
 } else {
   assert(arg && base, "Supply the owned target directory and tenant UUID");
   const release = JSON.parse(readFileSync(manifestPath));
-  assert.equal(release.revision, revision);
+  if (release.revision !== revision) {
+    capture("git", ["merge-base", "--is-ancestor", release.revision, revision]);
+    assertOperatorRevisionChanges(
+      capture("git", ["diff", "--no-renames", "--name-only", `${release.revision}..${revision}`])
+        .split("\n")
+        .filter(Boolean),
+    );
+  }
   const evidence = JSON.parse(readFileSync(resolve(directory, "evidence/manifest.json")));
   assert.equal(evidence.scope, "android");
-  assert.equal(evidence.git.revision, revision);
+  assert.equal(evidence.git.revision, release.revision);
   assert.equal(evidence.images.length, 4);
   const targetDirectory = resolve(arg),
     target = JSON.parse(readFileSync(resolve(targetDirectory, "target.json")));
@@ -184,7 +192,14 @@ if (action === "prepare") {
   writeFileSync(
     resolve(targetDirectory, "deployment.json"),
     JSON.stringify(
-      { release: directory, revision, tenantId: base, name, at: new Date().toISOString() },
+      {
+        release: directory,
+        revision: release.revision,
+        operatorRevision: revision,
+        tenantId: base,
+        name,
+        at: new Date().toISOString(),
+      },
       null,
       2,
     ) + "\n",

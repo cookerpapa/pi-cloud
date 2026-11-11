@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,6 +13,8 @@ import {
   runtimeEnvironment,
 } from "./lib/production-kubernetes.mjs";
 import { assertBoxLiteEmpty } from "./lib/boxlite-maintenance.mjs";
+import { startRegistryForward } from "./lib/cube-registry-forward.mjs";
+import { assertOperatorRevisionChanges } from "./lib/component-release.mjs";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES } from "../packages/protocol/src/development-environment-profile.ts";
 configureBuildProxy();
 serializeRelease(runtimeDirectory);
@@ -76,10 +78,17 @@ if (action === "prepare") {
   );
 } else {
   const release = JSON.parse(readFileSync(manifest));
-  assert.equal(release.revision, revision);
+  if (release.revision !== revision) {
+    capture("git", ["merge-base", "--is-ancestor", release.revision, revision]);
+    assertOperatorRevisionChanges(
+      capture("git", ["diff", "--no-renames", "--name-only", `${release.revision}..${revision}`])
+        .split("\n")
+        .filter(Boolean),
+    );
+  }
   const evidence = JSON.parse(readFileSync(resolve(directory, "evidence/manifest.json")));
   assert.equal(evidence.scope, "boxlite");
-  assert.equal(evidence.git.revision, revision);
+  assert.equal(evidence.git.revision, release.revision);
   assert.equal(evidence.images.length, 1);
   const image = evidence.images[0];
   assert.equal(
@@ -111,17 +120,31 @@ if (action === "prepare") {
     "Stop BoxLite resource admission through the matched maintenance procedure before replacing its node",
   );
   await assertBoxLiteEmpty({ kubectl });
-  const registry =
-    JSON.parse(kubectl(["get", "service", "pi-cloud-cube-template-registry", "-o", "json"])).spec
-      .clusterIP + ":5000";
-  run("docker", ["push", release.guest]);
+  const registryHost = JSON.parse(
+    kubectl(["get", "service", "pi-cloud-cube-template-registry", "-o", "json"]),
+  ).spec.clusterIP;
+  const registry = registryHost + ":5000";
+  kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
+  const forward = await startRegistryForward({ host: registryHost, port: 5000 });
+  try {
+    // The same process forwards registry traffic, so a synchronous docker push
+    // would block the forwarder's event loop.
+    await new Promise((resolve, reject) => {
+      const child = spawn("docker", ["push", release.guest], { stdio: "inherit" });
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error(`Guest image push failed (${code})`)),
+      );
+    });
+  } finally {
+    await forward.stop();
+  }
   const local = JSON.parse(capture("docker", ["inspect", release.guest]))[0];
   const digest = local.RepoDigests?.find((v) =>
     v.startsWith("localhost:5000/pi-cloud/cubesandbox-tool@"),
   )?.split("@")[1];
   assert(/^sha256:[a-f0-9]{64}$/.test(digest ?? ""), "Guest OCI digest is unavailable");
   const guestRef = registry + "/pi-cloud/cubesandbox-tool@" + digest;
-  kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
   const cluster = JSON.parse(readFileSync(resolve(runtimeDirectory, "cubesandbox/cluster.json")));
   const completion = JSON.parse(kubectl(["get", "service", "tool-completion", "-o", "json"])).spec
     .clusterIP;
@@ -201,7 +224,8 @@ if (action === "prepare") {
     resolve(runtimeDirectory, "k3s/boxlite.json"),
     JSON.stringify(
       {
-        revision,
+        revision: release.revision,
+        operatorRevision: revision,
         version: release.version,
         nodeId,
         url: "http://pi-cloud-boxlite:8091",
