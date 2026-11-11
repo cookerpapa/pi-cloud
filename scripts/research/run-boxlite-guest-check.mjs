@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { createInterface } from "node:readline";
+import sharp from "sharp";
 import { testTls } from "../../packages/cube-completion/test/tls-fixture.ts";
 import { completionServer } from "../../packages/cube-completion/src/http-server.ts";
 import { ToolCompletionCapabilities } from "../../packages/protocol/src/completion-capability.ts";
@@ -243,7 +244,7 @@ try {
   report.checks.push("200KB source output bounded before callback");
   for (const [name, args] of [
     ["write", { path: "/workspace/note.txt", content: "before" }],
-    ["edit", { path: "/workspace/note.txt", oldText: "before", newText: "after" }],
+    ["edit", { path: "/workspace/note.txt", edits: [{ oldText: "before", newText: "after" }] }],
     ["read", { path: "/workspace/note.txt" }],
   ]) {
     const operation = request(name, args);
@@ -254,10 +255,9 @@ try {
   }
   await writeFile(
     resolve(directory, "workspace/pixel.png"),
-    Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDXsAAAAASUVORK5CYII=",
-      "base64",
-    ),
+    await sharp({ create: { width: 2, height: 3, channels: 3, background: "red" } })
+      .png()
+      .toBuffer(),
   );
   const picture = request("read", { path: "/workspace/pixel.png" });
   assert.equal((await guest(picture)).accepted, true);
