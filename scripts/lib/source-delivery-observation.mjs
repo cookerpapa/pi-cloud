@@ -86,13 +86,14 @@ export function lifecycleProviderId(pod) {
  * registrations. A newly installed collector must join the delivery inventory. */
 export function assertUncollectedComputeClosed({
   sourceId,
-  cubeSourceId,
+  registeredBoxliteBackend,
   workspacePurged,
   collectorExists,
 }) {
-  assert.equal(
-    sourceId,
-    cubeSourceId.replace(/^cubesandbox:/, "boxlite:"),
+  assert(
+    typeof sourceId === "string" &&
+      /^boxlite:[A-Za-z0-9_.-]{1,64}$/.test(sourceId) &&
+      registeredBoxliteBackend === true,
     "Unknown compute receipt producer",
   );
   assert(!collectorExists, "BoxLite collector must join the receipt delivery inventory");
@@ -139,6 +140,9 @@ export async function createDeployedSourceDeliveryReader({ database, tenantId })
     const { rows: uncollected } = await sql`
       select r.provider_binding->>'sourceId' as source_id,
         bool_and(w.storage_purged_at is not null) as workspace_purged,
+        bool_and(exists(select 1 from sandbox_domains d
+          where d.backend_catalog->>'provider'='boxlite'
+            and 'boxlite:'||d.id=r.provider_binding->>'sourceId')) as registered_boxlite_backend,
         bool_or(exists(select 1 from resource_lifecycle_sources s
           where s.provider=r.provider_binding->>'sourceId')) as collector_exists
       from resource_metering_resources r left join workspaces w
@@ -149,7 +153,7 @@ export async function createDeployedSourceDeliveryReader({ database, tenantId })
     for (const row of uncollected)
       assertUncollectedComputeClosed({
         sourceId: row.source_id,
-        cubeSourceId: provider,
+        registeredBoxliteBackend: row.registered_boxlite_backend,
         workspacePurged: row.workspace_purged === true,
         collectorExists: row.collector_exists,
       });
