@@ -15,7 +15,10 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   are role-specific. Twenty-five focused configuration/assembly checks, type
   checks and the maintained Helm gate pass under ADR-0316.
 - [ ] #36: finish provider construction integration with #30/#31 and live role replacement.
-- [ ] #37: verified production artifact and role dependency boundaries.
+- [x] #37 Worker source: remove Control Plane/accounting COPY inputs, import the
+  narrow execution client, and check the actual Worker assembly in its image.
+  Dependency/context checks, type checking and five lifecycle tests pass.
+- [ ] #37: verify the built Worker and finish role-input integration with #33.
 - [ ] #30: Workspace persistence independent of the compute provider.
 - [ ] #31: dynamic administrator backend registration and resource selection.
 - [ ] #34: two Skill tools with precise installation removal.

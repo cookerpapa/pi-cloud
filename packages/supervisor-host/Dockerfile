@@ -10,9 +10,6 @@ COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
 COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
-COPY packages/accounting/package.json packages/accounting/package.json
-COPY packages/control-plane/package.json packages/control-plane/package.json
-COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/domain/package.json packages/domain/package.json
@@ -37,7 +34,7 @@ FROM os-base
 
 ARG PI_CLOUD_VERSION=development
 ARG PI_CLOUD_REVISION=unknown
-LABEL org.opencontainers.image.title="PiCloud trusted Supervisor host" \
+LABEL org.opencontainers.image.title="Pi Managed Agents Worker" \
       org.opencontainers.image.description="Credentialed Pi Agent Runner without Docker or user tool execution" \
       org.opencontainers.image.version="${PI_CLOUD_VERSION}" \
       org.opencontainers.image.revision="${PI_CLOUD_REVISION}"
@@ -47,11 +44,6 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules /app/node_modules
 COPY package.json package-lock.json ./
 COPY tsconfig.base.json ./
-COPY packages/accounting/package.json packages/accounting/package.json
-COPY packages/control-plane/package.json packages/control-plane/package.json
-COPY packages/control-plane/tsconfig.json packages/control-plane/tsconfig.json
-COPY packages/accounting/src packages/accounting/src
-COPY packages/control-plane/src packages/control-plane/src
 COPY packages/session-attachments/package.json packages/session-attachments/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/session-attachments/src packages/session-attachments/src
@@ -79,8 +71,9 @@ COPY packages/supervisor-host/tsconfig.json packages/supervisor-host/tsconfig.js
 COPY packages/supervisor-host/src packages/supervisor-host/src
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
-RUN cd /app/packages/supervisor-host \
-    && node --import tsx --input-type=module --eval "await import('./src/tools/worker-tool-runtime.ts'); await import('@pi-cloud/runtime-core/direct-session-kafka'); await import('@pi-cloud/sandbox-supervisor'); await import('@earendil-works/pi-durable')" \
+RUN test ! -e /app/packages/control-plane && test ! -e /app/packages/accounting \
+    && cd /app/packages/supervisor-host \
+    && node --import tsx --input-type=module --eval "await import('./src/runtime.ts'); await import('./src/tools/worker-tool-runtime.ts'); await import('@pi-cloud/runtime-core/direct-session-kafka'); await import('@pi-cloud/sandbox-supervisor'); await import('@earendil-works/pi-durable')" \
     && cd /app/packages/sandbox-control \
     && node --input-type=module --eval "await import('undici')" \
     && rm -rf /usr/local/lib/node_modules/npm \

@@ -76,6 +76,17 @@ assert(
   !dockerfile.includes("/app/packages/sandbox-supervisor/node_modules"),
   "Supervisor image must not assume npm creates a sandbox-supervisor node_modules directory",
 );
+for (const unrelated of ["control-plane", "accounting"]) {
+  assert(!closure.has(`@pi-cloud/${unrelated}`), `Worker runtime depends on ${unrelated}`);
+  assert(
+    !dockerfile.includes(`COPY packages/${unrelated}/`),
+    `Worker image carries unrelated ${unrelated} code`,
+  );
+}
+assert(
+  dockerfile.includes("await import('./src/runtime.ts')"),
+  "Worker image must load its actual production assembly",
+);
 const controlPlaneDockerfile = await readFile(
   resolve(packagesDirectory, "control-plane", "Dockerfile"),
   "utf8",

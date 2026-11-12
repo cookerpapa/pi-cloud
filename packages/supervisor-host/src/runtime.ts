@@ -18,7 +18,10 @@ import { createDatabase, type Database } from "@pi-cloud/database";
 import { operationalLog, type PiCloudMetrics } from "@pi-cloud/observability";
 import { PostgresDurableSessionHost } from "@pi-cloud/pi-session-postgres/durable";
 import type { SupervisorBootProvisionRequest } from "@pi-cloud/protocol";
-import { ReplicatedSandboxControlClient, SandboxControlClient } from "@pi-cloud/sandbox-control";
+import {
+  ReplicatedSandboxControlClient,
+  SandboxControlClient,
+} from "@pi-cloud/sandbox-control/client";
 import {
   AgentRunSupervisor,
   RemoteToolSandboxTurnRunner,
