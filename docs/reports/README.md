@@ -1,5 +1,10 @@
 # Delivery and research evidence
 
+- [Repository decoupling and release review](repository-decoupling-review-20261112.md):
+  current authority boundaries, remaining startup/storage/build coupling, release
+  scope decisions, documentation/migration cleanup and test-value assessment.
+  Broader scoped publication awaits discussion of the findings.
+
 - [Integrated alternate runtimes](alternate-runtimes-20261112.md): stock BoxLite
   resource/Guest integration, Android original-operation recovery, serial live
   acceptance and explicit isolation/accounting limits.

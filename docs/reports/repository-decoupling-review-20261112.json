@@ -1,0 +1,295 @@
+{
+  "format": "pi-managed-agents.repository-decoupling-review.v1",
+  "reviewedRevision": "ae05797e9794a6d1847a2934dcc3668b5f882018",
+  "reviewDate": "2026-11-12",
+  "scope": "repository architecture, release boundaries, documentation and test maintenance",
+  "servingRuntimeMutated": false,
+  "releaseExpansionDecision": "discussion_required",
+  "issues": {
+    "review": 32,
+    "release": 33,
+    "persistence": 30,
+    "registration": 31
+  },
+  "inventory": {
+    "trackedFiles": 2640,
+    "workspacePackages": 25,
+    "trackedTestFiles": 452,
+    "sizeCategories": {
+      "reports (including JSON evidence)": {
+        "files": 565,
+        "lines": 199773
+      },
+      "package runtime source": {
+        "files": 607,
+        "lines": 138739
+      },
+      "test definitions": {
+        "files": 452,
+        "lines": 106110
+      },
+      "schema migrations": {
+        "files": 220,
+        "lines": 15510
+      },
+      "operator/acceptance scripts": {
+        "files": 247,
+        "lines": 65261
+      },
+      "historical experiment files": {
+        "files": 65,
+        "lines": 10252
+      }
+    }
+  },
+  "collection": {
+    "collectionOnly": true,
+    "packageFiles": 393,
+    "packageCases": 2536,
+    "scriptFiles": 46,
+    "scriptCases": 307,
+    "faultTargetsFound": 430,
+    "faultTargetsMissing": []
+  },
+  "validation": {
+    "documentationCheck": {
+      "files": 40,
+      "passed": true
+    },
+    "additionalGuideLinks": {
+      "files": 43,
+      "missingLinks": []
+    },
+    "focusedTests": {
+      "success": true,
+      "passed": 76,
+      "failed": 0,
+      "skipped": 0,
+      "files": [
+        "scripts/lib/component-release.test.mjs",
+        "scripts/lib/guest-build-identity.test.mjs",
+        "scripts/lib/release-impact.test.mjs",
+        "scripts/lib/runtime-component-release.test.mjs",
+        "packages/control-plane/test/control-tool-dispatcher.test.ts",
+        "packages/sandbox-control/test/runtime-retention.test.ts",
+        "packages/sandbox-control/test/session-activity-retention.test.ts",
+        "packages/supervisor-host/test/worker-tool-runtime.test.ts"
+      ]
+    },
+    "configProbe": {
+      "baseline": true,
+      "removed": [
+        {
+          "key": "PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN",
+          "loaded": false,
+          "error": "Required secret file PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE is missing"
+        },
+        {
+          "key": "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES",
+          "loaded": false,
+          "error": "Required production configuration PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES is missing"
+        },
+        {
+          "key": "PI_CLOUD_SUPERVISOR_ID_PREFIX",
+          "loaded": false,
+          "error": "Required production configuration PI_CLOUD_SUPERVISOR_ID_PREFIX is missing"
+        }
+      ]
+    },
+    "chartVersionProbe": {
+      "probe": "root chart version only; no deployment",
+      "workloads": 11,
+      "changedPodTemplates": [
+        "pi-cloud-control-plane",
+        "pi-cloud-metering",
+        "pi-cloud-workspace-volume-gateway",
+        "pi-cloud-session-api",
+        "pi-cloud-session-runtime",
+        "pi-cloud-ssh-gateway",
+        "pi-cloud-tool-completion",
+        "pi-cloud-web",
+        "pi-cloud-workspace-quota"
+      ]
+    }
+  },
+  "roleBundleInspection": {
+    "worker": {
+      "entry": "packages/supervisor-host/src/main.ts",
+      "contributingSourceFiles": 465,
+      "areas": [
+        "packages/database",
+        "packages/domain",
+        "packages/event-log",
+        "packages/observability",
+        "packages/pi-session-postgres",
+        "packages/protocol",
+        "packages/runtime-core",
+        "packages/sandbox-control",
+        "packages/sandbox-supervisor",
+        "packages/session-attachments",
+        "packages/supervisor-host",
+        "packages/workspace-runtime"
+      ]
+    },
+    "sessionApi": {
+      "entry": "packages/control-plane/src/session-api-main.ts",
+      "contributingSourceFiles": 481,
+      "areas": [
+        "packages/accounting",
+        "packages/control-plane",
+        "packages/database",
+        "packages/domain",
+        "packages/event-log",
+        "packages/observability",
+        "packages/pi-session-postgres",
+        "packages/protocol",
+        "packages/runtime-core",
+        "packages/sandbox-control",
+        "packages/session-attachments",
+        "packages/workspace-runtime"
+      ]
+    },
+    "sessionRuntime": {
+      "entry": "packages/control-plane/src/session-runtime-main.ts",
+      "contributingSourceFiles": 482,
+      "areas": [
+        "packages/control-plane",
+        "packages/database",
+        "packages/domain",
+        "packages/event-log",
+        "packages/observability",
+        "packages/pi-session-postgres",
+        "packages/protocol",
+        "packages/runtime-core",
+        "packages/sandbox-control",
+        "packages/session-attachments",
+        "packages/subagent-control",
+        "packages/workspace-runtime"
+      ]
+    },
+    "management": {
+      "entry": "packages/control-plane/src/main.ts",
+      "contributingSourceFiles": 434,
+      "areas": [
+        "packages/control-plane",
+        "packages/database",
+        "packages/domain",
+        "packages/event-log",
+        "packages/observability",
+        "packages/pi-session-postgres",
+        "packages/protocol",
+        "packages/runtime-core",
+        "packages/sandbox-control",
+        "packages/session-attachments",
+        "packages/workspace-runtime"
+      ]
+    },
+    "toolHost": {
+      "entry": "packages/control-plane/src/tool-host-main.ts",
+      "contributingSourceFiles": 430,
+      "areas": [
+        "packages/control-plane",
+        "packages/database",
+        "packages/domain",
+        "packages/event-log",
+        "packages/observability",
+        "packages/pi-session-postgres",
+        "packages/protocol",
+        "packages/runtime-core",
+        "packages/sandbox-control",
+        "packages/session-attachments",
+        "packages/workspace-runtime"
+      ]
+    },
+    "metering": {
+      "entry": "packages/accounting/src/main.ts",
+      "contributingSourceFiles": 295,
+      "areas": [
+        "packages/accounting",
+        "packages/database",
+        "packages/protocol",
+        "packages/sandbox-control"
+      ]
+    },
+    "completion": {
+      "entry": "packages/cube-completion/src/main.ts",
+      "contributingSourceFiles": 85,
+      "areas": [
+        "packages/cube-completion",
+        "packages/database",
+        "packages/event-log",
+        "packages/observability",
+        "packages/protocol",
+        "packages/session-attachments"
+      ]
+    },
+    "volumeGateway": {
+      "entry": "packages/sandbox-control/src/workspace-volume-gateway-main.ts",
+      "contributingSourceFiles": 85,
+      "areas": [
+        "packages/observability",
+        "packages/protocol",
+        "packages/sandbox-control",
+        "packages/workspace-runtime"
+      ]
+    },
+    "android": {
+      "entry": "packages/android-executor/src/main.ts",
+      "contributingSourceFiles": 69,
+      "areas": ["packages/android-executor", "packages/protocol", "packages/workspace-runtime"]
+    },
+    "boxlite": {
+      "entry": "packages/boxlite-node/src/main.ts",
+      "contributingSourceFiles": 72,
+      "areas": ["packages/boxlite-node", "packages/protocol", "packages/sandbox-control"]
+    }
+  },
+  "findings": [
+    {
+      "id": "R01",
+      "priority": "P2",
+      "topic": "Control Tool dispatch reads native task state and PG Worker lease authority"
+    },
+    {
+      "id": "R02",
+      "priority": "P2",
+      "topic": "Separated processes retain a broad startup/configuration contract"
+    },
+    {
+      "id": "R03",
+      "priority": "P2",
+      "topic": "Provider selection remains tied to Cube storage and static cluster setup"
+    },
+    {
+      "id": "R04",
+      "priority": "P2",
+      "topic": "Image contents exceed actual role dependencies"
+    },
+    {
+      "id": "R05",
+      "priority": "P2",
+      "topic": "CI/full release/Helm metadata broaden change impact"
+    },
+    {
+      "id": "R06",
+      "priority": "P3",
+      "topic": "Development migrations and completed cutovers remain in normal paths"
+    },
+    {
+      "id": "R07",
+      "priority": "P2/P3",
+      "topic": "Current operating guidance contains superseded topology and branding"
+    },
+    {
+      "id": "R08",
+      "priority": "P3",
+      "topic": "Root test discovery can include ignored research checkouts; current fault targets remain valid"
+    }
+  ],
+  "limits": [
+    "Collection is not execution; conditional PG names were collected using a non-listening synthetic fixture URL.",
+    "All 430 manifest targets were located; the complete fault suite was not executed.",
+    "No paid model, full image build, live rollout, native VM/node loss, multi-node storage or 131 MiB upload check was run.",
+    "No line-by-line completeness, formal verification or fleet HA guarantee is claimed."
+  ]
+}

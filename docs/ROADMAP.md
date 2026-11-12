@@ -1,5 +1,14 @@
 # Implementation roadmap
 
+## Decoupling review before release expansion
+
+[#32](https://github.com/cookerpapa/pi-managed-agents/issues/32) is reviewed at
+`ae05797e`; [findings and verification](reports/repository-decoupling-review-20261112.md)
+retain the current authorities while identifying startup, control-Tool,
+storage/provider and build/publication coupling. Discuss those boundaries before
+implementing [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33).
+Persistence #30 and dynamic registration #31 remain separate proposed slices.
+
 ## Alternate runtime production integration — deployed
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) is implemented.

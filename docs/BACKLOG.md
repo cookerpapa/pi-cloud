@@ -1,5 +1,21 @@
 # Maintained backlog
 
+## Repository decoupling review — complete; fixes await discussion
+
+- [x] [#32](https://github.com/cookerpapa/pi-managed-agents/issues/32): review current
+  README/docs, all package/role boundaries, release paths and historical code/tests.
+- [x] Record eight finding groups, the release matrix, 430 current fault targets
+  and 76 passing focused checks in the [review](reports/repository-decoupling-review-20261112.md).
+- [ ] Discuss control-Tool authority, role-specific startup/configuration and
+  artifact/development-cutover cleanup before broadening release scopes.
+- [ ] [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33): implement
+  smaller publication scopes only after their dependency/replacement gates pass.
+
+[#30](https://github.com/cookerpapa/pi-managed-agents/issues/30) records the proposed
+Workspace persistence port; [#31](https://github.com/cookerpapa/pi-managed-agents/issues/31)
+records no-restart cluster registration. They are design proposals, not shipped
+capabilities or permission to change active storage/resource ownership.
+
 ## Alternate runtime production integration — deployed
 
 - [x] #27: Android original-operation recovery and scoped HTTPS completion.
