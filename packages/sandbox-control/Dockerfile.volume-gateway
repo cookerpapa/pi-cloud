@@ -90,7 +90,18 @@ COPY packages/protocol/package.json packages/protocol/package.json
 COPY packages/protocol/src packages/protocol/src
 COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
 COPY packages/sandbox-control/tsconfig.json packages/sandbox-control/tsconfig.json
-COPY packages/sandbox-control/src packages/sandbox-control/src
+COPY packages/sandbox-control/src/filesystem-workspace-volume-gateway-lock.ts packages/sandbox-control/src/filesystem-workspace-volume-gateway-lock.ts
+COPY packages/sandbox-control/src/persistent-volume-workspace-volume-gateway.ts packages/sandbox-control/src/persistent-volume-workspace-volume-gateway.ts
+COPY packages/sandbox-control/src/postgres-workspace-persistence.ts packages/sandbox-control/src/postgres-workspace-persistence.ts
+COPY packages/sandbox-control/src/upload-http.ts packages/sandbox-control/src/upload-http.ts
+COPY packages/sandbox-control/src/workspace-file-transfer-grant.ts packages/sandbox-control/src/workspace-file-transfer-grant.ts
+COPY packages/sandbox-control/src/workspace-file-transfer-http.ts packages/sandbox-control/src/workspace-file-transfer-http.ts
+COPY packages/sandbox-control/src/workspace-persistence.ts packages/sandbox-control/src/workspace-persistence.ts
+COPY packages/sandbox-control/src/workspace-quota-client.ts packages/sandbox-control/src/workspace-quota-client.ts
+COPY packages/sandbox-control/src/workspace-volume-gateway-contract.ts packages/sandbox-control/src/workspace-volume-gateway-contract.ts
+COPY packages/sandbox-control/src/workspace-volume-gateway-main.ts packages/sandbox-control/src/workspace-volume-gateway-main.ts
+COPY packages/sandbox-control/src/workspace-volume-gateway-transport.ts packages/sandbox-control/src/workspace-volume-gateway-transport.ts
+COPY packages/sandbox-control/src/workspace-volume-gateway.ts packages/sandbox-control/src/workspace-volume-gateway.ts
 COPY packages/workspace-runtime/package.json packages/workspace-runtime/package.json
 COPY packages/workspace-runtime/src packages/workspace-runtime/src
 RUN cd /app/packages/sandbox-control \

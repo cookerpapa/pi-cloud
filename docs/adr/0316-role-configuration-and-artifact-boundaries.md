@@ -35,6 +35,10 @@ identities in the release plan remain authoritative for artifact inputs, and
 actual image boot/live acceptance covers runtime assets and external dependencies.
 The six host roles retain shared build layers and independent serving references;
 splitting them into six new images is not required for scoped replacement.
+Worker copies only the three sandbox-client source files it imports. The file
+gateway copies its twelve storage/HTTP source files. Both subsets are checked
+against actual role imports and image startup, so provider implementation edits
+do not become their Docker inputs merely through the package directory.
 
 Validate role startup with unrelated fields absent, required fields invalid,
 actual assembly/failure cleanup and the rendered environment/mounts. Verify the

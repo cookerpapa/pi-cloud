@@ -62,10 +62,13 @@ for (const name of [...closure].sort()) {
     `${name} must copy its package.json into both Supervisor image stages`,
   );
   const sourceCopy = `COPY packages/${workspace.directory}/src packages/${workspace.directory}/src`;
-  assert(
-    dockerfile.includes(sourceCopy),
-    `${name} must copy its runtime source into the Supervisor image`,
-  );
+  if (name === "@pi-cloud/sandbox-control")
+    assert(!dockerfile.includes(sourceCopy), "Worker must copy only its sandbox client source");
+  else
+    assert(
+      dockerfile.includes(sourceCopy),
+      `${name} must copy its runtime source into the Supervisor image`,
+    );
 }
 
 assert.equal(

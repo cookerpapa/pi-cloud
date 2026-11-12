@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import { build, version as esbuildVersion } from "esbuild";
@@ -47,6 +47,23 @@ export async function checkRoleSourceClosure(root, outputPath) {
       ],
     });
     const imported = Object.keys(result.metafile.inputs).sort();
+    const dockerfile =
+      role === "worker"
+        ? "packages/supervisor-host/Dockerfile"
+        : role === "volumeGateway"
+          ? "packages/sandbox-control/Dockerfile.volume-gateway"
+          : undefined;
+    if (dockerfile) {
+      const copies = (await readFile(root + "/" + dockerfile, "utf8"))
+        .split("\n")
+        .filter((line) => line.startsWith("COPY ") && !line.includes("--from="))
+        .flatMap((line) => line.trim().split(/\s+/).slice(1, -1));
+      for (const path of imported)
+        assert(
+          copies.some((source) => path === source || path.startsWith(source + "/")),
+          `${role} runtime source missing from Docker COPY: ${path}`,
+        );
+    }
     const bytes = new Map();
     for (const output of Object.values(result.metafile.outputs))
       for (const [path, value] of Object.entries(output.inputs))

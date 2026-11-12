@@ -61,7 +61,9 @@ COPY packages/protocol/src packages/protocol/src
 COPY packages/runtime-core/package.json packages/runtime-core/package.json
 COPY packages/runtime-core/src packages/runtime-core/src
 COPY packages/sandbox-control/package.json packages/sandbox-control/package.json
-COPY packages/sandbox-control/src packages/sandbox-control/src
+COPY packages/sandbox-control/src/sandbox-control-client.ts packages/sandbox-control/src/sandbox-control-client.ts
+COPY packages/sandbox-control/src/upload-http.ts packages/sandbox-control/src/upload-http.ts
+COPY packages/sandbox-control/src/workspace-file-transfer-http.ts packages/sandbox-control/src/workspace-file-transfer-http.ts
 COPY packages/subagent-control/package.json packages/subagent-control/package.json
 COPY packages/subagent-control/src packages/subagent-control/src
 COPY packages/sandbox-supervisor/package.json packages/sandbox-supervisor/package.json
