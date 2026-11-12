@@ -82,7 +82,7 @@ try {
     assert.equal(await page.evaluate("fileReads.length"), 0);
     assert.equal(
       await page.evaluate(
-        "document.body.innerText.includes('read_skill')||document.body.innerText.includes('aaaaaaaa')||document.body.innerText.includes('无环境依赖')",
+        "document.body.innerText.includes('skill')||document.body.innerText.includes('aaaaaaaa')||document.body.innerText.includes('无环境依赖')",
       ),
       false,
     );

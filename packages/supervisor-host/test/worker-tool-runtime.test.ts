@@ -604,7 +604,7 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
   const catalog = f.runtime.options.catalog as ControlToolRegistry;
   catalog.register({
     definition: {
-      name: "read_skill",
+      name: "skill",
       description: "Read Skills",
       parameters: {
         type: "object",
@@ -646,8 +646,7 @@ it("resolves Skill activation from the frozen manifest and only prepares a Works
     },
     environment: prepare,
   });
-  const tool = bindings.current().find((t) => t.tool.name === "read_skill")!
-    .tool as PreparedAgentTool;
+  const tool = bindings.current().find((t) => t.tool.name === "skill")!.tool as PreparedAgentTool;
   try {
     for (const [n, args] of [
       { action: "read", name: "text" },

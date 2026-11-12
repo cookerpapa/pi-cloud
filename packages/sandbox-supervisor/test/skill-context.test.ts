@@ -38,18 +38,16 @@ it("renders stable escaped metadata and respects manual-only and actual child ca
       ...entry("manual"),
       runtimeMetadata: { disableModelInvocation: true, requiresWorkspaceFiles: false },
     };
-  expect(skillCatalogSection([text, script, manual], ["read_skill"], false)).toContain(
-    text.versionId,
-  );
-  expect(skillCatalogSection([text, script, manual], ["read_skill"], false)).not.toContain(
+  expect(skillCatalogSection([text, script, manual], ["skill"], false)).toContain(text.versionId);
+  expect(skillCatalogSection([text, script, manual], ["skill"], false)).not.toContain(
     script.versionId,
   );
-  expect(skillCatalogSection([text, script, manual], ["read_skill", "bash"], true)).not.toContain(
+  expect(skillCatalogSection([text, script, manual], ["skill", "bash"], true)).not.toContain(
     manual.versionId,
   );
-  expect(skillCatalogSection([text], ["read_skill"], false)).toContain("&lt;team&gt;");
-  expect(skillCatalogSection([text, script], ["read_skill", "bash"], true)).toBe(
-    skillCatalogSection([script, text], ["read_skill", "bash"], true),
+  expect(skillCatalogSection([text], ["skill"], false)).toContain("&lt;team&gt;");
+  expect(skillCatalogSection([text, script], ["skill", "bash"], true)).toBe(
+    skillCatalogSection([script, text], ["skill", "bash"], true),
   );
   expect(skillCatalogSection([text], [], true)).toBeUndefined();
 });
@@ -69,14 +67,14 @@ it("native Pi announces the catalog before a Tool, persists its system section a
     runId = randomUUID(),
     started = Promise.withResolvers<void>();
   provider.setResponses([
-    fauxAssistantMessage(fauxToolCall("read_skill", { action: "read", name: skill.name }), {
+    fauxAssistantMessage(fauxToolCall("skill", { action: "read", name: skill.name }), {
       stopReason: "toolUse",
     }),
     fauxAssistantMessage("Recovered"),
   ]);
   const inputs: unknown[] = [];
   const tool: ToolRegistration = {
-    name: "read_skill",
+    name: "skill",
     description: "Load selected instructions",
     parameters: Type.Object({ action: Type.Literal("read"), name: Type.String() }),
     execute: async (_args, _api, ctx) => {

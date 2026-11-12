@@ -33,7 +33,7 @@ scope and current execution-side Tool catalog. A read-only child does not gain
 Bash/write through a Skill; a child without a Workspace can still read pure
 instructions. Max versus Ultra changes delegation policy, not whether an explicitly
 requested delegation Tool exists. The market page describes deployment capabilities;
-`read_skill` checks the actual Conversation.
+`skill` checks the actual Conversation.
 
 ## Agent use
 
@@ -43,9 +43,9 @@ applicable names, descriptions and version references before the first model
 request. It does not include every Skill body. `disable-model-invocation: true`
 hides a Skill from automatic discovery; explicit inspection remains possible.
 
-Three code-owned Tools use the existing execution-owned catalog:
+Two code-owned Tools use the existing execution-owned catalog:
 
-- `read_skill(action="read", name=...)` resolves the advertised name to its frozen
+- `skill(action="read", name=...)` resolves the advertised name to its frozen
   version and reads SKILL.md without
   a preliminary list call. For duplicate names, inspect the list and provide
   `versionId` to disambiguate; ordinary use does not require copying UUIDs. `path` reads a package-relative reference; text, file
@@ -57,7 +57,7 @@ Three code-owned Tools use the existing execution-owned catalog:
   The read result includes this directory. Use ordinary `bash`/`read` afterwards;
   there is no separate model-facing `prepare_skill`. Preparation neither executes
   scripts nor grants permissions. Existing modified package files are not
-  overwritten. Use `inspect_skill` for a preview without activation.
+  overwritten. Use `skill(action="inspect")` for a preview without activation.
 - `publish_skill(path, packageId?, version?, requirements?)` exports complete file
   bytes through the fixed guest transport and publishes an immutable organization
   version. It never reconstructs files from truncated Bash output. Only root
@@ -65,10 +65,22 @@ Three code-owned Tools use the existing execution-owned catalog:
   requirements, scripts imply Linux/Bash; declare other dependencies as needed.
   Omitted version labels derive from content. Publishing does not install or
   upgrade the Skill for anyone.
-- `inspect_skill(name?, cursor?)` lists published organization metadata and marks
+- `skill(action="inspect", name?, cursor?)` lists published organization metadata and marks
   owned packages. `versionId` with optional `path`/`offset` previews text, including
   uninstalled versions, without activation. Use this after an uncertain publication
   reply before deciding to retry. Identical content reuses the existing version.
+- `skill(action="uninstall", packageId, revision)` removes the root Session owner's
+  exact personal installation. List/inspect return the current personal revision;
+  inspecting a `packageId` reports its installation or observed absence. Removal
+  neither deletes the published package nor changes organization/project scopes,
+  current Run selection or prepared Workspace files. Wider installations may
+  still apply next Run. Stale requests cannot remove a later reinstallation;
+  revisions come from the PG installation sequence, not a counter reset to one.
+
+The combined `skill` tool is conservatively non-replayable because read activation
+and uninstall may mutate state. An uncertain result is reconciled by inspection,
+without an automatic mutation retry or another command ledger. Publication remains
+the separate `publish_skill` tool.
 
 Child Conversations share the root Run's selection and filter it by their own
 capabilities. Worker recovery reads that same selection. Installing, disabling or

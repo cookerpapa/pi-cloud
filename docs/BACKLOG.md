@@ -21,7 +21,11 @@ userdata. Push completed commits and perform the required matched/scoped rollout
 - [ ] #37: verify the built Worker and finish role-input integration with #33.
 - [ ] #30: Workspace persistence independent of the compute provider.
 - [ ] #31: dynamic administrator backend registration and resource selection.
-- [ ] #34: two Skill tools with precise installation removal.
+- [x] #34 source: `skill` plus `publish_skill`, exact personal uninstall and
+  non-reused PG installation revisions (schema 220 / ADR-0317). Skill/PG/native
+  context checks pass; packages, current selections and Workspace files remain.
+- [ ] #34: coordinated catalog/Worker publication, retained requirement inspection
+  and actual model/Guest Skill acceptance.
 - [ ] #33: verified impact plans, artifact reuse and narrow publication.
 
 ## Repository decoupling review — complete; fixes await discussion

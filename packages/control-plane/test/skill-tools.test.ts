@@ -4,7 +4,8 @@ import type { SkillMarketService } from "../src/skill-market-service.ts";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 const call = (args: Record<string, unknown>, bindingId: string | null = "binding") =>
   ({
-    scope: { tenantId: "tenant", runId: "run" },
+    scope: { tenantId: "tenant", runId: "run", sessionId: "root-view" },
+    conversationId: 1,
     arguments: args,
     ...(bindingId ? { bindingId } : {}),
     operationId: "op",
@@ -32,6 +33,8 @@ function fixture() {
     runCatalog: async () => versions,
     runCapabilities: async () => ({ runtimes: ["linux"], tools: [] }),
     runActor: vi.fn(async () => ({ tenantId: "tenant", userId: "owner", role: "member" })),
+    personalInstallationsForRun: vi.fn(async () => []),
+    uninstall: vi.fn(async () => ({ removed: true, absent: true })),
     inspect: vi.fn(async () => ({ skills: [], nextCursor: null })),
     publish: vi.fn(async () => ({ ...versions[0], versionId: "published" })),
     content: async () => ({
@@ -56,8 +59,8 @@ function fixture() {
 }
 it("reads instructions without a VM, preserves bounded Unicode pages, and activates only execution files", async () => {
   const f = fixture(),
-    reader = f.tool("read_skill");
-  expect(f.tools.some((t) => t.definition.name === "prepare_skill")).toBe(false);
+    reader = f.tool("skill");
+  expect(f.tools.map((t) => t.definition.name)).toEqual(["publish_skill", "skill"]);
   const list = await reader.execute(call({ action: "list" }), () => true);
   expect(Buffer.byteLength((list.result.content[0] as { text: string }).text)).toBeLessThan(32768);
   expect(decoded(list).nextCursor).not.toBeNull();
@@ -88,8 +91,8 @@ it("keeps explicit inspection cloud-only even for execution skills", async () =>
   const f = fixture();
   f.versions[0]!.runtimeMetadata.requiresWorkspaceFiles = true;
   const result = await f
-    .tool("inspect_skill")
-    .execute(call({ versionId: "0000" }, null), () => true);
+    .tool("skill")
+    .execute(call({ action: "inspect", versionId: "0000" }, null), () => true);
   expect(decoded(result).text).toContain("正文");
   expect(f.prepare).not.toHaveBeenCalled();
 });
@@ -135,7 +138,7 @@ it("returns actionable validation failures and does not publish after owner loss
 
 it("loads by a unique name and requires explicit selection for duplicate names", async () => {
   const f = fixture(),
-    reader = f.tool("read_skill");
+    reader = f.tool("skill");
   expect(
     (await reader.execute(call({ action: "read", name: "test" }, null), () => true)).isError,
   ).toBe(true);
@@ -162,4 +165,56 @@ it("loads by a unique name and requires explicit selection for duplicate names",
       ),
     ).versionId,
   ).toBe("0001");
+});
+
+it("uninstalls one exact personal installation without touching package or Workspace bytes", async () => {
+  const f = fixture();
+  const result = await f.tool("skill").execute(
+    call(
+      {
+        action: "uninstall",
+        packageId: "40000000-0000-4000-8000-000000000001",
+        revision: "14",
+      },
+      null,
+    ),
+    () => true,
+  );
+  expect(f.service.runActor).toHaveBeenCalledWith("tenant", "run", {
+    sessionId: "root-view",
+    conversationId: 1,
+  });
+  expect(f.service.uninstall).toHaveBeenCalledWith(
+    { tenantId: "tenant", userId: "owner", role: "member" },
+    "40000000-0000-4000-8000-000000000001",
+    { kind: "personal" },
+    "14",
+  );
+  expect(decoded(result)).toMatchObject({
+    removed: true,
+    currentRunSelectionUnchanged: true,
+    publishedPackageRetained: true,
+    workspaceFilesRetained: true,
+  });
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(f.exportPackage).not.toHaveBeenCalled();
+  expect(f.service.publish).not.toHaveBeenCalled();
+});
+
+it("requires an observed installation revision and allows storage-only result inspection", async () => {
+  const f = fixture(),
+    skill = f.tool("skill");
+  const rejected = await skill.execute(
+    call({ action: "uninstall", name: "test" }, null),
+    () => true,
+  );
+  expect(rejected.isError).toBe(true);
+  expect(f.service.uninstall).not.toHaveBeenCalled();
+  const inspected = await skill.execute(
+    call({ action: "inspect", packageId: "pack" }, null),
+    () => true,
+  );
+  expect(decoded(inspected).personalInstallation).toBeNull();
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(skill.replay).toBe("never");
 });

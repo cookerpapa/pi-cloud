@@ -214,7 +214,7 @@ export class SkillMarketService {
     }>`insert into skill_installations(tenant_id,package_id,version_id,scope_kind,scope_id,enabled)
       select ${actor.tenantId}::uuid,${packageId}::uuid,v.id,${change.scope.kind},${scopeId}::uuid,${change.enabled}
       from skill_versions v where v.tenant_id=${actor.tenantId}::uuid and v.package_id=${packageId}::uuid and v.id=${change.versionId}::uuid and v.published and (${change.revision}::bigint is null or exists(select 1 from skill_installations i where i.tenant_id=v.tenant_id and i.package_id=v.package_id and i.scope_kind=${change.scope.kind} and i.scope_id=${scopeId}::uuid))
-      on conflict(tenant_id,scope_kind,scope_id,package_id) do update set version_id=excluded.version_id,enabled=excluded.enabled,revision=skill_installations.revision+1
+      on conflict(tenant_id,scope_kind,scope_id,package_id) do update set version_id=excluded.version_id,enabled=excluded.enabled,revision=nextval('skill_installation_revision')
       where skill_installations.revision=${change.revision}::bigint
       returning revision`.execute(this.options.database);
     if (!rows.rows[0])
@@ -233,14 +233,40 @@ export class SkillMarketService {
     packageId: string,
     scope: SkillScope,
     revision: string,
-  ): Promise<void> {
+  ): Promise<{ removed: boolean; absent: true }> {
     const scopeId = await this.#scope(actor, scope, true);
     const rows =
       await sql`delete from skill_installations where tenant_id=${actor.tenantId}::uuid and package_id=${packageId}::uuid
       and scope_kind=${scope.kind} and scope_id=${scopeId}::uuid and revision=${revision}::bigint returning package_id`.execute(
         this.options.database,
       );
-    if (!rows.rows.length) return conflict("Installation changed; reload before removing it");
+    if (rows.rows.length) return { removed: true, absent: true };
+    const current = await sql`select 1 from skill_installations
+      where tenant_id=${actor.tenantId}::uuid and package_id=${packageId}::uuid
+      and scope_kind=${scope.kind} and scope_id=${scopeId}::uuid`.execute(this.options.database);
+    if (current.rows.length) return conflict("Installation changed; reload before removing it");
+    return { removed: false, absent: true };
+  }
+
+  async personalInstallationsForRun(
+    tenantId: string,
+    runId: string,
+    packageIds: readonly string[],
+  ) {
+    if (!packageIds.length) return [];
+    if (packageIds.length > 32) throw new TypeError("Inspect one bounded Skill page at a time");
+    const { rows } = await sql<{
+      packageId: string;
+      versionId: string;
+      enabled: boolean;
+      revision: string;
+    }>`select i.package_id as "packageId", i.version_id as "versionId", i.enabled, i.revision::text
+      from runs r join sessions s on s.tenant_id=r.tenant_id and s.id=r.session_id
+      join skill_installations i on i.tenant_id=s.tenant_id
+        and i.scope_kind='personal' and i.scope_id=s.created_by_user_id
+      where r.tenant_id=${tenantId}::uuid and r.id=${runId}::uuid
+        and i.package_id=any(${[...new Set(packageIds)]}::uuid[])`.execute(this.options.database);
+    return rows.map((row) => ({ ...row, scope: { kind: "personal" as const } }));
   }
 
   async list(actor: Actor, projectId?: string, cursor?: string): Promise<SkillMarket> {

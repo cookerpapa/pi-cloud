@@ -14,4 +14,4 @@ compatibility: The optional inspection script uses Node.js in a Linux Workspace.
    Consult `references/verification.md` for the checklist.
 4. Report concrete findings. Do not claim a build or test passed unless you ran it.
 
-For an instruction-only preview, use inspect_skill; activating this execution Skill prepares its files in the Workspace.
+For an instruction-only preview, use skill(action=inspect); activating this execution Skill prepares its files in the Workspace.

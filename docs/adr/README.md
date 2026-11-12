@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0317](0317-skill-actions-and-installation-identity.md) consolidates Skill
+actions and protects installation removal across deletion/reinstallation (#34).
+
 [ADR-0316](0316-role-configuration-and-artifact-boundaries.md) assigns startup
 configuration and artifact inputs to their actual serving roles (#36/#37).
 

@@ -1,3 +1,4 @@
+import * as skillInstallationRevisions from "./220_skill_installation_revisions.ts";
 import * as retainedUserAttachments from "./208_retained_user_attachments.ts";
 import * as skillRuntimeMetadata from "./207_skill_runtime_metadata.ts";
 import * as sharedNativeEntryBodies from "./203_shared_native_entry_bodies.ts";
@@ -407,6 +408,7 @@ export const migrationProvider: MigrationProvider = {
       "217_native_lifecycle_observations": nativeLifecycleObservations,
       "218_platform_idle_expiry": platformIdleExpiry,
       "219_executor_reply_continuation": executorReplyContinuation,
+      "220_skill_installation_revisions": skillInstallationRevisions,
     };
   },
 };

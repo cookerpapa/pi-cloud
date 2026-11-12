@@ -94,7 +94,7 @@ async function run(prompt, expectedTools, whenBusy = "follow_up") {
   sample.skillCalls = nativeMessages(rows).flatMap((message) =>
     message.role === "assistant"
       ? message.content
-          .filter((block) => block.type === "toolCall" && block.name === "read_skill")
+          .filter((block) => block.type === "toolCall" && block.name === "skill")
           .map((block) => block.arguments)
       : [],
   );
@@ -159,7 +159,7 @@ try {
     revision: null,
   });
   const pure = await run("按已安装的团队评审格式给出一句简短结论，不查看工作区或执行命令。", [
-    "read_skill",
+    "skill",
   ]);
   const initialRows = await nativeHistory(db, { tenantId: tenant.tenantId, runId: pure.runId });
   const initialMessages = nativeMessages(initialRows);
@@ -177,9 +177,9 @@ try {
       ? message.content.filter((block) => block.type === "toolCall")
       : [],
   );
-  assert(calls.some((call) => call.name === "read_skill" && call.arguments.action === "read"));
+  assert(calls.some((call) => call.name === "skill" && call.arguments.action === "read"));
   assert(
-    calls.every((call) => call.name !== "read_skill" || call.arguments.action !== "list"),
+    calls.every((call) => call.name !== "skill" || call.arguments.action !== "list"),
     "Skill activation still required a discovery call",
   );
   assert(
@@ -220,7 +220,7 @@ try {
   });
   const execution = await run(
     "使用已安装的工作区就绪检查技能，执行其只读检查脚本并简短汇报结果，不安装软件。",
-    ["read_skill", "bash"],
+    ["skill", "bash"],
   );
   report.automaticExecutionFiles = true;
   const content = await api.exportSkill(first.versionId);
@@ -244,7 +244,7 @@ try {
   await api.installSkill(first.packageId, { ...installed, versionId: second.versionId });
   const latest = await run(
     "再次使用工作区就绪检查 Skill，读取并报告说明末尾的版本标记。本轮不用运行检查脚本。",
-    ["read_skill"],
+    ["skill"],
     "steer",
   );
   const latestMessages = nativeMessages(
@@ -254,7 +254,7 @@ try {
     latestMessages.some(
       (message) =>
         message.role === "toolResult" &&
-        message.toolName === "read_skill" &&
+        message.toolName === "skill" &&
         JSON.stringify(message.content).includes("SKILL_VERSION_TWO"),
     ),
     "Named activation did not read the current version",
@@ -287,8 +287,8 @@ try {
   const authoredContent = await api.exportSkill(authored.versions[0].versionId);
   assert(authoredContent.files.some((file) => file.path === "scripts/check.mjs"));
   await run(
-    `用 inspect_skill 查找组织中的 ${publishedName}，然后用 publish_skill 再次发布同一个 /workspace/skills/${publishedName} 目录，requirements 必须为 ${JSON.stringify(authored.versions[0].requirements)}。不要编辑任何文件，不要安装。`,
-    ["inspect_skill", "publish_skill"],
+    `用 skill(action=inspect) 查找组织中的 ${publishedName}，然后用 publish_skill 再次发布同一个 /workspace/skills/${publishedName} 目录，requirements 必须为 ${JSON.stringify(authored.versions[0].requirements)}。不要编辑任何文件，不要安装。`,
+    ["skill", "publish_skill"],
   );
   const repeated = (await api.listSkills()).packages.find(
     (pack) => pack.packageId === authored.packageId,

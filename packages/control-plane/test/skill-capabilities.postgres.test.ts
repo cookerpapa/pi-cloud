@@ -19,7 +19,7 @@ it("uses accepted root/child grants and the current catalog without confusing ma
   });
   let catalog: ControlToolCatalogDefinition[] = [
     {
-      name: "read_skill",
+      name: "skill",
       description: "Instructions",
       parameters: { type: "object" },
       environment: { kind: "skill" },
@@ -86,7 +86,7 @@ it("uses accepted root/child grants and the current catalog without confusing ma
       expect(caps.tools).not.toContain("root_only");
       expect(caps.tools).not.toContain("subagent"); // accepted depth 1, configured maximum 1
       expect(caps.tools).toContain("contact_supervisor");
-      expect(caps.tools).toContain("read_skill");
+      expect(caps.tools).toContain("skill");
       expect(caps.runtimes).toEqual(workspace === null ? [] : ["linux"]);
       expect(caps.tools.includes("workspace_resource")).toBe(workspace !== null);
       expect(

@@ -552,15 +552,20 @@ See [OPTIONAL_MODULES](OPTIONAL_MODULES.md) and [ANDROID_EXECUTION](ANDROID_EXEC
 
 The organization-only [Skill market](SKILLS.md) stores immutable packages in S3,
 installations and frozen Run selections in PG. At Run bootstrap, installed metadata
-reaches Pi's public system section; instructions are read on demand. `read_skill`
+reaches Pi's public system section; instructions are read on demand. `skill(action=read)`
 automatically prepares execution resources through the existing Workspace binding;
 pure instructions and textual references need no VM. Ordinary Sandbox Tools run
 scripts. `publish_skill` exports a Workspace directory through the fixed guest
-file transport, while `inspect_skill` resolves publication uncertainty from the
+file transport, while `skill(action=inspect)` resolves publication uncertainty from the
 existing catalog. The Web creates an editable Agent request or imports local files.
 Neither Tool loads user extensions into the Worker. Automatic project scanning,
 mid-Run catalog reload and executable user extensions remain outside this slice.
 See [ADR-0293](adr/0293-cloud-skill-runtime.md).
+
+[ADR-0317](adr/0317-skill-actions-and-installation-identity.md) adds exact personal
+installation removal through `skill(action=uninstall)`. PG revisions never reset
+on reinstall. Published packages, frozen Run selections and Workspace copies
+retain their independent lifetimes; no Agent receives organization-owner rights.
 
 Worker preparation measurements use the existing stdout operational logger.
 Public Harness/Models/Storage boundaries provide stage timings and aggregate

@@ -80,6 +80,15 @@ it("publishes immutable packages, scopes installation and pins versions across c
     });
     await pinRunSkillCatalog(db, actor.tenantId, run.runId);
     expect(
+      await service.personalInstallationsForRun(actor.tenantId, run.runId, [first.packageId]),
+    ).toEqual([
+      expect.objectContaining({
+        packageId: first.packageId,
+        versionId: first.versionId,
+        scope: { kind: "personal" },
+      }),
+    ]);
+    expect(
       await service.runActor(actor.tenantId, run.runId, {
         sessionId: session.sessionId,
         conversationId: 1,
@@ -149,6 +158,23 @@ it("publishes immutable packages, scopes installation and pins versions across c
       second.versionId,
     );
     await service.uninstall(actor, first.packageId, updated.scope, updated.revision);
+    expect(
+      await service.personalInstallationsForRun(actor.tenantId, run.runId, [first.packageId]),
+    ).toEqual([]);
+    await expect(
+      service.uninstall(actor, first.packageId, updated.scope, updated.revision),
+    ).resolves.toEqual({ removed: false, absent: true });
+    const reinstalled = await service.install(actor, first.packageId, {
+      scope: updated.scope,
+      versionId: second.versionId,
+      enabled: true,
+      revision: null,
+    });
+    expect(BigInt(reinstalled.revision)).toBeGreaterThan(BigInt(updated.revision));
+    await expect(
+      service.uninstall(actor, first.packageId, updated.scope, updated.revision),
+    ).rejects.toThrow("Installation changed");
+    await service.uninstall(actor, first.packageId, reinstalled.scope, reinstalled.revision);
     expect((await service.runCatalog(actor.tenantId, run.runId))[0]!.versionId).toBe(
       first.versionId,
     );
