@@ -2,10 +2,11 @@
 
 Date: 2026-11-12. Tracking: #27 and [ADR-0313](../adr/0313-alternate-runtime-production-integration.md).
 
-The integrated provider and device acceptance below passed on the single-host
-WSL/K3s deployment. Final matched publication, restoration of Cube as the default
-and restoration of the original development-machine intents are still in progress.
-This report does not claim fleet-scale validation or high availability.
+Delivered on the single-host WSL/K3s deployment. The final matched release is
+`alternate-runtime-20261112-final`, built from `3136fa75`. Cube is restored as the
+default, both original development machines are running, and all temporary
+resource adjustments are restored. This is not fleet-scale or high-availability
+validation.
 
 ## Runtime boundary
 
@@ -125,14 +126,31 @@ stock Cube retains only the exact previously authorized ADR-0310 exception.
   priced. Model and persistent-capacity accounting keep their separate evidence.
 - On this 20 GiB WSL host, device acceptance temporarily paused the two idle
   development machines, reduced the Worker pool to one and stopped the unused
-  Cube preview proxy. Original settings are recorded for restoration. The
+  Cube preview proxy. Original settings were recorded and restored. The
   Android replacement test therefore used a new Worker incarnation in the same
   Pod; the Linux handoff test had already used the normal two-Worker pool.
 - Original accounts, model/provider configuration, credentials, machine intent
   and 394 recorded source/image files were preserved through the provider
-  changes. Final restoration verification is pending. Android was returned to
+  changes. Final restoration verification passed. Android was returned to
   its original zero replicas with its userdata retained.
 
 Maintained entry points are documented in [BoxLite execution](../BOXLITE_EXECUTION.md)
 and [Android execution](../ANDROID_EXECUTION.md). They use owned fixtures and
 private reports; credentials and session transcripts are not committed.
+
+## Final publication and cleanup
+
+The final 14-image matched candidate passed scan policy and the full native-chart
+preflight. After writer draining and physical retirement, schema 219 and the
+matched Cube/application artifacts were published. Four obsolete templates were
+deleted through Cube's API after eight stale locator fields were repaired.
+Both native node databases retained the same content hashes; no additional
+private buckets remained to remove. The four current templates are READY.
+
+A further four real Tool rounds and the small Guest-browser/image/preview gate
+passed on the final Cube default. Final inventory confirms two original Cube
+allocations, no active Runs/open Session leases, two Workers, one Cube proxy,
+and zero BoxLite/Android replicas. Both original machine intents are running
+with their original Workspace identities. The 394-file/account/configuration/
+credential preservation check passed again. All owned test fixtures and temporary
+fault settings were cleaned; Android userdata remains preserved.

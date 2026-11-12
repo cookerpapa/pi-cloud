@@ -1,17 +1,19 @@
 # Maintained backlog
 
-## Alternate runtime production integration — final publication
+## Alternate runtime production integration — deployed
 
 - [x] #27: Android original-operation recovery and scoped HTTPS completion.
 - [x] #27: explicit stock BoxLite provider with shared fixed Guest behavior and managed Workspace ownership.
 - [x] #27: serial real model, source-output/image, cancellation, Worker/VM/receiver recovery and device-restart acceptance.
-- [ ] #27: final matched publication, Cube-default restoration and original-resource verification.
+- [x] #27: final matched publication, Cube-default restoration and original-resource verification.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) and the
 [acceptance report](reports/alternate-runtimes-20261112.md) record the live fixes,
 failed samples, isolation limits and the cold operator reconciliation boundary.
-The remaining work is release/restoration; the device is already back at zero
-replicas. BoxLite compute remains unpriced without an observation collector.
+The final matched release is `alternate-runtime-20261112-final`. Cube is the
+default, both original machines are running, and both optional runtimes are
+stopped when unused. BoxLite compute remains unpriced without an observation
+collector.
 
 ## Platform-owned elastic idle expiry — deployed
 
@@ -24,8 +26,8 @@ replicas. BoxLite compute remains unpriced without an observation collector.
 
 [ADR-0314](adr/0314-platform-owned-elastic-expiry.md) is
 [live-verified](reports/platform-idle-expiry-20261111.md), including the actual
-30-minute deadline across management downtime. #27 production integration may
-now resume against this common expiry policy.
+30-minute deadline across management downtime. Cube and BoxLite now share this
+platform-owned expiry policy.
 
 ## Resource admission and stock sandbox boundaries — deployed
 

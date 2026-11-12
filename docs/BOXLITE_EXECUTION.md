@@ -2,7 +2,7 @@
 
 Status: integrated under [ADR-0313](adr/0313-alternate-runtime-production-integration.md)
 and issue #27, with [production-path acceptance](reports/alternate-runtimes-20261112.md).
-Cube remains the default; final matched restoration is tracked in that report.
+Cube remains the default; the optional node is stopped when unused.
 This is an explicitly selected, single-node operator backend, not a fallback or
 a new placement scheduler. BoxLite engine/SDK source is unmodified and pinned to
 `@boxlite-ai/boxlite` 0.12.0.

@@ -1,6 +1,6 @@
 # ADR-0313: Alternate runtime integration and original-operation recovery
 
-Date: 2026-11-11. Status: accepted for implementation.
+Date: 2026-11-11. Status: implemented and live-validated on 2026-11-12.
 Tracking: [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27).
 
 The owner now requests complete BoxLite and Android integration into the real

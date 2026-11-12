@@ -2,7 +2,8 @@
 
 Status: integrated operator target under ADR-0313, with
 [real six-tool, image, Worker/receiver recovery and VM-restart acceptance](reports/alternate-runtimes-20261112.md).
-The matched core uses schema 219, Session topic v21 and executor protocol 2.
+The matched core `alternate-runtime-20261112-final` uses schema 219, Session
+topic v21 and executor protocol 2.
 The current device artifact is `android-20261112-r3`; initial October acceptance
 is recorded separately in [the historical delivery report](reports/android-execution-delivery-20261026.md).
 The phone picker remains hidden.

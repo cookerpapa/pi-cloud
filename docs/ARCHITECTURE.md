@@ -532,7 +532,7 @@ bound image I/O; the Worker still owns canonical settlement. See
 Optional GitLab Issue intake uses ordinary Run admission; Issue-note synchronization
 is a bounded integration loop, not another Agent scheduler. Environment-local Git
 credentials and trusted integration credentials retain their separate ownership.
-The retained Android execution-target prototype has an operator API but no Web
+The integrated Android execution target has an operator API but no Web
 picker or automatic device pool; it is not a fallback for Cube coding execution.
 See [OPTIONAL_MODULES](OPTIONAL_MODULES.md) and [ANDROID_EXECUTION](ANDROID_EXECUTION.md).
 

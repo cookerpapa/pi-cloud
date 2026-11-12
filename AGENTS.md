@@ -172,7 +172,8 @@ protocol, record the decision under `docs/adr/` before implementation.
   Stock Cube cannot prove continuous physical coverage: sampled compute intervals
   are unconfirmed/unpriced. Model and capacity pricing retain their own evidence.
   Accounting never becomes resource authority.
-- CubeSandbox KVM is the only supported Tool runtime. Adding an alternate
+- CubeSandbox KVM is the default Linux Tool runtime. Pinned BoxLite and Android
+  operator targets are explicit integrations under ADR-0313. Adding another
   runtime requires a new current ADR and the same security/recovery acceptance
   suite; it must not enter as a silent fallback.
   ADR-0312 authorizes isolated operator validation of pinned BoxLite and Android

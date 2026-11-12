@@ -1,18 +1,20 @@
 # Matched release
 
-ADR-0313's alternate-runtime source targets schema 219, Session v21, executor
-protocol 2 and public terminal protocol 2 (ready messages omit native PIDs).
+ADR-0313 is delivered as `alternate-runtime-20261112-final` with schema 219,
+Session v21, executor protocol 2 and public terminal protocol 2 (ready messages
+omit native PIDs).
 Drain native writers/replay suffixes and all device bindings before
 switching; publish the matching Android receiver with HTTPS completion and remove
-its Kafka/PG/S3 credentials. This cutover remains pending while #27 proceeds.
+its Kafka/PG/S3 credentials. [Integrated acceptance](reports/alternate-runtimes-20261112.md)
+records the completed cutover and restoration.
 Prepare the optional [BoxLite node](BOXLITE_EXECUTION.md) from the matching
 Control Plane/Guest images before selecting it. Retirement uses each recorded
 capsule's provider and retains unknown ownership. Native Box inventory and
 connection receipts must be empty before cold Workspace maintenance.
 
-ADR-0314 is deployed as `platform-idle-20261111-r1`, schema 218 and resource capsule 4.
-Session v20, replies v4, provider contract 1, Guest executor 1 and Tool payload 7
-stay unchanged. Retire old physical allocations before switching: new managed
+The preceding ADR-0314 milestone was `platform-idle-20261111-r1`, schema 218
+and resource capsule 4. At that milestone Session v20, replies v4, provider
+contract 1, Guest executor 1 and Tool payload 7 stayed unchanged. Retire old physical allocations before switching: new managed
 Cube instances disable native timeout, and PG/resource management becomes the
 sole idle-expiry authority. Do not mix the two lifetime policies or retain a
 capsule compatibility reader. [Delivery evidence](reports/platform-idle-expiry-20261111.md)
@@ -41,8 +43,9 @@ Accounts, configuration, retained attachments and Workspace bytes remain preserv
 
 ## Current contract
 
-The serving contract is schema 218, Session topic v20, reply topic v4, resource
-capsule 4, provider contract 1, Guest executor 1 and fixed Tool payload 7. There is
+The serving contract is schema 219, Session topic v21, reply topic v4, resource
+capsule 4, provider contract 1, Guest executor 1, fixed Tool payload 7, device
+executor 2 and public terminal 2. There is
 no private managed Cube protocol. Guest admission/cancellation uses ordinary envd
 process APIs. Resource management owns idle expiry; on-demand execution probes
 retain their separate diagnostic role and never renew deadlines.

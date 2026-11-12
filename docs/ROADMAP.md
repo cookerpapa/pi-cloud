@@ -1,13 +1,14 @@
 # Implementation roadmap
 
-## Alternate runtime production integration — final publication
+## Alternate runtime production integration — deployed
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) is implemented.
 Stock BoxLite now uses the shared fixed Guest/provider ports and existing managed
 Workspace authority. Android uses scoped HTTPS completion and original-operation
 wait recovery. [Serial production-path acceptance](reports/alternate-runtimes-20261112.md)
-passed; final matched publication and restoration of Cube/default resources are
-in progress. No vendor source patches or automatic fallback were added.
+passed, and `alternate-runtime-20261112-final` restores the Cube default and all
+original resource intents. No vendor source patches or automatic fallback were
+added.
 
 ## Platform-owned elastic idle expiry — deployed
 
@@ -16,8 +17,8 @@ Delivered [#29](https://github.com/cookerpapa/pi-managed-agents/issues/29) under
 manager owns deadlines and uses ordinary provider deletion APIs; Cube's native
 expiry/renewal path is removed. [Serial live acceptance](reports/platform-idle-expiry-20261111.md)
 includes the actual 30-minute deadline across management downtime, Worker
-continuation and retained Workspace data. Resume #27 BoxLite/Android integration
-against this common policy; native AutoStop is no longer a prerequisite.
+continuation and retained Workspace data. Both Linux providers now use this
+common policy; native AutoStop is not required.
 
 ## Resource admission and stock sandbox boundaries — deployed
 
@@ -28,7 +29,7 @@ Cube patch inventory. [#27](https://github.com/cookerpapa/pi-managed-agents/issu
 tracks BoxLite integration and the Android source audit. The owner subsequently
 accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
 APIs with conservative external ownership and explicit accounting gaps. Stock
-Cube R5 is deployed on schema 217 with original assets preserved. Capacity,
+The stock Cube R5 milestone used schema 217 with original assets preserved. Capacity,
 image/browser, VM recovery, forced reachable-inventory Worker recovery and accounting
 acceptance passed, including the real 30-minute idle-expiry and retained-file recovery
 check. Native template/node-metadata cleanup is separate maintenance in
