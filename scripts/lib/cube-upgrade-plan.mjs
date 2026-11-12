@@ -215,6 +215,31 @@ export async function finalizeCubeUpgradePlan(options) {
   await rm(join(directory, "cube-plan.pending.json"));
   return cubeReleaseDigest(complete);
 }
+export function cubeUpgradeAlreadyApplied(plan, live, desired) {
+  const desiredManifest = cubeResources(desired)
+    .filter((resource) => !resource.metadata?.annotations?.["helm.sh/hook"])
+    .map((resource) => stringify(resource))
+    .join("---\n");
+  // Retaining the native image tag/Helm values does not retain generated plugin
+  // or post-rendered configuration. Only the full desired state proves apply.
+  if (
+    cubeReleaseDigest(live.values) === plan.valuesDigest &&
+    manifestDigest(live.manifest) === manifestDigest(desiredManifest)
+  )
+    return true;
+  assert.equal(
+    cubeReleaseDigest(live.values),
+    plan.baselineValuesDigest,
+    "Installed Cube overrides changed",
+  );
+  assert.equal(
+    manifestDigest(live.manifest),
+    plan.baselineManifestDigest,
+    "Installed Cube manifest changed",
+  );
+  return false;
+}
+
 export async function verifyCubeUpgradePlan(options) {
   const { directory, tag } = options,
     t = tools(options);
@@ -239,28 +264,9 @@ export async function verifyCubeUpgradePlan(options) {
   assert.equal(cubeReleaseDigest(values), plan.valuesFileDigest);
   const live = await installed(t);
   assertCubeCredentialsRetained(plan.credentials, live.credentials);
-  if (cubeReleaseDigest(live.values) === plan.valuesDigest) {
-    assert.equal(
-      manifestDigest(live.manifest),
-      manifestDigest(
-        cubeResources(desired)
-          .filter((resource) => !resource.metadata?.annotations?.["helm.sh/hook"])
-          .map((resource) => stringify(resource))
-          .join("---\n"),
-      ),
-    );
+  if (cubeUpgradeAlreadyApplied(plan, live, desired)) {
     return { plan, alreadyApplied: true, manifest: desired };
   }
-  assert.equal(
-    cubeReleaseDigest(live.values),
-    plan.baselineValuesDigest,
-    "Installed Cube overrides changed",
-  );
-  assert.equal(
-    manifestDigest(live.manifest),
-    plan.baselineManifestDigest,
-    "Installed Cube manifest changed",
-  );
   const next = await render(options, join(directory, "cube-values.yaml"), {
     credentialAdditions: plan.credentialAdditions,
     upstreamImagePins: plan.upstreamImagePins,
