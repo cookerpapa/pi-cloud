@@ -1,47 +1,17 @@
 # Maintained backlog
 
-## Alternate runtime production integration — in progress
+## Alternate runtime production integration — final publication
 
-- [x] #27 source: Android original-reply recovery, immutable cancellation targets and admission-only Worker retirement.
-- [x] #27 source: scoped HTTPS device completion, removing receiver Kafka/PG/S3 credentials.
-- [ ] #27: explicit BoxLite provider selection and managed Workspace/resource integration.
-- [ ] #27: serial real-deployment recovery, isolation, output/image and cleanup acceptance.
+- [x] #27: Android original-operation recovery and scoped HTTPS completion.
+- [x] #27: explicit stock BoxLite provider with shared fixed Guest behavior and managed Workspace ownership.
+- [x] #27: serial real model, source-output/image, cancellation, Worker/VM/receiver recovery and device-restart acceptance.
+- [ ] #27: final matched publication, Cube-default restoration and original-resource verification.
 
-Alternate images have passed their release scans. Live rollout is in progress;
-the BoxLite operator now uses the maintained temporary registry forward, and
-operator-only repairs retain the scanned runtime revision without relabeling it.
-Real node checks passed creation, retained Workspace pause/resume, API-child
-replacement and confirmed deletion. Cold maintenance also waits for OnDelete
-node Pods directly; an unready node keeps the resumable maintenance receipt.
-Full-path acceptance found BoxLite's automatic volume UID mapping conflicted
-with a root default container user. The adapter now selects UID 1000 to preserve
-the platform Workspace identity. Actual host/Guest ownership, node replacement,
-pause/resume and four real model Tool cases pass; full lifecycle/failure checks
-remain in progress.
-The real terminal handshake also exposed a public-role composition regression:
-Session API relied on the removed Worker gateway to register WebSocket support.
-Application assembly now installs it for the standalone terminal gateway, and
-the terminal test uses that assembly instead of manually supplying the plugin.
-The following live preview check found that the embedded BoxLite SDK rejects its
-hosted private-tunnel option. The node now uses the native local connected stream
-and verifies that it has no published URI; real preview revalidation is pending.
-Public terminal/preview now pass. Pause/resume exposed an inherited image WORKDIR:
-dedicated preparation removes `/workspace`, so the next native init failed its
-chdir. The Box init cwd is now `/`; the node gate reproduces removal of the old
-directory before pause/resume. Live revalidation is pending.
-The BoxLite node, lifecycle, Worker handoff, cancellation, browser/image and VM-loss
-checks now pass. Android's first Run stayed queued under the host-memory admission
-guard. Its timed-out fixture was cleaned, and queued cancellation now uses the
-shared acceptance helper. The device retry uses a recorded temporary memory
-window; original machine intents and workload replica counts must be restored.
-
-[ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
-owner authorization beyond the earlier operator-only experiment.
-Android source/PG/Harness checks pass; matched publication and live device
-continuation remain part of the open acceptance item, not the old operator proof.
-BoxLite source now shares fixed Guest behavior through a neutral driver port,
-uses a separate stock-SDK node and preserves existing Volume authority. Its
-operator/private protocol and terminal v2 require the remaining source/live gates.
+[ADR-0313](adr/0313-alternate-runtime-production-integration.md) and the
+[acceptance report](reports/alternate-runtimes-20261112.md) record the live fixes,
+failed samples, isolation limits and the cold operator reconciliation boundary.
+The remaining work is release/restoration; the device is already back at zero
+replicas. BoxLite compute remains unpriced without an observation collector.
 
 ## Platform-owned elastic idle expiry — deployed
 
@@ -87,7 +57,7 @@ now resume against this common expiry policy.
 - [x] #27 source: owned BoxLite SDK/Guest probe and explicit ADR-0312 boundary; no engine patches or production fallback.
 - [x] #27 source: Android target access follows the separate Session API/Runtime; egress configuration uses the maintained execution service.
 - [x] #27 acceptance: seven BoxLite Guest/HTTPS scenarios and six real Android tools, retained images/browser rendering and device restart passed; original stopped target state restored. [Evidence](reports/sandbox-portability-20261111.md).
-- [ ] #27 promotion: general BoxLite provider/Workspace/quota integration, accepted host isolation and ADR-0314 platform expiry; Android pending-operation wait continuation. These are outside the completed operator experiment.
+- [x] #27 promotion: general BoxLite provider/Workspace integration and Android original-operation continuation passed the subsequent production-path acceptance; final release restoration is tracked above.
 
 [ADR-0308](adr/0308-unresolved-resource-admission.md) and
 [ADR-0309](adr/0309-stock-sandbox-contract.md). Stock Cube implementation is now

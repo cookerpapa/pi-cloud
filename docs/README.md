@@ -41,8 +41,8 @@ work from remaining proposals and unverified limits.
 | [Distributed deployment](DISTRIBUTED_DEPLOYMENT.md) | Multi-machine deployment requirements |
 | [Private pilot](PRIVATE_PILOT.md) | Trial scope and acceptance |
 | [Optional modules](OPTIONAL_MODULES.md) | Optional integrations |
-| [Android target](ANDROID_EXECUTION.md) | Retained operator prototype; no Web product picker |
-| [BoxLite provider](BOXLITE_EXECUTION.md) | Explicit compute adapter, shared storage and pending production acceptance |
+| [Android target](ANDROID_EXECUTION.md) | Operator target, original-operation recovery; no Web picker |
+| [BoxLite provider](BOXLITE_EXECUTION.md) | Explicit stock compute adapter, shared storage and live acceptance |
 
 ## Decisions and evidence
 
@@ -63,7 +63,7 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest validation: [Stock BoxLite / Android portability](reports/sandbox-portability-20261111.md).
+Latest validation: [Integrated BoxLite / Android acceptance](reports/alternate-runtimes-20261112.md).
 Latest maintenance: [Obsolete Cube metadata cleanup](reports/cube-metadata-cleanup-20261111.md).
 Serving runtime delivery: [Platform-owned elastic expiry](reports/platform-idle-expiry-20261111.md).
 Previous delivery: [Stock Cube deployment](reports/stock-cube-source-20261111.md).

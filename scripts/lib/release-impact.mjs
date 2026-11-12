@@ -61,6 +61,7 @@ export const operatorSources = new Set([
   "scripts/run-live-tool-host-release-check.mjs",
   "scripts/run-live-development-environment-check.mjs",
   "scripts/run-live-android-check.mjs",
+  "scripts/run-live-android-restart-check.mjs",
   "scripts/run-live-schedules-check.mjs",
   "scripts/run-history-layout-check.mjs",
   "scripts/run-history-window-check.mjs",

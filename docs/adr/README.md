@@ -40,7 +40,7 @@ separates Guest application code from remaining provider patches.
 [ADR-0305](0305-execution-owned-tools-and-bindings.md) is accepted for execution-owned
 bindings, public Tool adaptation and independent tool-host/catalog publication in
 Issues #12–#16. [Implementation and serial live acceptance](../reports/execution-tools-20261108.md)
-are complete; BoxLite remains an evaluation, not a production backend.
+are complete; ADR-0313 subsequently integrates the explicitly selected BoxLite backend.
 
 [ADR-0304](0304-compute-retirement-for-maintenance.md) preserves machine intent and
 Workspace bytes during verified compute retirement for a matched upgrade.

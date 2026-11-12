@@ -1,7 +1,8 @@
 # BoxLite compute provider
 
-Status: source integration under [ADR-0313](adr/0313-alternate-runtime-production-integration.md)
-and issue #27. Production acceptance is pending; Cube remains the serving default.
+Status: integrated under [ADR-0313](adr/0313-alternate-runtime-production-integration.md)
+and issue #27, with [production-path acceptance](reports/alternate-runtimes-20261112.md).
+Cube remains the default; final matched restoration is tracked in that report.
 This is an explicitly selected, single-node operator backend, not a fallback or
 a new placement scheduler. BoxLite engine/SDK source is unmodified and pinned to
 `@boxlite-ai/boxlite` 0.12.0.
@@ -46,8 +47,8 @@ The validated operator experiment required the stock no-jailer configuration.
 The source deployment makes that choice explicit: no BoxLite VMM seccomp filter
 is claimed. KVM remains the untrusted execution boundary; fixed Tools and
 untrusted workflow processes use UID 1000, dropped capabilities and
-no-new-privileges inside the VM. The complete deployment still requires its
-own isolation/failure acceptance before promotion.
+no-new-privileges inside the VM. The complete node/provider deployment passed the applicable integration and
+failure acceptance; this does not establish parity with a jailed host profile.
 
 The Box container's default user is also UID/GID 1000. BoxLite automatically
 maps host volume ownership to that default user; choosing root here would swap

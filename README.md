@@ -3,16 +3,17 @@
 Self-hosted infrastructure for managed agents, powered by Pi.
 
 Built around Pi Durable 1.0's public embedded SDK. Coding-agent loops run in trusted Workers; file and shell tools
-run in separate CubeSandbox KVM guests. Conversations and retained attachments survive
+run in separate KVM guests, with CubeSandbox as the default provider. Conversations and retained attachments survive
 Worker replacement and Workspace changes.
 
 Pi Managed Agents is a personal infrastructure project with integration and failure-recovery
 acceptance on a single-host K3s deployment. It has not been validated at fleet
 scale or as a highly available production service.
 
-[Portability validation](docs/reports/sandbox-portability-20261111.md) also runs the
-fixed Guest on unmodified BoxLite and verifies the retained Android operator
-prototype. These experiments do not enable an alternate production default.
+[Alternate runtime acceptance](docs/reports/alternate-runtimes-20261112.md) covers
+an explicit stock BoxLite backend and Android operator targets. Linux providers
+share the fixed Guest; device operations share the original-reply recovery and
+HTTPS completion path. There is no automatic provider fallback or phone picker.
 
 ## What it does
 
@@ -94,7 +95,7 @@ Provider observations -> independent Metering -> PG ledger (unverified time unpr
 | Tool completion | Scoped Guest HTTPS callbacks, image claim checks and Kafka reply publication |
 | Tool host | Independently published trusted ordinary Tool implementations; no Pi or Session consumer |
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
-| CubeSandbox | KVM isolation and native lifecycle APIs; fixed Guest admission/cancellation |
+| Sandbox providers | CubeSandbox by default, explicit stock BoxLite, and operator Android targets; fixed Guest/receiver admission and scoped completion |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
 | S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
@@ -129,7 +130,8 @@ verified the same Run continuing with its original Worker, lease and VM while
 its next model request observed the updated directory.
 
 Sandbox integration uses focused lifecycle, execution, file, image, terminal,
-preview, workflow and credential interfaces over the same Cube implementation.
+preview, workflow and credential interfaces. Cube and BoxLite share fixed Guest
+behavior while each adapter owns its provider mechanics.
 Workers describe logical targets; the Session execution side prepares bindings
 when needed. The resource owner keeps physical admission and recovery; file access adds no lifecycle
 authority or extra network hop. See the [provider boundaries](docs/ARCHITECTURE.md#tools-and-cube).

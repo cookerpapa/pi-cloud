@@ -1,12 +1,13 @@
 # Implementation roadmap
 
-## Alternate runtime production integration — active
+## Alternate runtime production integration — final publication
 
-The owner has authorized #27's full integration under
-[ADR-0313](adr/0313-alternate-runtime-production-integration.md). Android will
-reuse the Linux Guest's original reply-reference recovery and HTTPS completion;
-BoxLite will enter the owned provider/resource ports explicitly. Keep vendor
-source unchanged and run resource-intensive acceptance serially on WSL.
+[ADR-0313](adr/0313-alternate-runtime-production-integration.md) is implemented.
+Stock BoxLite now uses the shared fixed Guest/provider ports and existing managed
+Workspace authority. Android uses scoped HTTPS completion and original-operation
+wait recovery. [Serial production-path acceptance](reports/alternate-runtimes-20261112.md)
+passed; final matched publication and restoration of Cube/default resources are
+in progress. No vendor source patches or automatic fallback were added.
 
 ## Platform-owned elastic idle expiry — deployed
 
@@ -41,8 +42,9 @@ checks, failed samples, limits and the owner-approved exact-image exception.
 The subsequent [BoxLite / Android validation](reports/sandbox-portability-20261111.md)
 passed real Guest execution and Android model/image/restart checks with unchanged
 upstream engines. It records the BoxLite host-jailer tradeoff and local resource
-API gaps. #27 retains production promotion work; Cube remains the default, and
-the Android target was returned to its original stopped state.
+API gaps. The subsequent [integrated acceptance](reports/alternate-runtimes-20261112.md)
+now covers the production provider and original device-operation recovery. Cube
+remains the default, and Android has no Web product picker.
 
 ## Guest execution and Session activity — deployed
 

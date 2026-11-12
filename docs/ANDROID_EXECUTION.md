@@ -1,24 +1,20 @@
 # Android execution targets
 
-Status: retained operator prototype, initially deployed under ADR-0279 on
-2026-10-26. That initial core was `schedules-08063299` (schema 202/catalog v3),
-with device `android-7aa30c34`; those identifiers describe historical acceptance.
-[Delivery evidence](reports/android-execution-delivery-20261026.md) covers real
-model calls, Web binding/images, device restart and original-asset preservation.
-
-ADR-0313 now extends this target to original-operation continuation and scoped
-HTTPS completion. The source change requires schema 219, Session topic v21 and
-executor protocol 2 in one drained matched release; it has not yet replaced the
-`stock-android-20261111-r2` operator deployment. The phone picker remains hidden.
+Status: integrated operator target under ADR-0313, with
+[real six-tool, image, Worker/receiver recovery and VM-restart acceptance](reports/alternate-runtimes-20261112.md).
+The matched core uses schema 219, Session topic v21 and executor protocol 2.
+The current device artifact is `android-20261112-r3`; initial October acceptance
+is recorded separately in [the historical delivery report](reports/android-execution-delivery-20261026.md).
+The phone picker remains hidden.
 
 The October 27 owner decision withdraws the cloud-phone picker/screen controls
 from the product page. The execution-target abstraction and operator API remain
-as a verified alternate-sandbox prototype; no backend/device data is deleted.
+as a verified operator integration; no backend/device data is deleted.
 An operator can bind an existing idle coding conversation to a provisioned
 Android virtual device through the API. The next Run receives the device capabilities. Its root Agent can observe
 the screen, tap, swipe, enter text, press a navigation key and open an installed
-application. Child Agents do not inherit control of that screen. The existing
-Cube Workspace and coding tools remain available.
+application. Child Agents do not inherit control of that screen. A coding Workspace remains part of the conversation, but the selected target
+controls which execution tools are exposed. Device application storage is separate.
 
 ## Data flow and ownership
 
@@ -171,3 +167,16 @@ both retained values.
 This slice does not implement pure-phone Sessions, physical-phone applications,
 camera tools, APK installation, automatic device pools, migration of Android
 userdata between nodes, or interactive simultaneous human/Agent screen control.
+
+## Matched acceptance
+
+Run resource-intensive checks serially and provision adequate host memory:
+
+```sh
+PI_CLOUD_LIVE_ANDROID_CHECK=1 PI_CLOUD_LIVE_ANDROID_RECOVERY=1 node --import tsx scripts/run-live-android-check.mjs TARGET_UUID PRIVATE_REPORT
+PI_CLOUD_LIVE_ANDROID_CHECK=1 node --import tsx scripts/run-live-android-restart-check.mjs TARGET_UUID OWNED_TARGET_DIRECTORY PRIVATE_RESTART_REPORT
+```
+
+The second command requires an unbound, settled target. It verifies a changed
+Guest boot, retained owned settings/files and the same userdata file, then removes
+its markers. Restore the target's original stopped/running state after acceptance.

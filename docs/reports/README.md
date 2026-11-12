@@ -1,5 +1,9 @@
 # Delivery and research evidence
 
+- [Integrated alternate runtimes](alternate-runtimes-20261112.md): stock BoxLite
+  resource/Guest integration, Android original-operation recovery, serial live
+  acceptance and explicit isolation/accounting limits.
+
 - [Platform-owned elastic expiry](platform-idle-expiry-20261111.md): PG deadlines,
   matched rollout, actual 30-minute management-outage test, original Worker reply
   recovery and small-image/preview acceptance.

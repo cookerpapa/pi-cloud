@@ -1,7 +1,7 @@
 # Architecture
 
 Pi Managed Agents hosts Pi Durable 1.0 in trusted Workers and runs untrusted file/shell
-operations in separate CubeSandbox KVM guests. The Control Plane never hosts
+operations in separate KVM guests, with CubeSandbox as the default provider. The Control Plane never hosts
 the Pi Harness. Conversations and retained attachments outlive a particular Worker
 or Workspace; Workspace files belong to persistent Cube Volumes.
 
@@ -10,12 +10,13 @@ This document describes the current runtime, not its release chronology.
 record evidence at named revisions, and [BACKLOG](BACKLOG.md) lists unresolved
 limits. Historical migrations and reports are not alternate production modes.
 
-[ADR-0312](adr/0312-unmodified-alternate-sandbox-validation.md) permits isolated
-BoxLite/Android portability checks. The fixed Guest runs on stock BoxLite through
-an ordinary SDK adapter, but the production resource/Workspace/expiry integration
-is not enabled. The retained Android target uses its own trusted external
-receiver and official automation APK; it does not inherit the Linux Guest's
-pending-wait recovery guarantees. [Evidence and limits](reports/sandbox-portability-20261111.md).
+[ADR-0313](adr/0313-alternate-runtime-production-integration.md) implements
+explicit stock BoxLite and Android integration beyond the earlier ADR-0312
+operator experiments. The BoxLite native SDK lives in its own trusted node,
+while Cube and BoxLite share fixed Guest Tools and the existing Workspace
+attachment guard. Android's trusted receiver uses scoped HTTPS completion and
+restores pending waits to their original reply destinations. No vendor source
+patch or automatic fallback is used. [Acceptance and limits](reports/alternate-runtimes-20261112.md).
 
 ## One message
 
