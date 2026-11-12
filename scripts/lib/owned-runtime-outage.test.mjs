@@ -86,3 +86,15 @@ it("keeps Session-runtime and management fault receipts separate", () => {
     "Unknown outage role",
   );
 });
+
+it("restores the exact stock Cube API without touching its native nodes", () => {
+  const api = deployment();
+  api.metadata.name = "cube-api";
+  const receipt = outageReceipt("cube-api", api, 0);
+  const stopped = structuredClone(api);
+  stopped.spec.replicas = 0;
+  const invoke = vi.fn(() => JSON.stringify(stopped));
+  restoreRuntimeRole(receipt, invoke);
+  expect(invoke.mock.calls[1][0]).toContain("deployment/cube-api");
+  expect(() => outageReceipt("control-plane", api, 0)).toThrow();
+});

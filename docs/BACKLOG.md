@@ -23,6 +23,9 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   API and ordinary Tool-host startup. The maintained closure gate records ten
   role entrypoints; 16 affected tests and type checks pass. The full 432-case
   fault matrix, RF3 transport checks and 310 release/helper tests have passed.
+  The file gateway also drops unused database/domain/event-log/attachment source
+  and Kafka native compilation; actual gateway imports replace the old unrelated
+  database smoke check. Native XFS/quota and mount-receipt checks pass.
 - [x] #30 source: independent Workspace persistence and pool/generation identity;
   BoxLite no longer constructs a Cube client or loads Cube credentials. The mount
   adapter no longer creates/deletes bytes. Schema 221 and ADR-0318 record ownership.

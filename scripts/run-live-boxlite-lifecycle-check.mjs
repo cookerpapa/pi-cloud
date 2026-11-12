@@ -1,4 +1,5 @@
 import { registeredBackend } from "./lib/registered-backend-fixture.mjs";
+import { armRuntimeRestore } from "./lib/owned-runtime-outage.mjs";
 /** Product/API lifecycle checks for the explicit BoxLite backend.
  * Advances only one owned, retired Session's idle deadline as a clock fixture.
  * It does not claim to measure an actual 30-minute wall-clock interval. */
@@ -56,7 +57,7 @@ async function until(fn, label, ms = 180000) {
   }
   throw Error("Timed out: " + label);
 }
-let tenant, api, machine, project, session, active, instance, failure;
+let tenant, api, machine, project, session, active, instance, failure, cubeOutage;
 const isTerminal = (r) => ["completed", "failed", "cancelled", "timed_out"].includes(r.state);
 const machineState = async (state) =>
   until(async () => {
@@ -174,6 +175,27 @@ async function run(command) {
 }
 try {
   await client.checkHealth();
+  if (process.env.PI_CLOUD_LIVE_CUBE_UNAVAILABLE === "1") {
+    cubeOutage = await armRuntimeRestore(
+      "cube-api",
+      output + ".cube-restore.json",
+      Date.now() + 1_800_000,
+    );
+    kubectl([
+      "scale",
+      "deployment/cube-api",
+      "--current-replicas=" + cubeOutage.receipt.replicas,
+      "--replicas=0",
+    ]);
+    kubectl(["wait", "--for=delete", "pod", "-l", cubeOutage.selector, "--timeout=180s"], {
+      timeout: 185_000,
+    });
+    report.cubeUnavailable = {
+      startedAt: new Date().toISOString(),
+      deploymentUid: cubeOutage.receipt.uid,
+    };
+    await save();
+  }
   tenant = await createPrivateTenant(db, {
     slug: "release-acceptance-box-lifecycle-" + Date.now(),
     ownerDisplayName: "Owned BoxLite lifecycle",
@@ -386,6 +408,30 @@ try {
   failure ??= e;
 }
 await save();
+if (cubeOutage) {
+  try {
+    const stopped = JSON.parse(kubectl(["get", "deployment/cube-api", "-o", "json"]));
+    assert.equal(
+      stopped.spec.replicas,
+      0,
+      "Cube API recovered before the isolated lifecycle finished",
+    );
+    assert.equal(
+      JSON.parse(kubectl(["get", "pods", "-l", cubeOutage.selector, "-o", "json"])).items.length,
+      0,
+    );
+    report.cubeUnavailable.entireLifecycleAndCleanup = report.accepted && report.cleanupConfirmed;
+  } catch (error) {
+    failure ??= error;
+    report.accepted = false;
+    report.cubeUnavailable.failure = error.message;
+  } finally {
+    await cubeOutage.restore();
+    kubectl(["rollout", "status", "deployment/cube-api", "--timeout=180s"], { timeout: 185_000 });
+    report.cubeUnavailable.restored = true;
+    await save();
+  }
+}
 await client.close();
 await db.destroy();
 console.log(JSON.stringify(report));

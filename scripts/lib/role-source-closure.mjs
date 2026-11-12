@@ -65,6 +65,12 @@ export async function checkRoleSourceClosure(root, outputPath) {
           !/^packages\/(control-plane|accounting)\//.test(path),
           `Worker runtime import crosses its role: ${path}`,
         );
+    if (role === "volumeGateway")
+      for (const path of imported)
+        assert(
+          !/^packages\/(database|domain|event-log|session-attachments)\//.test(path),
+          `File gateway runtime imports a removed package implementation: ${path}`,
+        );
     if (role === "sessionApi" || role === "toolHost")
       for (const path of imported)
         assert(

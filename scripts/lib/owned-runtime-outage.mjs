@@ -7,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { kubectl } from "./production-kubernetes.mjs";
 
 const targetFor = (role) => {
+  if (role === "cube-api") return "deployment/cube-api";
   assert(["control-plane", "session-runtime", "tool-host"].includes(role), "Unknown outage role");
   return `deployment/pi-cloud-${role}`;
 };
@@ -16,7 +17,7 @@ const templateHash = (value) =>
 export function outageReceipt(role, deployment, restoreAt) {
   targetFor(role);
   assert.equal(deployment.kind, "Deployment");
-  assert.equal(deployment.metadata.name, `pi-cloud-${role}`);
+  assert.equal(deployment.metadata.name, targetFor(role).split("/")[1]);
   assert(deployment.spec.replicas > 0, "Runtime role was already stopped");
   return {
     role,
@@ -32,7 +33,7 @@ export function outageReceipt(role, deployment, restoreAt) {
 export function restoreRuntimeRole(receipt, invoke = kubectl) {
   const target = targetFor(receipt.role);
   const current = JSON.parse(invoke(["get", target, "-o", "json"]));
-  assert.equal(current.metadata.name, `pi-cloud-${receipt.role}`, "Runtime role target changed");
+  assert.equal(current.metadata.name, target.split("/")[1], "Runtime role target changed");
   assert.equal(current.metadata.uid, receipt.uid, "Runtime role identity changed");
   assert.equal(templateHash(current), receipt.template, "Runtime role template changed");
   if (current.spec.replicas === receipt.replicas) return;
