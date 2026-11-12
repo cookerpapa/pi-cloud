@@ -184,3 +184,20 @@ ownership across creation, API replacement and VM resume, in addition to content
 preservation. The affected development allocation is retired before restoring
 the managed directory's original owner; no recursive file ownership rewrite is
 authorized by this repair.
+
+## Cold operator reconciliation
+
+An unknown create is still never replayed or cancelled through the user API.
+During an explicitly authorized whole-node development replacement, the operator
+may establish a stronger physical boundary: drain and stop every management,
+Worker and data caller; verify the node's creation queue, immutable pre-SDK
+receipts and native allocations are empty; stop the exact node Pod; and confirm
+its original container cgroup has disappeared or is unpopulated. This combines
+closed request admission with positive loss of the complete execution scope.
+Empty inventory or a missing receipt alone is insufficient.
+
+Only then may the operator reconcile the exact pending allocation IDs as absent,
+with PostgreSQL compare-and-set guards for the old owner, intent and allocation.
+Keep the stable machine intent and all Workspace bytes. A replacement uses a
+new allocation UUID. This is a recorded cold maintenance procedure, not an
+automatic recovery shortcut or an accounting authority.
