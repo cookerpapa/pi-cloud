@@ -60,7 +60,7 @@ import {CubePersistentCapsuleCodec} from '/app/packages/sandbox-control/src/cube
 import {ToolCompletionIssuer} from '/app/packages/sandbox-control/src/tool-completion-issuer.ts';
 const config=await loadSandboxControlConfig(),cube=config.cubeSandbox;
 const database=createDatabase({connectionString:config.databaseNotificationUrl,maxConnections:1});
-const client=new OfficialCubeSandboxRuntimeClient({...cube,egressProxyIp:cube.egressProxyHost});
+const client=new OfficialCubeSandboxRuntimeClient({...cube,egressProxyIp:config.webProxy.host,directPrivateCidrs:config.webProxy.directPrivateCidrs});
 const completion=new ToolCompletionIssuer({
  url:process.env.PI_CLOUD_TOOL_COMPLETION_URL,
  ca:await readFile(process.env.PI_CLOUD_COMPLETION_CA_FILE,'utf8'),

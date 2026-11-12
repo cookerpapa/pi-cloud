@@ -2653,12 +2653,31 @@ describe("provider-backed Sandbox controller", () => {
           proxyNodeIp: "10.20.30.40",
           proxyPort: 443,
           proxyScheme: "https",
-          directPrivateCidrs: ["192.168.31.0/24", "10.20.0.0/24"],
           sandboxDomain: "cube.app",
-          workspaceVolumeGatewayUrl: "http://workspace-volume-gateway:4500",
-          workspaceVolumeGatewayToken: "m".repeat(48),
+        },
+        webProxy: { directPrivateCidrs: ["192.168.31.0/24", "10.20.0.0/24"] },
+        storage: {
+          url: "http://workspace-volume-gateway:4500",
+          token: "m".repeat(48),
         },
       });
+      const box = await loadSandboxControlConfig({
+        PI_CLOUD_SANDBOX_PROVIDER: "boxlite",
+        PI_CLOUD_BOXLITE_URL: "http://boxlite:4322",
+        PI_CLOUD_BOXLITE_NODE_ID: "box-node",
+        DATABASE_URL_FILE: databaseUrlPath,
+        PI_CLOUD_SANDBOX_DOMAIN_ID: "box-domain",
+        PI_CLOUD_SANDBOX_CONTROL_ADVERTISED_URL: "http://management:4300",
+        PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE: tokenPath,
+        PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE: terminalTokenPath,
+        PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE: persistentStateKeyPath,
+        PI_CLOUD_IMAGE_REVISION: "development",
+        PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL: "http://workspace-volume-gateway:4500",
+        PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: workspaceVolumeGatewayTokenPath,
+      });
+      expect(box.cubeSandbox).toBeUndefined();
+      expect(box.boxlite?.nodeId).toBe("box-node");
+      expect(box.storage.token).toBe("m".repeat(48));
       await expect(
         loadSandboxControlConfig({
           DATABASE_URL_FILE: databaseUrlPath,

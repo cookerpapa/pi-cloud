@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0318](0318-workspace-persistence-and-native-mounts.md) gives Workspace bytes
+and initialization to the storage port, with native compute mount adapters (#30).
+
 [ADR-0317](0317-skill-actions-and-installation-identity.md) consolidates Skill
 actions and protects installation removal across deletion/reinstallation (#34).
 

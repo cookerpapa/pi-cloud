@@ -19,7 +19,11 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   narrow execution client, and check the actual Worker assembly in its image.
   Dependency/context checks, type checking and five lifecycle tests pass.
 - [ ] #37: verify the built Worker and finish role-input integration with #33.
-- [ ] #30: Workspace persistence independent of the compute provider.
+- [x] #30 source: independent Workspace persistence and pool/generation identity;
+  BoxLite no longer constructs a Cube client or loads Cube credentials. The mount
+  adapter no longer creates/deletes bytes. Schema 221 and ADR-0318 record ownership.
+- [ ] #30: operator cold adoption, native registration retirement and serial live
+  Cube/BoxLite storage/quota/recovery acceptance with original assets preserved.
 - [ ] #31: dynamic administrator backend registration and resource selection.
 - [x] #34 source: `skill` plus `publish_skill`, exact personal uninstall and
   non-reused PG installation revisions (schema 220 / ADR-0317). Skill/PG/native
@@ -28,21 +32,21 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   and actual model/Guest Skill acceptance.
 - [ ] #33: verified impact plans, artifact reuse and narrow publication.
 
-## Repository decoupling review — complete; fixes await discussion
+## Repository decoupling review — complete; fixes authorized
 
 - [x] [#32](https://github.com/cookerpapa/pi-managed-agents/issues/32): review current
   README/docs, all package/role boundaries, release paths and historical code/tests.
 - [x] Record eight finding groups, the release matrix, 430 current fault targets
   and 76 passing focused checks in the [review](reports/repository-decoupling-review-20261112.md).
-- [ ] Discuss control-Tool authority, role-specific startup/configuration and
+- [x] Agree control-Tool authority, role-specific startup/configuration and
   artifact/development-cutover cleanup before broadening release scopes.
 - [ ] [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33): implement
   smaller publication scopes only after their dependency/replacement gates pass.
 
 [#30](https://github.com/cookerpapa/pi-managed-agents/issues/30) records the proposed
 Workspace persistence port; [#31](https://github.com/cookerpapa/pi-managed-agents/issues/31)
-records no-restart cluster registration. They are design proposals, not shipped
-capabilities or permission to change active storage/resource ownership.
+records no-restart cluster registration. Both are authorized for implementation;
+source completion and live publication are tracked separately above.
 
 ## Alternate runtime production integration — deployed
 

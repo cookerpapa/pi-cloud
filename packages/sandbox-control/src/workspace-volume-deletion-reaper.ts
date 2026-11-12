@@ -8,7 +8,7 @@ import {
 export type WorkspaceVolumeDeletionReaperOptions = Readonly<{
   database: Kysely<Database>;
   sandboxDomainId: string;
-  gateway: WorkspaceVolumeGateway;
+  gateway: Pick<WorkspaceVolumeGateway, "prepareDelete" | "finalizeDelete">;
   deleteVolumeMetadata: (volumeId: string) => Promise<void>;
   intervalMs?: number;
   batchSize?: number;
@@ -25,7 +25,7 @@ type PendingWorkspaceDeletion = Readonly<{
 export class WorkspaceVolumeDeletionReaper {
   readonly #database: Kysely<Database>;
   readonly #sandboxDomainId: string;
-  readonly #gateway: WorkspaceVolumeGateway;
+  readonly #gateway: Pick<WorkspaceVolumeGateway, "prepareDelete" | "finalizeDelete">;
   readonly #deleteVolumeMetadata: (volumeId: string) => Promise<void>;
   readonly #intervalMs: number;
   readonly #batchSize: number;

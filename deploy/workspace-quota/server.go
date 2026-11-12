@@ -87,6 +87,47 @@ func Handler(manager *Manager, token string) http.Handler {
 		}
 		reply(w, 200, map[string]uint64{"pending": count, "pendingClosures": closures})
 	}))
+	mux.HandleFunc("POST /v1/storage/inspect", authorize(func(w http.ResponseWriter, r *http.Request) {
+		var request StorageRequest
+		if !decode(w, r, &request) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		value, err := manager.InspectStorage(ctx, request)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		reply(w, 200, value)
+	}))
+	mux.HandleFunc("POST /v1/storage/prepare", authorize(func(w http.ResponseWriter, r *http.Request) {
+		var request StoragePrepareRequest
+		if !decode(w, r, &request) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		value, err := manager.PrepareStorage(ctx, request)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		reply(w, 200, value)
+	}))
+	mux.HandleFunc("POST /v1/storage/destroy", authorize(func(w http.ResponseWriter, r *http.Request) {
+		var request StorageRequest
+		if !decode(w, r, &request) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if err := manager.DestroyStorage(ctx, request); err != nil {
+			failure(w, err)
+			return
+		}
+		reply(w, 200, map[string]bool{"deleted": true})
+	}))
 	mux.HandleFunc("POST /v1/quota/ensure", authorize(func(w http.ResponseWriter, r *http.Request) {
 		var request EnsureRequest
 		if !decode(w, r, &request) {

@@ -22,3 +22,4 @@ export type BoxLiteImageProfile = Readonly<{
   diskGiB: number;
 }>;
 export const BOXLITE_NODE_PATH = "/internal/v1/boxlite";
+export const BOXLITE_NODE_PROTOCOL_VERSION = 2;

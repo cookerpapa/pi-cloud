@@ -8,6 +8,14 @@ export type WorkspaceQuotaSnapshot = {
   usedBytes: number;
   revision: number;
 };
+export type WorkspaceStorageSnapshot = {
+  volumeId: string;
+  poolId: string;
+  generation?: string;
+  exists: boolean;
+  known: boolean;
+  ready: boolean;
+};
 const dispatcher = new Agent();
 
 /** Typed storage policy adapter. No shell, filenames or provider credentials cross it. */
@@ -78,6 +86,39 @@ export class WorkspaceQuotaClient {
   }
   async checkHealth(): Promise<void> {
     await this.#request("/v1/pool");
+  }
+  async pool(): Promise<{ id: string }> {
+    const value = await this.#request("/v1/pool");
+    if (typeof value.id !== "string" || !/^[A-Za-z0-9_.:-]{1,128}$/.test(value.id))
+      throw new Error("Invalid Workspace pool identity");
+    return { id: value.id };
+  }
+  async inspectStorage(
+    identity: WorkspaceVolumeGatewayVolumeIdentity & { poolId: string; generation?: string },
+  ): Promise<WorkspaceStorageSnapshot> {
+    return this.#storage(await this.#request("/v1/storage/inspect", identity));
+  }
+  async prepareStorage(
+    identity: WorkspaceQuotaIdentity & { poolId: string; initialize: boolean; adopt: boolean },
+  ): Promise<WorkspaceStorageSnapshot> {
+    return this.#storage(await this.#request("/v1/storage/prepare", identity));
+  }
+  async destroyStorage(identity: WorkspaceQuotaIdentity & { poolId: string }): Promise<void> {
+    if ((await this.#request("/v1/storage/destroy", identity)).deleted !== true)
+      throw new Error("Workspace storage deletion is unconfirmed");
+  }
+  #storage(value: Record<string, unknown>): WorkspaceStorageSnapshot {
+    if (
+      typeof value.volumeId !== "string" ||
+      !/^pcw-[a-f0-9]{48}$/.test(value.volumeId) ||
+      typeof value.poolId !== "string" ||
+      !/^[A-Za-z0-9_.:-]{1,128}$/.test(value.poolId) ||
+      [value.exists, value.known, value.ready].some((v) => typeof v !== "boolean") ||
+      (value.generation !== undefined &&
+        (typeof value.generation !== "string" || !/^[a-f0-9]{64}$/.test(value.generation)))
+    )
+      throw new Error("Invalid Workspace storage observation");
+    return value as WorkspaceStorageSnapshot;
   }
   #snapshot(value: Record<string, unknown>): WorkspaceQuotaSnapshot {
     if (

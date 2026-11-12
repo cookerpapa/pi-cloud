@@ -3,7 +3,7 @@
 Pi Managed Agents hosts Pi Durable 1.0 in trusted Workers and runs untrusted file/shell
 operations in separate KVM guests, with CubeSandbox as the default provider. The Control Plane never hosts
 the Pi Harness. Conversations and retained attachments outlive a particular Worker
-or Workspace; Workspace files belong to persistent Cube Volumes.
+or Workspace; Workspace files belong to the configured persistence backend.
 
 This document describes the current runtime, not its release chronology.
 [ADRs](adr/README.md) explain decisions, [delivery reports](reports/README.md)
@@ -33,7 +33,7 @@ Guest -> HTTPS completion -> original Kafka reply destination -> authorized Pi H
 Control Tool completion -> Kafka replies -> authorized Pi Harness
 
 PG control mutation + Outbox -> same Session Kafka partition -> Projector
-Workspace bytes -> persistent Cube Volume
+Workspace bytes -> independent persistence backend
 Retained attachment originals -> private S3 objects; Kafka and PG carry references
 ```
 
@@ -410,11 +410,22 @@ or release quota. Arbitrary shell effects have no exactly-once guarantee.
 
 ## Workspaces and development machines
 
-The persistent Cube Volume is the sole Workspace byte authority. There is no
+The configured persistence backend is the sole Workspace byte authority. There is no
 per-Run archive head, platform-managed Git tree or second filesystem synchronized
 with PG. Uploads stream through the Volume Gateway or fixed machine helper with
 existing authorization, staging locks and atomic publication. Reads do not create
 Volumes or prove safe deletion.
+
+[ADR-0318](adr/0318-workspace-persistence-and-native-mounts.md) gives the existing
+Volume Gateway/storage helper explicit initialization, inspection and deletion
+ports. PG records initialization intent and generation. An uncertain first send
+is inspected, never resent automatically; missing retained data is not recreated.
+The local XFS pool identity is verified at initialization and attachment. Cube's
+supported plugin only registers/mounts existing bytes; BoxLite has no Cube API
+dependency. Exact holds still gate deletion. The contract also represents vendor
+retained sandboxes, but no hosted provider is enabled by this abstraction.
+This source stage requires cold adoption and matched provider acceptance.
+
 
 Ordinary elastic Sessions can share a Workspace's compute scope, files, ports and
 processes. Subagents may use separate temporary Linux compute on the same Volume.
@@ -582,7 +593,7 @@ or change cancellation/admission. See [OBSERVABILITY](OBSERVABILITY.md#worker-st
 | Ordered acknowledged commits and retained live suffix | Kafka |
 | Long-term native state, semantic history and query indexes | PostgreSQL materialization |
 | Live views and routing observations | Rebuildable Worker/Projector memory |
-| Workspace files and physical Volume references | Cube persistent Volume / node evidence |
+| Workspace files and physical attachment references | Storage backend / exact mount receipts |
 | Guest processes | Provider runtime and fixed Guest |
 | Elastic idle deadline and expiry admission | PostgreSQL and resource management |
 | Provider credentials, account selection and upstream continuation | CLIProxyAPI |
@@ -640,7 +651,7 @@ existing pricing evidence. Accounting never acquires resource lifecycle authorit
 See [resource accounting](RESOURCE_BILLING.md) and
 [Workspace capacity](adr/0301-workspace-capacity-enforcement.md).
 
-Workspace bytes stay in persistent Cube Volumes. PG capacity/revision/pending
+Workspace bytes stay in the configured persistence backend. PG capacity/revision/pending
 fields represent requested grow-only policy; the storage helper acknowledges
 kernel enforcement. Ordinary Bash/file writes consult neither PG nor another
 quota service. The VM's disposable system disk is not the Workspace capacity.

@@ -171,6 +171,7 @@ export class BoxLiteNodeBackend {
       !profile ||
       request.volumeMounts?.length !== 1 ||
       !mount ||
+      !mount.storage ||
       !["/workspace", "/home/user"].includes(mount.path) ||
       !profile.image.includes("@sha256:")
     )
@@ -179,7 +180,7 @@ export class BoxLiteNodeBackend {
     this.#creating.add(activationId);
     try {
       if (await this.#receipts.read(activationId)) throw new Error("creation_already_issued");
-      const attachment = await this.#volumes.attach(mount.name, activationId);
+      const attachment = await this.#volumes.attach(mount.name, activationId, mount.storage);
       await this.#receipts.save({ version: 1, activationId, request, attachment });
       // Never getOrCreate or retry this call after an uncertain receipt.
       const box = await this.#runtime.create(

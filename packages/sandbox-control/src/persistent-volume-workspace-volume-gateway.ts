@@ -819,7 +819,7 @@ export class PersistentVolumeWorkspaceVolumeGateway implements WorkspaceVolumeGa
         if (workspace !== undefined)
           throw new WorkspaceVolumeGatewayError(
             "workspace_volume_delete_pending",
-            "Cube has not removed Workspace bytes",
+            "Storage has not confirmed Workspace byte removal",
             true,
           );
         // Retire the complete trusted envelope atomically. A process crash while

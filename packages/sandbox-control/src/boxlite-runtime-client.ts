@@ -6,7 +6,11 @@ import {
   parseGuestProbeReply,
   type GuestProbeReply,
 } from "@pi-cloud/protocol";
-import { BOXLITE_NODE_PATH, type BoxLiteInstance } from "./boxlite-node-contract.ts";
+import {
+  BOXLITE_NODE_PATH,
+  BOXLITE_NODE_PROTOCOL_VERSION,
+  type BoxLiteInstance,
+} from "./boxlite-node-contract.ts";
 import {
   GuestExecutionRejected,
   SandboxRuntimeClientError,
@@ -32,7 +36,6 @@ export class BoxLiteRuntimeClient implements GuestRuntimeClient<BoxLiteInstance>
       url: string;
       token: string;
       nodeId: string;
-      volumes: Pick<GuestRuntimeClient, "ensureVolume" | "deleteVolume" | "close">;
     },
   ) {
     const url = new URL(options.url);
@@ -139,15 +142,10 @@ export class BoxLiteRuntimeClient implements GuestRuntimeClient<BoxLiteInstance>
     if (
       reply.status !== "ready" ||
       reply.nodeId !== this.options.nodeId ||
+      reply.protocolVersion !== BOXLITE_NODE_PROTOCOL_VERSION ||
       reply.sdkVersion !== "0.12.0"
     )
       throw new Error("BoxLite node is not ready at the pinned contract");
-  }
-  ensureVolume(id: string, driver: string) {
-    return this.options.volumes.ensureVolume(id, driver);
-  }
-  deleteVolume(id: string) {
-    return this.options.volumes.deleteVolume(id);
   }
   async create(input: GuestRuntimeCreateInput) {
     return this.#remember(await this.#request(BOXLITE_NODE_PATH + "/boxes", "POST", input));
@@ -417,6 +415,6 @@ export class BoxLiteRuntimeClient implements GuestRuntimeClient<BoxLiteInstance>
   async close() {
     for (const stream of this.#streams) stream.terminate();
     this.#streams.clear();
-    await Promise.all([this.#http.close(), this.options.volumes.close()]);
+    await this.#http.close();
   }
 }

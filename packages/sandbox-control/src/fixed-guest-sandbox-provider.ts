@@ -35,6 +35,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { isIPv4 } from "node:net";
 import { GuestApplicationPortError } from "./guest-runtime-client.ts";
 import { workspaceVolumeId, type WorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
+import {
+  workspaceVolumeReference,
+  type WorkspacePersistence,
+  type WorkspaceVolumeReference,
+} from "./workspace-persistence.ts";
 import type { WorkspaceUploadRequest } from "@pi-cloud/protocol";
 import {
   parseWorkspaceFileTransferSnapshot,
@@ -200,13 +205,14 @@ export type FixedGuestSandboxProviderOptions<I extends GuestRuntimeInstance> = R
   providerId: string;
   runtimeName: "cubesandbox-kvm" | "boxlite-kvm";
   connections: { valid(instance: I): boolean; merge(previous: I, observed: I): I };
-  templateId: string;
-  developmentTemplateIds: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
+  templateId?: string;
+  developmentTemplateIds?: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;
   runtimeClient: GuestRuntimeClient<I>;
   readyTimeoutMs?: number;
   webProxy: ToolWebProxyBootstrap;
   workspaceVolumeGateway: WorkspaceVolumeGateway;
+  workspacePersistence: Pick<WorkspacePersistence, "ensure">;
   persistentStateKey?: Uint8Array;
 }>;
 
@@ -585,13 +591,15 @@ export class FixedGuestSandboxProvider<
   readonly #runtimeName: "cubesandbox-kvm" | "boxlite-kvm";
   readonly #connections: FixedGuestSandboxProviderOptions<I>["connections"];
   readonly defaultPolicy = FIXED_GUEST_TOOL_POLICY;
-  readonly #templateId: string;
-  readonly #developmentTemplateIds: ReadonlyMap<DevelopmentEnvironmentProfileKey, string>;
+  readonly #templateId: string | undefined;
+  readonly #developmentTemplateIds:
+    ReadonlyMap<DevelopmentEnvironmentProfileKey, string> | undefined;
   readonly #imageRevision: string;
   readonly #client: GuestRuntimeClient<I>;
   readonly #readyTimeoutMs: number;
   readonly #webProxy: ToolWebProxyBootstrap;
   readonly #workspaceVolumeGateway: WorkspaceVolumeGateway;
+  readonly #workspacePersistence: Pick<WorkspacePersistence, "ensure">;
   readonly #persistentCapsules: CubePersistentCapsuleCodec | undefined;
   readonly #activations = new Map<string, GuestActivation<I>>();
 
@@ -599,16 +607,29 @@ export class FixedGuestSandboxProvider<
     this.providerId = options.providerId;
     this.#runtimeName = options.runtimeName;
     this.#connections = options.connections;
-    this.#templateId = bounded(options.templateId, "Sandbox template ID", 256);
-    this.#developmentTemplateIds = new Map(
-      (["starter", "standard", "performance"] as const).map((key) => [
-        key,
-        bounded(options.developmentTemplateIds[key], `Sandbox ${key} development template ID`, 256),
-      ]),
-    );
+    if ((options.templateId === undefined) !== (options.developmentTemplateIds === undefined))
+      throw new Error("Incomplete native lifecycle configuration");
+    this.#templateId =
+      options.templateId === undefined
+        ? undefined
+        : bounded(options.templateId, "Sandbox template ID", 256);
+    this.#developmentTemplateIds =
+      options.developmentTemplateIds === undefined
+        ? undefined
+        : new Map(
+            (["starter", "standard", "performance"] as const).map((key) => [
+              key,
+              bounded(
+                options.developmentTemplateIds![key],
+                `Sandbox ${key} development template ID`,
+                256,
+              ),
+            ]),
+          );
     this.#imageRevision = bounded(options.imageRevision, "Sandbox image revision", 128);
     this.#readyTimeoutMs = positiveInteger(options.readyTimeoutMs, READY_TIMEOUT_MS, 300_000);
     this.#workspaceVolumeGateway = options.workspaceVolumeGateway;
+    this.#workspacePersistence = options.workspacePersistence;
     this.#persistentCapsules =
       options.persistentStateKey === undefined
         ? undefined
@@ -754,11 +775,27 @@ export class FixedGuestSandboxProvider<
     await Promise.all([this.#client.checkHealth(), this.#workspaceVolumeGateway.checkHealth()]);
   }
 
-  async deleteWorkspaceVolume(volumeId: string): Promise<void> {
-    await this.#client.deleteVolume(volumeId);
+  protected async prepareVolumeMount(_reference: WorkspaceVolumeReference): Promise<void> {}
+
+  async #ensureWorkspace(input: { tenantId: string; workspaceId: string; sessionId: string }) {
+    return workspaceVolumeReference(
+      await this.#workspacePersistence.ensure({
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        sessionId: input.sessionId,
+        volumeId: workspaceVolumeId(input),
+      }),
+    );
   }
 
   async create(spec: SandboxCreateSpec, context: SandboxCreateContext): Promise<SandboxHandle> {
+    const templateId = this.#templateId,
+      profiles = this.#developmentTemplateIds;
+    if (!templateId || !profiles)
+      throw new SandboxCreationError(
+        new Error("Native lifecycle is not installed in this execution role"),
+        true,
+      );
     if (this.#activations.has(spec.activationId)) {
       const owned = this.#activations.get(spec.activationId)!;
       if (
@@ -800,8 +837,10 @@ export class FixedGuestSandboxProvider<
       spec.environment,
     );
     const volumeId = workspaceVolumeId(spec.assignment);
+    let storage: WorkspaceVolumeReference;
     try {
-      await this.#client.ensureVolume(volumeId, "picloud-posix");
+      storage = await this.#ensureWorkspace(spec.assignment);
+      await this.prepareVolumeMount(storage);
       await this.#workspaceVolumeGateway.verify({
         tenantId: spec.assignment.tenantId,
         workspaceId: spec.assignment.workspaceId,
@@ -815,9 +854,7 @@ export class FixedGuestSandboxProvider<
     try {
       instance = await this.#client.create({
         templateId:
-          spec.sandboxProfileKey !== undefined
-            ? this.#developmentTemplateIds.get(spec.sandboxProfileKey)!
-            : this.#templateId,
+          spec.sandboxProfileKey !== undefined ? profiles.get(spec.sandboxProfileKey)! : templateId,
         metadata: {
           ...assignmentMetadata(
             this.providerId,
@@ -827,7 +864,7 @@ export class FixedGuestSandboxProvider<
             bindingSha256,
           ),
         },
-        volumeMounts: [{ name: volumeId, path: volumeMountPath }],
+        volumeMounts: [{ name: volumeId, path: volumeMountPath, storage }],
       });
     } catch (error: unknown) {
       throw new SandboxCreationError(error, false);
@@ -2206,8 +2243,7 @@ export class FixedGuestSandboxProvider<
     if (!this.#workspaceVolumeGateway.fileTransfer)
       throw new Error("Workspace transfers are unavailable");
     // Only creation admits a new Volume. Late status/retry never recreates one.
-    if (request.action === "create")
-      await this.#client.ensureVolume(workspaceVolumeId(request), "picloud-posix");
+    if (request.action === "create") await this.#ensureWorkspace(request);
     return this.#workspaceVolumeGateway.fileTransfer(request, chunks, signal);
   }
 
@@ -2269,7 +2305,7 @@ export class FixedGuestSandboxProvider<
       throw new Error("Workspace uploads are unavailable");
     signal?.throwIfAborted();
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#ensureWorkspace(request);
     return this.#workspaceVolumeGateway.uploadFile(
       {
         tenantId: request.tenantId,
@@ -2376,7 +2412,7 @@ export class FixedGuestSandboxProvider<
       );
     }
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#ensureWorkspace({ ...request, sessionId: request.requestId });
     await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -2416,7 +2452,7 @@ export class FixedGuestSandboxProvider<
       );
     }
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#ensureWorkspace({ ...request, sessionId: request.requestId });
     await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -2457,7 +2493,7 @@ export class FixedGuestSandboxProvider<
       );
     }
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#ensureWorkspace({ ...request, sessionId: request.requestId });
     await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,
@@ -2493,7 +2529,7 @@ export class FixedGuestSandboxProvider<
       );
     }
     const volumeId = workspaceVolumeId(request);
-    await this.#client.ensureVolume(volumeId, "picloud-posix");
+    await this.#ensureWorkspace({ ...request, sessionId: request.requestId });
     await this.#workspaceVolumeGateway.verify({
       tenantId: request.tenantId,
       workspaceId: request.workspaceId,

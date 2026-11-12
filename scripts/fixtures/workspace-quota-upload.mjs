@@ -68,11 +68,17 @@ try {
   identity.volumeId = workspaceVolumeId(identity);
   const directory = join(root, `picloud-posix-${identity.volumeId}`),
     workspace = join(directory, "workspace");
-  await mkdir(join(directory, ".pi-cloud-runtime"), { recursive: true });
-  await mkdir(workspace);
-  await writeFile(
-    join(directory, ".pi-cloud-runtime/identity"),
-    `pi-cloud-volume-v1\n${identity.volumeId}\n${identity.generation}\n`,
+  const pool = await (
+    await fetch("http://127.0.0.1:4510/v1/pool", {
+      headers: { authorization: "Bearer owned-quota-fixture-key" },
+    })
+  ).json();
+  const storageIdentity = { ...identity, poolId: pool.id };
+  const prepared = await post("/v1/storage/prepare", { ...storageIdentity, initialize: true });
+  assert.equal(prepared.ready, true);
+  assert.equal(
+    (await post("/v1/storage/inspect", storageIdentity)).generation,
+    identity.generation,
   );
   await post("/v1/quota/ensure", { ...identity, revision: 1, capacityBytes: 8 * 1024 ** 2 });
   rootFD = await open(workspace, constants.O_RDONLY | constants.O_DIRECTORY);
@@ -172,7 +178,26 @@ try {
   assert.notEqual(code, 0);
   assert.match(output, /quota|space/i);
   await rm(join(workspace, "ordinary-bash"), { force: true });
-  console.log("workspace_quota_upload_contract_passed cancellation growth resume ordinary_bash");
+  await rootFD.close();
+  rootFD = undefined;
+  const canary = join(root, "storage-canary");
+  await writeFile(canary, "KEEP");
+  await mkdir(join(workspace, "root-owned"));
+  await writeFile(join(workspace, "root-owned", "unreadable"), "owned", { mode: 0 });
+  const { symlink, chmod } = await import("node:fs/promises");
+  await symlink(canary, join(workspace, "root-owned", "outside"));
+  await chmod(join(workspace, "root-owned"), 0);
+  await writeFile(
+    join(directory, ".pi-cloud-runtime/delete-authorized"),
+    `pi-cloud-volume-delete-v1\n${identity.volumeId}\n${identity.generation}\n`,
+  );
+  await post("/v1/storage/destroy", storageIdentity);
+  await post("/v1/storage/destroy", storageIdentity);
+  await assert.rejects(stat(workspace), { code: "ENOENT" });
+  assert.equal(await readFile(canary, "utf8"), "KEEP");
+  console.log(
+    "workspace_quota_upload_contract_passed initialize cancellation growth resume ordinary_bash root_file_deletion symlink_canary",
+  );
 } finally {
   await rootFD?.close();
   process_.kill("SIGTERM");

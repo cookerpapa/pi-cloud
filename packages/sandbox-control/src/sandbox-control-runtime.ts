@@ -68,7 +68,8 @@ export async function createSandboxControl(options: {
     });
     cleanup.push(() => (controllerOwns ? undefined : ownership.close()));
     await ownership.start();
-    const { volume, provider } = await createSandboxRuntimeTransport(config, database);
+    const { volume, provider, persistence, unregisterWorkspaceVolume } =
+      await createSandboxRuntimeTransport(config, database, "management");
     cleanup.push(() => (controllerOwns ? undefined : provider.close()));
     const wake = new PostgresNotificationWake(
       config.databaseNotificationUrl,
@@ -173,8 +174,8 @@ export async function createSandboxControl(options: {
     const reaper = new WorkspaceVolumeDeletionReaper({
       database,
       sandboxDomainId: config.sandboxDomainId,
-      gateway: volume,
-      deleteVolumeMetadata: (id) => provider.deleteWorkspaceVolume(id),
+      gateway: persistence,
+      deleteVolumeMetadata: unregisterWorkspaceVolume,
       intervalMs: config.workspaceDeletionReaperIntervalMs,
       batchSize: config.workspaceDeletionReaperBatchSize,
     });

@@ -378,9 +378,8 @@ contracts live in their package suites. The external Volume Plugin has isolated
 initialization, attachment and deletion checks:
 
 ```sh
-PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node scripts/run-volume-initialization-contract-check.mjs
-PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node scripts/run-volume-attachment-contract-check.mjs
-PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node --import tsx scripts/run-volume-deletion-contract-check.mjs
+PI_CLOUD_TEST_IMAGE=<built-volume-gateway-image> node scripts/run-volume-mount-contract-check.mjs
+node scripts/check-workspace-quota.mjs
 ```
 
 `PI_CLOUD_LIVE_RESOURCE_ADMISSION_CHECK=1 node --import tsx scripts/run-live-resource-admission-check.mjs`

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import { BoxLiteRuntimeClient } from "../src/boxlite-runtime-client.ts";
 import type { BoxLiteInstance } from "../src/boxlite-node-contract.ts";
 
@@ -42,7 +42,7 @@ async function fixture() {
       }
       const value =
         request.url === "/health/ready"
-          ? { status: "ready", nodeId: "owned-node", sdkVersion: "0.12.0" }
+          ? { status: "ready", nodeId: "owned-node", sdkVersion: "0.12.0", protocolVersion: 2 }
           : request.url === "/internal/v1/boxlite/boxes"
             ? instance
             : request.url?.endsWith("/command")
@@ -60,22 +60,15 @@ async function fixture() {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const volumes = {
-    ensureVolume: vi.fn(async (id: string) => ({ volumeId: id, name: id })),
-    deleteVolume: vi.fn(async () => {}),
-    close: vi.fn(async () => {}),
-  };
   const client = new BoxLiteRuntimeClient({
     url: `http://127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`,
     token: "fixture-".repeat(8),
     nodeId: "owned-node",
-    volumes,
   });
   return {
     client,
     instance,
     seen,
-    volumes,
     loseCreate() {
       loseCreate = true;
     },
@@ -98,23 +91,18 @@ it("does not replay an uncertain native creation or substitute another provider"
       "transport",
     );
     expect(f.seen.filter((r) => r.method === "POST")).toHaveLength(1);
-    expect(f.volumes.ensureVolume).not.toHaveBeenCalled();
+    expect(f.seen.every((r) => !r.path.includes("volumes"))).toBe(true);
   } finally {
     await f.close();
   }
 });
-it("delegates only Volume mechanics and retains the original deletion evidence", async () => {
+it("uses only BoxLite endpoints and retains the original deletion evidence", async () => {
   const f = await fixture();
   try {
-    await f.client.ensureVolume(f.instance.attachment.volumeId, "picloud-posix");
-    expect(f.volumes.ensureVolume).toHaveBeenCalledWith(
-      f.instance.attachment.volumeId,
-      "picloud-posix",
-    );
     await f.client.destroy(f.instance.sandboxId, f.instance);
     expect(JSON.parse(f.seen[0]!.body.toString())).toEqual(f.instance);
     expect(f.seen[0]!.path).toBe("/internal/v1/boxlite/delete");
-    expect(f.volumes.deleteVolume).not.toHaveBeenCalled();
+    expect(f.seen.every((r) => !r.path.includes("volumes"))).toBe(true);
     expect(
       (await f.client.observe(f.instance.sandboxId, f.instance.nodeId, f.instance)).presence,
     ).toBe("unavailable");

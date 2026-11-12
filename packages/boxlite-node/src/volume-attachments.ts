@@ -1,3 +1,7 @@
+import {
+  workspaceVolumeReference,
+  type WorkspaceVolumeReference,
+} from "@pi-cloud/sandbox-control/workspace-persistence";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { realpath } from "node:fs/promises";
@@ -27,8 +31,16 @@ export class VolumeAttachments {
     if (value.error !== "") throw new Error("Workspace attachment was not confirmed");
     return value;
   }
-  async attach(volumeId: string, activationId: string): Promise<AllocationReceipt["attachment"]> {
+  async attach(
+    volumeId: string,
+    activationId: string,
+    storage: WorkspaceVolumeReference,
+  ): Promise<AllocationReceipt["attachment"]> {
+    workspaceVolumeReference(storage);
+    if (storage.volumeId !== volumeId) throw new Error("Workspace mount identity changed");
     const value = await this.#call("attach", volumeId, [
+      "--private-data",
+      `pma-posix-v1:${storage.poolId}:${storage.generation}`,
       "--sandbox-id",
       activationId,
       "--namespace",

@@ -15,7 +15,9 @@ vi.mock("../src/sandbox-control-config.ts", () => ({
     databaseUrl: "unused",
     persistentStateKey: Buffer.alloc(32, 7),
     sessionExecutionBaseUrl: "http://session-runtime:4300",
-    cubeSandbox: { directPrivateCidrs: [] },
+    cubeSandbox: {},
+    storage: {},
+    webProxy: { directPrivateCidrs: [] },
   }),
 }));
 vi.mock("@pi-cloud/database", () => ({
@@ -189,7 +191,12 @@ it("releases acquired resource ownership when native client initialization fails
   const failure = new Error("client startup failed");
   fixture.errors.set("cube.construct", failure);
   await expect(start()).rejects.toBe(failure);
-  expect(fixture.calls).toEqual(["ownership.start", "cube.construct", "ownership.close"]);
+  expect(fixture.calls).toEqual([
+    "ownership.start",
+    "cube.construct",
+    "volume.close",
+    "ownership.close",
+  ]);
   expect(database.destroy).not.toHaveBeenCalled();
 });
 

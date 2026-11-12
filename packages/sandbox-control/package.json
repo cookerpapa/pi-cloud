@@ -14,7 +14,8 @@
     "./cube-lifecycle": "./src/cube-lifecycle-events.ts",
     "./guest-runtime": "./src/guest-runtime-client.ts",
     "./boxlite-node-contract": "./src/boxlite-node-contract.ts",
-    "./boxlite-client": "./src/boxlite-runtime-client.ts"
+    "./boxlite-client": "./src/boxlite-runtime-client.ts",
+    "./workspace-persistence": "./src/workspace-persistence.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -52,6 +52,12 @@ import {
   type WorkspaceVolumeGatewaySourceCredentialPreflightInput,
 } from "./workspace-volume-gateway-contract.ts";
 
+import {
+  WORKSPACE_PERSISTENCE_PATH,
+  workspacePersistenceClient,
+  type WorkspacePersistence,
+} from "./workspace-persistence.ts";
+
 const internalDispatcher = new Agent();
 
 export type WorkspaceVolumeGatewayServerOptions = Readonly<{
@@ -59,6 +65,9 @@ export type WorkspaceVolumeGatewayServerOptions = Readonly<{
   port: number;
   serviceToken: string;
   gateway: WorkspaceVolumeGateway;
+  persistence?: WorkspacePersistence;
+  persistencePool?: () => Promise<{ id: string }>;
+  adoptStorageDomain?: (domainId: string) => Promise<{ poolId: string; adopted: number }>;
   maximumConcurrentOperations?: number;
   maximumQueuedOperations?: number;
   queueWaitTimeoutMs?: number;
@@ -90,6 +99,9 @@ export class WorkspaceVolumeGatewayServer {
   readonly #port: number;
   readonly #tokenDigest: Buffer;
   readonly #gateway: WorkspaceVolumeGateway;
+  readonly #persistence: WorkspacePersistence | undefined;
+  readonly #persistencePool: WorkspaceVolumeGatewayServerOptions["persistencePool"];
+  readonly #adoptStorageDomain: WorkspaceVolumeGatewayServerOptions["adoptStorageDomain"];
   readonly #queue: PQueue;
   readonly #maximumQueuedOperations: number;
   readonly #queueWaitTimeoutMs: number;
@@ -99,6 +111,9 @@ export class WorkspaceVolumeGatewayServer {
   #address: string | undefined;
 
   constructor(options: WorkspaceVolumeGatewayServerOptions) {
+    this.#persistence = options.persistence;
+    this.#persistencePool = options.persistencePool;
+    this.#adoptStorageDomain = options.adoptStorageDomain;
     if (!TOKEN_PATTERN.test(options.serviceToken)) {
       throw new TypeError("Workspace Volume Gateway service token was invalid");
     }
@@ -238,6 +253,56 @@ export class WorkspaceVolumeGatewayServer {
         return this.#failure(reply, error);
       }
     });
+    if (this.#persistence) {
+      const persistence = this.#persistence;
+      this.#server.post(WORKSPACE_PERSISTENCE_PATH + "/info", async (_request, reply) => {
+        try {
+          if (!this.#persistencePool) throw new Error("Storage pool information is unavailable");
+          return {
+            version: 1,
+            capabilities: persistence.capabilities,
+            poolId: (await this.#persistencePool()).id,
+          };
+        } catch (error) {
+          return this.#failure(reply, error);
+        }
+      });
+      for (const [path, operation] of [
+        [
+          "ensure",
+          (body: unknown) => persistence.ensure(body as WorkspaceVolumeGatewayVerifyInput),
+        ],
+        [
+          "inspect",
+          (body: unknown) => persistence.inspect(body as WorkspaceVolumeGatewayDeleteInput),
+        ],
+        [
+          "prepare-delete",
+          (body: unknown) => persistence.prepareDelete(body as WorkspaceVolumeGatewayDeleteInput),
+        ],
+        [
+          "finalize-delete",
+          (body: unknown) => persistence.finalizeDelete(body as WorkspaceVolumeGatewayDeleteInput),
+        ],
+      ] as const)
+        this.#server.post(WORKSPACE_PERSISTENCE_PATH + "/" + path, async (request, reply) => {
+          try {
+            return await this.#run<unknown>("verify", () => operation(request.body));
+          } catch (error) {
+            return this.#failure(reply, error);
+          }
+        });
+    }
+    if (this.#adoptStorageDomain)
+      this.#server.post(WORKSPACE_PERSISTENCE_PATH + "/adopt-domain", async (request, reply) => {
+        try {
+          const domainId = (request.body as { domainId?: unknown })?.domainId;
+          if (typeof domainId !== "string") throw new TypeError("Storage domain is required");
+          return await this.#run("verify", () => this.#adoptStorageDomain!(domainId));
+        } catch (error) {
+          return this.#failure(reply, error);
+        }
+      });
     this.#server.post(WORKSPACE_VOLUME_GATEWAY_VERIFY_PATH, async (request, reply) => {
       try {
         return await this.#run("verify", () =>
@@ -509,6 +574,23 @@ export type HttpWorkspaceVolumeGatewayOptions = Readonly<{
 }>;
 
 export class HttpWorkspaceVolumeGateway implements WorkspaceVolumeGateway {
+  readonly persistence: WorkspacePersistence = workspacePersistenceClient((path, body) =>
+    this.#request(path, body),
+  );
+  async persistenceInfo() {
+    const value = (await this.#request(WORKSPACE_PERSISTENCE_PATH + "/info", {})) as {
+      version?: number;
+      poolId?: string;
+      capabilities?: unknown;
+    };
+    if (
+      value?.version !== 1 ||
+      typeof value.poolId !== "string" ||
+      !/^[A-Za-z0-9_.:-]{1,128}$/.test(value.poolId)
+    )
+      throw new Error("Unsupported Workspace persistence endpoint");
+    return { version: 1 as const, poolId: value.poolId, capabilities: value.capabilities };
+  }
   fileTransfer(
     input: WorkspaceFileTransferRequest,
     chunks?: AsyncIterable<Uint8Array>,

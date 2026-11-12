@@ -34,7 +34,9 @@ type SandboxConfigurationFields = {
   elasticRetentionMs: number;
   workspaceDeletionReaperIntervalMs: number;
   workspaceDeletionReaperBatchSize: number;
-  cubeSandbox: {
+  storage: { url: string; token: string; requestTimeoutMs: number };
+  webProxy: { host: string; port: number; directPrivateCidrs: readonly string[] };
+  cubeSandbox?: {
     lifecycleRedisUrl?: string;
     lifecycleRedisPassword?: string;
     executionEndpoints: readonly Readonly<{ apiUrl: string; apiKey: string }>[];
@@ -46,13 +48,7 @@ type SandboxConfigurationFields = {
     proxyPort: number;
     proxyScheme: "http" | "https";
     sandboxDomain: string;
-    egressProxyHost: string;
-    egressProxyPort: number;
-    directPrivateCidrs: readonly string[];
     requestTimeoutMs: number;
-    workspaceVolumeGatewayUrl: string;
-    workspaceVolumeGatewayToken: string;
-    workspaceVolumeGatewayRequestTimeoutMs: number;
   };
 };
 
@@ -82,6 +78,8 @@ export type SandboxRuntimeTransportConfig = Pick<
   | "serviceToken"
   | "imageRevision"
   | "cubeSandbox"
+  | "storage"
+  | "webProxy"
 >;
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
@@ -334,82 +332,92 @@ async function loadSandboxServingConfig(
       "PI_CLOUD_IMAGE_REVISION",
       128,
     ),
-    cubeSandbox: {
-      ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
-        ? {
-            lifecycleRedisPassword: await readCubeCredential(
-              environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE,
-              1,
-            ),
-          }
-        : {}),
-      ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
-        ? { lifecycleRedisUrl: environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL }
-        : {}),
-      executionEndpoints: await executionEndpoints(
-        environment.PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE,
-      ),
-      apiUrl: bounded(
-        required(environment, "PI_CLOUD_CUBESANDBOX_API_URL"),
-        "cubeSandboxApiUrl",
-        2048,
-      ),
-      apiKey: await readCubeCredential(required(environment, "PI_CLOUD_CUBESANDBOX_API_KEY_FILE")),
-      templateId: bounded(
-        required(environment, "PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
-        "cubeSandboxTemplateId",
-        256,
-      ),
-      developmentTemplateIds: developmentTemplateIds(
-        required(environment, "PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS"),
-      ),
-      proxyNodeIp: bounded(
-        required(environment, "PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP"),
-        "cubeSandboxProxyNodeIp",
-        253,
-      ),
-      proxyPort: integer(
-        environment.PI_CLOUD_CUBESANDBOX_PROXY_PORT,
-        cubeProxyScheme === "https" ? 443 : 80,
-        1,
-        65535,
-      ),
-      proxyScheme: cubeProxyScheme,
-      sandboxDomain: bounded(
-        environment.PI_CLOUD_CUBESANDBOX_DOMAIN ?? "cube.app",
-        "cubeSandboxDomain",
-        253,
-      ),
-      egressProxyHost: bounded(
-        environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_HOST ?? "10.255.255.254",
-        "cubeSandboxEgressProxyHost",
-        15,
-      ),
-      egressProxyPort: integer(environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, 3128, 1, 65535),
-      directPrivateCidrs: directPrivateEgressCidrs(
-        environment.PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS,
-      ),
-      requestTimeoutMs: integer(
-        environment.PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS,
-        120000,
-        1000,
-        300000,
-      ),
-      workspaceVolumeGatewayUrl: bounded(
+    storage: {
+      url: bounded(
         required(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
         "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL",
         2048,
       ),
-      workspaceVolumeGatewayToken: await readSecret(
+      token: await readSecret(
         required(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE"),
       ),
-      workspaceVolumeGatewayRequestTimeoutMs: integer(
+      requestTimeoutMs: integer(
         environment.PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS,
         660000,
         1000,
         900000,
       ),
     },
+    webProxy: {
+      host: bounded(
+        environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_HOST ?? "10.255.255.254",
+        "cubeSandboxEgressProxyHost",
+        15,
+      ),
+      port: integer(environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, 3128, 1, 65535),
+      directPrivateCidrs: directPrivateEgressCidrs(
+        environment.PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS,
+      ),
+    },
+    ...(runtimeProvider === "cubesandbox"
+      ? {
+          cubeSandbox: {
+            ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
+              ? {
+                  lifecycleRedisPassword: await readCubeCredential(
+                    environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE,
+                    1,
+                  ),
+                }
+              : {}),
+            ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
+              ? { lifecycleRedisUrl: environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL }
+              : {}),
+            executionEndpoints: await executionEndpoints(
+              environment.PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE,
+            ),
+            apiUrl: bounded(
+              required(environment, "PI_CLOUD_CUBESANDBOX_API_URL"),
+              "cubeSandboxApiUrl",
+              2048,
+            ),
+            apiKey: await readCubeCredential(
+              required(environment, "PI_CLOUD_CUBESANDBOX_API_KEY_FILE"),
+            ),
+            templateId: bounded(
+              required(environment, "PI_CLOUD_CUBESANDBOX_TEMPLATE_ID"),
+              "cubeSandboxTemplateId",
+              256,
+            ),
+            developmentTemplateIds: developmentTemplateIds(
+              required(environment, "PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS"),
+            ),
+            proxyNodeIp: bounded(
+              required(environment, "PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP"),
+              "cubeSandboxProxyNodeIp",
+              253,
+            ),
+            proxyPort: integer(
+              environment.PI_CLOUD_CUBESANDBOX_PROXY_PORT,
+              cubeProxyScheme === "https" ? 443 : 80,
+              1,
+              65535,
+            ),
+            proxyScheme: cubeProxyScheme,
+            sandboxDomain: bounded(
+              environment.PI_CLOUD_CUBESANDBOX_DOMAIN ?? "cube.app",
+              "cubeSandboxDomain",
+              253,
+            ),
+            requestTimeoutMs: integer(
+              environment.PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS,
+              120000,
+              1000,
+              300000,
+            ),
+          },
+        }
+      : {}),
   };
 }
 

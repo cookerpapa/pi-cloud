@@ -178,7 +178,7 @@ jobs:
 
       - name: Verify native Volume initialization and process-loss recovery
         if: matrix.image == 'workspace-volume-gateway'
-        run: node scripts/run-volume-initialization-contract-check.mjs | tee evidence/volume-initialization.json
+        run: node scripts/run-volume-mount-contract-check.mjs | tee evidence/volume-mount.json
         env:
           PI_CLOUD_TEST_IMAGE: pi-cloud/workspace-volume-gateway:ci
 

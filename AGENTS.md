@@ -128,7 +128,11 @@ protocol, record the decision under `docs/adr/` before implementation.
   Kafka partition. Tool/probe binding lookups use the partition owner's memory view;
   lifecycle mutations, closure admission and bootstrap retain PG checks. Never
   rely on a delayed Kafka close event alone to revoke external-effect admission.
-- Treat the persistent Cube Volume as the sole Workspace byte authority. Do
+- Treat the configured Workspace persistence backend as the sole Workspace byte authority.
+  ADR-0318 separates retained bytes from native compute registrations: the existing
+  storage helper initializes/deletes local XFS data; Cube/BoxLite mount adapters
+  retain exact attachment holds and do not delete bytes. Known missing storage
+  must never become an empty replacement. Do
   not add a second per-Run archive/checkpoint head without measured recovery
   requirements and a new ADR.
   Under ADR-0309 the supported Volume Plugin persists an opaque receipt for each
@@ -214,7 +218,7 @@ system, policy engine, telemetry pipeline, or storage protocol:
    checkpoint heads after cutover.
 6. Keep large transcripts, tool output, Workspace bytes, credentials, and model
    payloads out of queue rows. PostgreSQL queue records carry bounded command
-   references; PostgreSQL SessionStorage and persistent Cube Volumes own the
+   references; PostgreSQL SessionStorage and configured Workspace persistence own the
    corresponding durable data.
 
 ## Vibe-coding discipline

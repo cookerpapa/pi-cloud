@@ -25,15 +25,6 @@ it("authenticates mechanical commands and carries binary application bytes witho
     url,
     token: "owned-".repeat(8),
     nodeId: "owned",
-    volumes: {
-      async ensureVolume() {
-        throw new Error("unused");
-      },
-      async deleteVolume() {
-        throw new Error("unused");
-      },
-      async close() {},
-    },
   });
   try {
     const denied = await server.inject({

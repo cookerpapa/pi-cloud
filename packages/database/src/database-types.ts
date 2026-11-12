@@ -214,6 +214,7 @@ export interface SourceControlCredentialTable {
 }
 
 export interface SandboxDomainTable {
+  storage_pool_id: GeneratedNullable<string>;
   id: string;
   display_name: string;
   state: SandboxDomainState;
@@ -533,6 +534,8 @@ export interface EnvironmentValidationTable {
 }
 
 export interface WorkspaceTable {
+  persistence_state: Generated<"adoption_pending" | "uninitialized" | "initializing" | "ready">;
+  persistence_generation: GeneratedNullable<string>;
   capacity_bytes: GeneratedInt8;
   capacity_revision: GeneratedInt8;
   capacity_pending: Generated<boolean>;

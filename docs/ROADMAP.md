@@ -9,7 +9,9 @@ storage/provider and build/publication coupling. The owner subsequently authoriz
 #30, #31 and #33–#37. Implement complete slices, preserve existing assets, run heavy
 checks serially, and broaden publication only after the affected boundary passes.
 ADR-0315's control-Tool source slice passes focused checks; integrated publication
-remains pending. Persistence and registration retain their own acceptance scopes.
+remains pending. ADR-0318 separates storage initialization/deletion from native
+mount registration; its cold adoption and live provider checks remain pending.
+Dynamic registration retains its own acceptance scope.
 
 ## Alternate runtime production integration — deployed
 

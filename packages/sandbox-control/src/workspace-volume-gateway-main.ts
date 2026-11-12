@@ -1,4 +1,5 @@
 import { WorkspaceQuotaClient } from "./workspace-quota-client.ts";
+import { PostgresWorkspacePersistence } from "./postgres-workspace-persistence.ts";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
@@ -129,11 +130,17 @@ const gateway = new PersistentVolumeWorkspaceVolumeGateway({
     if (result.rowCount !== 1) throw new Error("Workspace upload grant is no longer current");
   },
 });
+const persistence = new PostgresWorkspacePersistence({ database, storage: quota, files: gateway });
+if (process.env.PI_CLOUD_SANDBOX_DOMAIN_ID)
+  await persistence.bindEmptyDomain(process.env.PI_CLOUD_SANDBOX_DOMAIN_ID);
 const server = new WorkspaceVolumeGatewayServer({
   host: process.env.PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_HOST ?? "127.0.0.1",
   port: integer("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_PORT", 4_500, 1, 65_535),
   serviceToken: await secret(required("PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE")),
   gateway,
+  persistence,
+  persistencePool: () => quota.pool(),
+  adoptStorageDomain: (domainId) => persistence.adoptDomain(domainId),
   maximumConcurrentOperations: integer(
     "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_MAXIMUM_CONCURRENT_OPERATIONS",
     2,

@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi } from "../packages/web-ui/src/api.ts";
-import { OfficialCubeSandboxRuntimeClient } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
+import { HttpWorkspaceVolumeGateway } from "../packages/sandbox-control/src/workspace-volume-gateway.ts";
 import { BoxLiteRuntimeClient } from "../packages/sandbox-control/src/boxlite-runtime-client.ts";
 import { workspaceVolumeId } from "../packages/sandbox-control/src/workspace-volume-gateway-contract.ts";
 import {
@@ -21,16 +21,10 @@ const secret = async (n) => (await readFile(runtimeDirectory + "/secrets/" + n, 
 const pg = new URL(await secret("database-url"));
 pg.hostname = serviceAddress("postgres");
 const db = createDatabase({ connectionString: pg.toString(), maxConnections: 1 });
-const cluster = JSON.parse(await readFile(runtimeDirectory + "/cubesandbox/cluster.json", "utf8"));
 const cfg = JSON.parse(await readFile(runtimeDirectory + "/k3s/boxlite.json", "utf8"));
-const cube = new OfficialCubeSandboxRuntimeClient({
-  apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
-  apiKey: await secret("cubesandbox-api-key"),
-  proxyNodeIp: cluster.proxy.host,
-  proxyPort: cluster.proxy.port,
-  proxyScheme: "http",
-  sandboxDomain: cluster.sandboxDomain,
-  egressProxyIp: "10.255.255.254",
+const storage = new HttpWorkspaceVolumeGateway({
+  baseUrl: `http://${serviceAddress("workspace-volume-gateway")}:4500`,
+  serviceToken: await secret("workspace-volume-gateway-token"),
 });
 const host = JSON.parse(kubectl(["get", "service", "pi-cloud-boxlite", "-o", "json"])).spec
   .clusterIP;
@@ -38,7 +32,6 @@ const box = new BoxLiteRuntimeClient({
   url: `http://${host}:8091`,
   nodeId: cfg.nodeId,
   token: await secret("sandbox-control-token"),
-  volumes: cube,
 });
 assert.equal(
   process.env.PI_CLOUD_LIVE_BOXLITE_CHECK,
@@ -76,7 +69,12 @@ try {
     tenantId: tenant.tenantId,
     workspaceId: project.workspaceId,
   });
-  await cube.ensureVolume(volumeId, "picloud-posix");
+  const reference = await storage.persistence.ensure({
+    tenantId: tenant.tenantId,
+    workspaceId: project.workspaceId,
+    sessionId: randomUUID(),
+    volumeId,
+  });
   const activationId = randomUUID();
   const request = {
     templateId: "tool",
@@ -86,7 +84,7 @@ try {
       "picloud.tenant_id": tenant.tenantId,
       "picloud.workspace_id": project.workspaceId,
     },
-    volumeMounts: [{ name: volumeId, path: "/home/user" }],
+    volumeMounts: [{ name: volumeId, path: "/home/user", storage: reference }],
   };
   report.request = request;
   await save();
@@ -223,6 +221,7 @@ try {
 }
 await save();
 await box.close();
+await storage.close();
 await db.destroy();
 console.log(
   JSON.stringify({

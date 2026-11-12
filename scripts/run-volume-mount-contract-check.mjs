@@ -13,6 +13,9 @@ await mkdir(storage);
 const id = `pcw-${randomBytes(24).toString("hex")}`;
 const local = join(storage, `picloud-posix-${id}`);
 const holds = join(local, ".pi-cloud-runtime/attachments");
+const generation = randomBytes(32).toString("hex"),
+  poolId = "owned-mount-fixture";
+const privateData = `pma-posix-v1:${poolId}:${generation}`;
 const image = process.env.PI_CLOUD_TEST_IMAGE ?? "pi-cloud/workspace-volume-gateway:production";
 const rejected = (e) => e.code === 1 && e.stdout?.includes("POSIX volume operation failed");
 async function plugin(op, args = []) {
@@ -41,6 +44,8 @@ async function plugin(op, args = []) {
       op,
       "--volume-id",
       id,
+      "--private-data",
+      privateData,
       ...args,
     ],
     { timeout: 60000, maxBuffer: 16384 },
@@ -61,7 +66,37 @@ const detach = (metadata, sandbox = "same-native-vm") =>
     JSON.stringify(metadata),
   ]);
 try {
-  await plugin("create");
+  // Byte initialization belongs to storage. The native mount adapter must not
+  // invent a volume when it cannot find the registered storage identity.
+  await assert.rejects(plugin("create"), rejected);
+  await mkdir(holds, { recursive: true });
+  await mkdir(join(local, "workspace"));
+  await writeFile(
+    join(storage, ".pi-cloud-workspace-pool"),
+    `pi-cloud-workspace-pool-v1\n${poolId}\n`,
+  );
+  await writeFile(join(local, ".pi-cloud-runtime/storage-pool"), `${poolId}\n`);
+  await writeFile(
+    join(local, ".pi-cloud-runtime/identity"),
+    `pi-cloud-volume-v1\n${id}\n${generation}\n`,
+  );
+  assert.equal((await plugin("create")).private_data, privateData);
+  assert.equal((await plugin("create")).private_data, privateData);
+  await plugin("destroy"); // Removing a native registration alone keeps storage.
+  assert.equal((await plugin("create")).private_data, privateData);
+  await assert.rejects(
+    plugin("attach", [
+      "--sandbox-id",
+      "wrong-pool",
+      "--namespace",
+      "test",
+      "--ref-count",
+      "0",
+      "--private-data",
+      `pma-posix-v1:other:${generation}`,
+    ]),
+    rejected,
+  );
   await writeFile(join(local, "workspace/keep"), "ORIGINAL-WORKSPACE");
   const first = await attach();
   const second = await attach();
@@ -73,9 +108,6 @@ try {
   await detach(first.metadata);
   await detach(first.metadata); // duplicate/late Detach cannot clear the new call
   assert.equal((await readdir(holds)).length, 1);
-  const generation = (await readFile(join(local, ".pi-cloud-runtime/identity"), "utf8"))
-    .trim()
-    .split("\n")[2];
   await writeFile(
     join(local, ".pi-cloud-runtime/delete-authorized"),
     `pi-cloud-volume-delete-v1\n${id}\n${generation}\n`,
@@ -91,8 +123,9 @@ try {
   assert.equal((await readdir(holds)).length, 0);
   await plugin("destroy");
   await plugin("destroy");
+  assert.equal(await readFile(join(local, "workspace/keep"), "utf8"), "ORIGINAL-WORKSPACE");
   console.log(
-    "volume_attachment_contract_passed duplicate_attach late_detach missing_metadata native_zero_ref lost_hold_directory closed_admission original_bytes",
+    "volume_mount_contract_passed registration_only wrong_pool duplicate_attach late_detach missing_metadata native_zero_ref lost_hold_directory closed_admission original_bytes",
   );
 } finally {
   await rm(root, { recursive: true, force: true });

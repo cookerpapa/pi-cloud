@@ -35,7 +35,7 @@ HTTPS completion path. There is no automatic provider fallback or phone picker.
   Forks keep the source Workspace, directory and stable development-machine
   binding. Files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
-  Volume-backed files, browser tooling, terminals, SSH and application previews.
+  Persistent Workspace files, browser tooling, terminals, SSH and application previews.
 - **Attachments:** long text pastes become editable text files. Uploaded originals
   stay with the conversation in object storage; Workspace copies support normal
   file/shell tools. History originals can be viewed, downloaded and reused.
@@ -79,7 +79,7 @@ Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
 Guest -> HTTPS completion -> Kafka replies -> authorized Pi Worker
 Control Tool completion -> Kafka replies -> authorized Pi Worker
 
-Workspace files -> persistent Cube Volumes
+Workspace files -> independent Workspace storage (local XFS)
 Retained attachment originals -> private S3 objects; Kafka/PG carry references
 Model / storage receipts -> independent Metering service -> PG ledger
 Provider observations -> independent Metering -> PG ledger (unverified time unpriced)
@@ -97,7 +97,7 @@ Provider observations -> independent Metering -> PG ledger (unverified time unpr
 | Control Plane | VM allocation, lifecycle recovery, resource maintenance and scheduled/SCM admission |
 | Sandbox providers | CubeSandbox by default, explicit stock BoxLite, and operator Android targets; fixed Guest/receiver admission and scoped completion |
 | CLIProxyAPI | Provider credentials, account selection and upstream model transport |
-| S3 / Cube Volumes | Immutable conversation attachments and Skill packages / mutable Workspace files |
+| S3 / Workspace storage | Immutable conversation attachments and Skill packages / mutable Workspace files |
 
 The provider adapter targets pinned CLIProxyAPI v8 with native Responses and
 cross-request continuation. Existing installations use the reviewed provider
@@ -269,3 +269,5 @@ are preserved; obsolete development compatibility paths are removed.
 Pi Managed Agents is licensed under the [MIT License](LICENSE).
 Third-party components and files with explicit license declarations retain their
 own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Workspace persistence is now separate from the compute adapter ([ADR-0318](docs/adr/0318-workspace-persistence-and-native-mounts.md)). The local implementation uses the existing XFS storage service; Cube and BoxLite mount the same guarded storage without making Cube its byte owner. This source change requires the recorded cold adoption before deployment; multi-node and hosted storage are not yet live-verified.

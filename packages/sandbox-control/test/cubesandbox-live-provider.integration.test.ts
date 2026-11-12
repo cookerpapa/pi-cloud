@@ -367,6 +367,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
       runtimeClient: runtime,
       persistentStateKey: randomBytes(32),
       workspaceVolumeGateway: new HttpWorkspaceVolumeGateway(gatewayOptions),
+      workspacePersistence: new HttpWorkspaceVolumeGateway(gatewayOptions).persistence,
     });
     const broker = testBroker({
       provider,
@@ -477,6 +478,7 @@ describe.skipIf(!enabled)("CubeSandbox KVM Provider live security gate", () => {
         runtime: config.runtime,
         persistentStateKey,
         workspaceVolumeGateway: new HttpWorkspaceVolumeGateway(volumeGatewayOptions),
+        workspacePersistence: new HttpWorkspaceVolumeGateway(volumeGatewayOptions).persistence,
       });
       const bindings = new InMemorySandboxBindings();
       const manager = testBroker({

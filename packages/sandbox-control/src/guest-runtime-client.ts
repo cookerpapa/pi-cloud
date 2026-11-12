@@ -20,11 +20,14 @@ export type GuestRuntimeInstance = Readonly<{
   cpuCount?: number;
   memoryMB?: number;
 }>;
-export type GuestWorkspaceVolume = Readonly<{ volumeId: string; name: string }>;
 export type GuestRuntimeCreateInput = Readonly<{
   templateId: string;
   metadata: Readonly<Record<string, string>>;
-  volumeMounts?: readonly Readonly<{ name: string; path: "/workspace" | "/home/user" }>[];
+  volumeMounts?: readonly Readonly<{
+    name: string;
+    path: "/workspace" | "/home/user";
+    storage: import("./workspace-persistence.ts").WorkspaceVolumeReference;
+  }>[];
 }>;
 export type GuestToolHandoff = Readonly<{
   source: ExecutionLogPosition;
@@ -54,8 +57,6 @@ export interface GuestRuntimeClient<I extends GuestRuntimeInstance = GuestRuntim
   openProgram?(instance: I, input: { script: string; cwd: string }): Promise<Duplex>;
   openTcp?(instance: I, port: number, signal?: AbortSignal): Promise<Duplex>;
   checkHealth(): Promise<void>;
-  ensureVolume(volumeId: string, driver: string): Promise<GuestWorkspaceVolume>;
-  deleteVolume(volumeId: string): Promise<void>;
   create(input: GuestRuntimeCreateInput): Promise<I>;
   read(sandboxId: string): Promise<I | undefined>;
   observe(

@@ -1,7 +1,10 @@
 import Fastify from "fastify";
 import { WebSocketServer, createWebSocketStream } from "ws";
 import { pipeline } from "node:stream";
-import { BOXLITE_NODE_PATH } from "@pi-cloud/sandbox-control/boxlite-node-contract";
+import {
+  BOXLITE_NODE_PATH,
+  BOXLITE_NODE_PROTOCOL_VERSION,
+} from "@pi-cloud/sandbox-control/boxlite-node-contract";
 import type { BoxLiteInstance } from "@pi-cloud/sandbox-control/boxlite-node-contract";
 import type {
   GuestCommandRequest,
@@ -30,7 +33,12 @@ export function createBoxLiteNodeServer(backend: BoxLiteNodeBackend, token: stri
   server.get("/health/live", async () => ({ status: "ok" }));
   server.get("/health/ready", async () => {
     await backend.ready();
-    return { status: "ready", nodeId: backend.options.nodeId, sdkVersion: "0.12.0" };
+    return {
+      status: "ready",
+      nodeId: backend.options.nodeId,
+      sdkVersion: "0.12.0",
+      protocolVersion: BOXLITE_NODE_PROTOCOL_VERSION,
+    };
   });
   server.get(prefix + "/boxes", async () => ({ instances: await backend.list() }));
   server.get(prefix + "/inventory", async () => backend.inventory());

@@ -2,7 +2,9 @@
 # Copyright (c) 2026 PiCloud contributors.
 # SPDX-License-Identifier: Apache-2.0
 #
-# CubeSandbox native binary Volume Plugin for an already-mounted POSIX shared
+# CubeSandbox mount/registration adapter for already-provisioned POSIX storage.
+# Workspace initialization/deletion belong to the independent storage service.
+# The adapter uses an already-mounted POSIX shared
 # filesystem. Production operators mount the same filesystem at
 # /data/cube-shared/volume on every Cube node and on the trusted Volume Gateway.
 # The local profile uses a single host directory at that path.
@@ -133,6 +135,17 @@ lock_volume() {
   [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
 }
 
+read_storage_pool() {
+  local pool_marker="${DEFAULT_BASE_DIR}/.pi-cloud-workspace-pool"
+  [[ -f "$pool_marker" && ! -L "$pool_marker" && -f "${metadata_path}/storage-pool" && ! -L "${metadata_path}/storage-pool" ]] || fail
+  [[ "$(stat -c %s -- "$pool_marker")" -le 256 && "$(stat -c %s -- "${metadata_path}/storage-pool")" -le 256 ]] || fail
+  mapfile -t pool_fields < "$pool_marker"
+  [[ "${#pool_fields[@]}" -eq 2 && "${pool_fields[0]}" == "pi-cloud-workspace-pool-v1" ]] || fail
+  storage_pool="${pool_fields[1]}"
+  [[ "$storage_pool" =~ ^[A-Za-z0-9_.:-]{1,128}$ ]] || fail
+  [[ "$(cat -- "${metadata_path}/storage-pool")" == "$storage_pool" ]] || fail
+}
+
 read_holder() {
   [[ -f "$holder_path" && ! -L "$holder_path" ]] || fail
   [[ "$(stat -c %s -- "$holder_path")" -le 1024 ]] || fail
@@ -147,67 +160,13 @@ case "$operation" in
   create)
     [[ -z "$name" || "$name" == "$volume_id" ]] || fail
     assert_safe_root
-    if [[ -e "$volume_path" && ! -d "$volume_path" ]] || [[ -L "$volume_path" ]]; then
-      fail
-    fi
-    mkdir -p -- "$volume_path"
     assert_safe_volume
-    chmod 0700 -- "$volume_path"
-    chown 1000:1000 -- "$volume_path"
-    [[ ! -L "$metadata_path" ]] || fail
-    mkdir -p -- "$metadata_path"
-    chmod 0700 -- "$metadata_path"
-    chown 1000:1000 -- "$metadata_path"
-    # The lock is on the directory, not a second identity file. A crashed
-    # initializer releases it; no Agent file operation takes this lock.
-    exec {initialization_lock}< "$metadata_path"
-    flock -x "$initialization_lock"
+    lock_volume
+    read_storage_pool
     [[ ! -e "$marker_path" && ! -L "$marker_path" ]] || fail
-    # Private staging files cannot be mounted into a Guest. Only the holder
-    # cleans leftovers; publication still refuses replacement if a lock is lost.
-    find "$metadata_path" -maxdepth 1 -type f -name '.identity.????????' -delete
-    if [[ -e "$identity_path" || -L "$identity_path" ]]; then
-      read_identity
-      assert_safe_workspace
-      [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
-      sync -- "$identity_path" "$metadata_path" "$volume_path" "$DEFAULT_BASE_DIR"
-      printf '%s\n' '{"token":"","private_data":"picloud-posix-v2","error":""}'
-      exit 0
-    fi
-    [[ -z "$(find "$metadata_path" -mindepth 1 -maxdepth 1 ! -name attachments -print -quit)" ]] || fail
-    if [[ -e "${metadata_path}/attachments" || -L "${metadata_path}/attachments" ]]; then
-      [[ -d "${metadata_path}/attachments" && ! -L "${metadata_path}/attachments" ]] || fail
-      [[ -z "$(find "${metadata_path}/attachments" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
-    fi
-    if [[ -e "$workspace_path" && ! -d "$workspace_path" ]] || [[ -L "$workspace_path" ]]; then
-      fail
-    fi
-    mkdir -p -- "$workspace_path"
     assert_safe_workspace
-    [[ -z "$(find "$workspace_path" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
-    chmod 0700 -- "$workspace_path"
-    chown 1000:1000 -- "$workspace_path"
-    mkdir -p -- "${metadata_path}/attachments"
-    chmod 0700 -- "${metadata_path}/attachments"
-    chown 1000:1000 -- "${metadata_path}/attachments"
-    sync -- "${metadata_path}/attachments"
-    temporary_identity="$(mktemp "${metadata_path}/.identity.XXXXXXXX")"
-    trap 'rm -f -- "$temporary_identity"' EXIT
-    volume_generation="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
-    [[ "$volume_generation" =~ ^[0-9a-f]{64}$ ]] || fail
-    printf 'pi-cloud-volume-v1\n%s\n%s\n' "$volume_id" "$volume_generation" > "$temporary_identity"
-    chmod 0400 -- "$temporary_identity"
-    chown 1000:1000 -- "$temporary_identity"
-    sync -- "$temporary_identity" "$workspace_path"
-    # ln never replaces an existing destination. Adopt only a complete identity
-    # for this exact Volume; never copy or rename over user data.
-    if ! ln -T -- "$temporary_identity" "$identity_path"; then
-      read_identity
-    fi
-    rm -f -- "$temporary_identity"
-    trap - EXIT
-    sync -- "$metadata_path" "$volume_path" "$DEFAULT_BASE_DIR"
-    printf '%s\n' '{"token":"","private_data":"picloud-posix-v2","error":""}'
+    # Native registration never initializes Workspace bytes.
+    printf '{"token":"","private_data":"pma-posix-v1:%s:%s","error":""}\n' "$storage_pool" "$volume_generation"
     ;;
   destroy)
     assert_safe_root
@@ -220,21 +179,17 @@ case "$operation" in
     # durable hold for each exposed path; a missing Detach never means zero.
     lock_volume
     [[ -z "$(find "${metadata_path}/attachments" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail
-    [[ -f "$marker_path" && ! -L "$marker_path" ]] || fail
-    expected_marker="$(printf 'pi-cloud-volume-delete-v1\n%s\n%s' "$volume_id" "$volume_generation")"
-    [[ "$(cat -- "$marker_path")" == "$expected_marker" ]] || fail
-    if [[ -e "$workspace_path" || -L "$workspace_path" ]]; then
-      assert_safe_workspace
-      rm -rf --one-file-system --preserve-root=all -- "$workspace_path" || fail
-    fi
+    # Removing a native registration is not deletion of the Workspace.
+    # Only the independent storage service may remove its bytes.
     printf '%s\n' '{"error":""}'
     ;;
   attach)
     [[ "$sandbox_id" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$namespace" =~ ^[A-Za-z0-9_.-]{1,128}$ && "$ref_count" =~ ^[0-9]+$ ]] || fail
-    [[ -z "$private_data" || "$private_data" == "picloud-posix-v2" ]] || fail
     assert_safe_root
     assert_safe_volume
     lock_volume
+    read_storage_pool
+    [[ "$private_data" == "pma-posix-v1:${storage_pool}:${volume_generation}" ]] || fail
     [[ ! -e "$marker_path" && ! -L "$marker_path" ]] || fail
     assert_safe_workspace
     # The native hook has no attachment-incarnation id. Allocate an opaque

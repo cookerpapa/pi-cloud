@@ -32,13 +32,24 @@ const DEVELOPMENT_TEMPLATE_IDS = Object.freeze({
   performance: "tpl-performance0000000000000",
 });
 
-type TestCubeProviderOptions = Omit<CubeSandboxProviderOptions, "developmentTemplateIds"> &
+type TestCubeProviderOptions = Omit<
+  CubeSandboxProviderOptions,
+  "developmentTemplateIds" | "workspacePersistence"
+> &
   Partial<Pick<CubeSandboxProviderOptions, "developmentTemplateIds">>;
 
 function testCubeProvider(options: TestCubeProviderOptions): CubeSandboxProvider {
   return new CubeSandboxProvider({
     developmentTemplateIds: DEVELOPMENT_TEMPLATE_IDS,
     persistentStateKey: Buffer.alloc(32, 7),
+    workspacePersistence: {
+      ensure: async (input) => ({
+        kind: "volume",
+        volumeId: input.volumeId,
+        generation: "a".repeat(64),
+        poolId: "fixture-pool",
+      }),
+    },
     ...options,
   });
 }

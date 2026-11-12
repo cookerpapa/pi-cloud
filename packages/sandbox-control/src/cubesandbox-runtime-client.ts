@@ -81,7 +81,11 @@ export type CubeSandboxGuestCommandResult = import("./guest-runtime-client.ts").
 export type CubeSandboxTerminal = import("./guest-runtime-client.ts").GuestTerminal & {
   readonly pid: number;
 };
-export interface CubeSandboxRuntimeClient extends GuestRuntimeClient<CubeSandboxInstance> {}
+export interface CubeSandboxRuntimeClient extends GuestRuntimeClient<CubeSandboxInstance> {
+  /** Native mount registrations only; Workspace bytes have their own authority. */
+  ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume>;
+  deleteVolume(volumeId: string): Promise<void>;
+}
 
 export type OfficialCubeSandboxRuntimeClientOptions = Readonly<{
   lifecycleRedisUrl?: string;
