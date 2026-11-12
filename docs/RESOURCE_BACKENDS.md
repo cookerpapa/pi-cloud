@@ -71,7 +71,10 @@ a trusted adapter implementation and its own acceptance.
 Active/draining/disabled controls new allocations. Disabling does not delete
 resources, prove their absence or release quota. Existing managed resources retain
 their lifecycle/data paths. Names, state and compatible template additions do not
-restart controllers. Replacing an existing template requires physical allocation
+restart controllers. Template display names and operating-system labels are
+presentation metadata; changing them preserves existing allocations. The initial
+deployment advertises the fixed Guest as Linux without guessing a distribution
+version. Replacing an existing template's executable identity requires physical allocation
 quiescence while retaining Workspace files. Endpoint/credential/storage changes
 require the affected backend's retained resources and Workspaces to be released;
 live endpoint migration is outside this first contract. Lifecycle admission checks

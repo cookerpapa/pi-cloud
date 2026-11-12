@@ -268,7 +268,7 @@ export async function createResourceBackendFleet(options: Options) {
           {
             id: "linux",
             name: "Linux",
-            operatingSystem: "Ubuntu 24.04",
+            operatingSystem: "Linux",
             imageRevision: config.imageRevision,
             elasticTemplateId: native.templateId,
             profiles: { ...native.developmentTemplateIds },

@@ -195,7 +195,7 @@ try {
           {
             id: "linux",
             name: "Linux",
-            operatingSystem: "Ubuntu 24.04",
+            operatingSystem: "Linux",
             imageRevision: guest.imageRevision,
             elasticTemplateId: "tool",
             profiles: { starter: "starter", standard: "standard", performance: "performance" },

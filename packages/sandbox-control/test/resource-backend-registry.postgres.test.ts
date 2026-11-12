@@ -1,5 +1,6 @@
 import { createPrivateTenant } from "../../control-plane/src/tenant-administration.ts";
 import { ControlPlaneStore } from "../../control-plane/src/control-plane-store.ts";
+import { DevelopmentEnvironmentService } from "../../control-plane/src/development-environment-service.ts";
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
@@ -20,6 +21,85 @@ const configuration = (endpoint: string): ResourceBackendConfiguration => ({
       profiles: { starter: "starter", standard: "standard", performance: "performance" },
     },
   ],
+});
+
+it("updates display metadata with allocated intent while preserving template mutation guards", async () => {
+  const db = createDatabase({
+    connectionString: process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL!,
+    maxConnections: 2,
+  });
+  try {
+    await runMigrations(db, "up");
+    const registry = new ResourceBackendRegistry({
+      database: db,
+      key: Buffer.alloc(32, 9),
+      managementBaseUrl: "http://management:4300",
+      verify: async () => "owned-pool",
+    });
+    const id = randomUUID();
+    const request = {
+      id,
+      name: "Display backend",
+      location: "Local",
+      state: "active",
+      expectedRevision: 0,
+      configuration: configuration(`http://box-${id}:8091`),
+    };
+    await registry.put(request);
+    const tenant = await createPrivateTenant(db, {
+      slug: randomUUID(),
+      ownerDisplayName: "Display owner",
+    });
+    const service = new DevelopmentEnvironmentService({
+      database: db,
+      terminalToken: "owned-fixture-".repeat(3),
+      allowInsecureInternalHttp: true,
+    });
+    const machine = await service.create(
+      {
+        credentialId: tenant.credential.credentialId,
+        tenantId: tenant.tenantId,
+        tenantSlug: tenant.tenantSlug,
+        userId: tenant.ownerUserId,
+        displayName: "Display owner",
+        role: "owner",
+        defaultModelProfileId: tenant.defaultModelProfileId,
+      },
+      "owned-pending-machine",
+      {
+        name: "Pending machine",
+        profileKey: "starter",
+        backend: { id, revision: 1, templateId: "linux" },
+      },
+    );
+    const before = await db
+      .selectFrom("development_environments")
+      .selectAll()
+      .where("id", "=", machine.environmentId)
+      .executeTakeFirstOrThrow();
+    const renamed = structuredClone(request.configuration);
+    renamed.templates[0]!.name = "Fixed Guest";
+    renamed.templates[0]!.operatingSystem = "Linux";
+    expect(
+      (await registry.put({ ...request, expectedRevision: 1, configuration: renamed })).revision,
+    ).toBe(2);
+    expect(
+      await db
+        .selectFrom("development_environments")
+        .selectAll()
+        .where("id", "=", machine.environmentId)
+        .executeTakeFirstOrThrow(),
+    ).toEqual(before);
+    for (const field of ["imageRevision", "elasticTemplateId"] as const) {
+      const changed = structuredClone(renamed);
+      changed.templates[0]![field] += "-changed";
+      await expect(
+        registry.put({ ...request, expectedRevision: 2, configuration: changed }),
+      ).rejects.toThrow("retained resources");
+    }
+  } finally {
+    await db.destroy();
+  }
 });
 
 it("registers two native backends behind one existing management endpoint, encrypts credentials and rejects stale edits", async () => {

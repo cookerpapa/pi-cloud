@@ -154,10 +154,17 @@ export class ResourceBackendRegistry {
       if (current && !isDeepStrictEqual(current, config)) {
         const { templates: priorTemplates, ...priorConnection } = current;
         const { templates: nextTemplates, ...nextConnection } = config;
+        const executionTemplate = ({
+          name: _name,
+          operatingSystem: _os,
+          ...template
+        }: ResourceBackendConfiguration["templates"][number]) => template;
         const additionOnly =
           isDeepStrictEqual(priorConnection, nextConnection) &&
           priorTemplates.every((template) =>
-            nextTemplates.some((next) => isDeepStrictEqual(template, next)),
+            nextTemplates.some((next) =>
+              isDeepStrictEqual(executionTemplate(template), executionTemplate(next)),
+            ),
           );
         if (!additionOnly)
           await this.#assertUnused(
