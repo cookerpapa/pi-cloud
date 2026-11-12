@@ -10,6 +10,8 @@ import sharp from "sharp";
 import { sql } from "kysely";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
+import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { uploadRelativePath } from "../packages/protocol/src/user-upload.ts";
@@ -284,6 +286,28 @@ try {
       });
       await page.send("DOM.setFileInputFiles", { nodeId, files });
       await page.waitFor('document.querySelector(".upload-card img")?.naturalWidth>0', 30000);
+      assert.equal(
+        (
+          await db
+            .selectFrom("session_uploads")
+            .select("id")
+            .where("session_id", "=", session.sessionId)
+            .execute()
+        ).length,
+        0,
+        "Selecting local files uploaded them before Send",
+      );
+      assert(
+        await page.evaluate('!document.querySelector(".product-attach-button").disabled'),
+        "Composer retained a four-file quota",
+      );
+      const prompt =
+        "请直接看这条消息附带的图片，只回复图片顶端的六位数字。不要描述柱状图，不要调用任何工具。";
+      await page.evaluate(
+        `(() => { const node=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(node,${JSON.stringify(prompt)});node.dispatchEvent(new Event('input',{bubbles:true})); })()`,
+      );
+      await page.waitFor('!document.querySelector(".product-send-button").disabled');
+      await page.evaluate('document.querySelector(".product-send-button").click()');
       const upload = await until(async () => {
         const { rows } =
           await sql`select id,path,state from session_uploads where session_id=${session.sessionId}::uuid and name='capture.png'`.execute(
@@ -301,23 +325,12 @@ try {
           .execute();
         return rows.length === 6;
       }, "All six streamed files");
-      assert(
-        await page.evaluate('!document.querySelector(".product-attach-button").disabled'),
-        "Composer retained a four-file quota",
-      );
       report.unlimitedAttachments = {
         count: 6,
         totalBytes: png.length + 35 * 1024 * 1024,
         imageBytes: png.length,
         executionMode: machineMode ? "development_environment" : "elastic",
       };
-      const prompt =
-        "请直接看这条消息附带的图片，只回复图片顶端的六位数字。不要描述柱状图，不要调用任何工具。";
-      await page.evaluate(
-        `(() => { const node=document.querySelector('.product-composer textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(node,${JSON.stringify(prompt)});node.dispatchEvent(new Event('input',{bubbles:true})); })()`,
-      );
-      await page.waitFor('!document.querySelector(".product-send-button").disabled');
-      await page.evaluate('document.querySelector(".product-send-button").click()');
       active = await until(async () => {
         const { rows } =
           await sql`select r.id as "runId",r.turn_id as "turnId" from runs r where r.session_id=${session.sessionId}::uuid order by r.created_at desc limit 1`.execute(
@@ -334,6 +347,8 @@ try {
         30000,
       );
       report.browser = {
+        uploadsStartOnSend: true,
+        localPreviewBeforeSend: true,
         uploadedBytes: png.length,
         previewAfterReload: true,
         originalTextSeparate: true,
@@ -416,6 +431,7 @@ try {
   report.accepted = true;
 } catch (error) {
   failure = error;
+  report.failure = String(error?.message ?? error).slice(0, 600);
 } finally {
   const errors = [];
   try {
@@ -455,17 +471,36 @@ try {
     errors.push(error);
   }
   try {
-    if (tenant)
-      await db
-        .updateTable("tenant_api_credentials")
-        .set({ revoked_at: new Date() })
-        .where("credential_id", "=", tenant.credential.credentialId)
-        .execute();
+    if (project)
+      await until(async () => {
+        const row = await db
+          .selectFrom("workspaces")
+          .select("storage_purged_at")
+          .where("id", "=", project.workspaceId)
+          .executeTakeFirst();
+        return !row || row.storage_purged_at;
+      }, "Owned Workspace physical cleanup");
+    if (tenant && errors.length === 0) {
+      const blobs = new S3AttachmentBlobStore({
+        endpoint: `http://${serviceAddress("session-images")}:8333`,
+        region: "us-east-1",
+        bucket: "pi-cloud-session-images",
+        ...JSON.parse(
+          await readFile(`${runtime}/secrets/session-image-s3-credentials.json`, "utf8"),
+        ),
+      });
+      try {
+        report.cleanup = await purgeOwnedAcceptanceTenant(db, tenant, blobs);
+      } finally {
+        await blobs.close();
+      }
+    }
   } catch (error) {
     errors.push(error);
   }
   await rm(directory, { recursive: true, force: true });
   report.cleanupRequested = errors.length === 0;
+  report.cleanupConfirmed = errors.length === 0;
   await writeFile(
     process.argv[2] ?? "/tmp/pi-cloud-user-uploads-live.json",
     JSON.stringify(report, null, 2) + "\n",

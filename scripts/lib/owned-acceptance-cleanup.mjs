@@ -43,7 +43,7 @@ export async function purgeOwnedAcceptanceTenant(
   { awaitReceiptDelivery = waitForOwnedReceiptDelivery, signal } = {},
 ) {
   assert(
-    ["release-acceptance-", "native-input-", "cube-check-"].some((prefix) =>
+    ["release-acceptance-", "native-input-", "cube-check-", "upload-check-"].some((prefix) =>
       tenant.tenantSlug.startsWith(prefix),
     ),
     "Not an owned release fixture",
