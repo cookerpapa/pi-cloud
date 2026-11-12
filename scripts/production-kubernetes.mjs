@@ -1,4 +1,5 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
+import assert from "node:assert/strict";
 import { activateToolHost } from "./lib/tool-host-activation.mjs";
 import { waitForReadyCubelet } from "./lib/cube-execution-deployment.mjs";
 import {

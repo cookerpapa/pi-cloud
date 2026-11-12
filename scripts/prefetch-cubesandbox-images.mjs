@@ -13,6 +13,7 @@ import {
   verifyCubeUpstreamEvidence,
   assertUpstreamArchiveClosure,
   assertImportedUpstreamImages,
+  missingImportedUpstreamImages,
 } from "./lib/cube-upstream-images.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -184,7 +185,14 @@ if (prepareOnly) {
       "k8s.io",
       "images",
     ];
-    for (const image of new Map(images.map((item) => [item.pinnedReference, item])).values()) {
+    const missing = missingImportedUpstreamImages(await capture("ctr", [...ctr, "list"]), [
+      ...new Map(images.map((item) => [item.pinnedReference, item])).values(),
+    ]);
+    process.stdout.write(
+      JSON.stringify({ upstreamImports: missing.length, cached: images.length - missing.length }) +
+        "\n",
+    );
+    for (const image of missing) {
       await run("docker", ["image", "save", "--output", archive, image.pinnedReference]);
       // A legacy Docker export can rewrite registry manifests. Refuse that
       // archive; never manufacture a registry-digest alias for different bytes.

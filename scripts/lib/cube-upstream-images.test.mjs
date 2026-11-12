@@ -9,11 +9,22 @@ import {
   verifyCubeUpstreamEvidence,
   assertUpstreamArchiveClosure,
   assertImportedUpstreamImages,
+  missingImportedUpstreamImages,
 } from "./cube-upstream-images.mjs";
 
 const runtimeBuild = { upstreamVersion: "0.7.3" };
 const cubeImage = "cube-sandbox-int.tencentcloudcr.com/cube-sandbox/cube-shim:v0.7.3";
 const sha = (character) => `sha256:${character.repeat(64)}`;
+
+it("imports only missing digests and refuses a conflicting named cache entry", () => {
+  const first = { pinnedReference: `registry.example/one@${sha("a")}` };
+  const second = { pinnedReference: `registry.example/two@${sha("b")}` };
+  const cached = `${first.pinnedReference} application/vnd.oci.image.index.v1+json ${sha("a")} 1MiB linux/amd64 -`;
+  expect(missingImportedUpstreamImages(cached, [first, second])).toEqual([second]);
+  expect(() =>
+    missingImportedUpstreamImages(cached.replace(` ${sha("a")} `, ` ${sha("c")} `), [first]),
+  ).toThrow("K3s did not confirm");
+});
 function manifest(extra = []) {
   return [
     {

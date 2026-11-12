@@ -269,7 +269,7 @@ export function assertUpstreamArchiveClosure(listing, images) {
   }
 }
 
-export function assertImportedUpstreamImages(listing, images) {
+export function missingImportedUpstreamImages(listing, images) {
   const entries = new Map(
     listing
       .split(/\r?\n/)
@@ -279,10 +279,21 @@ export function assertImportedUpstreamImages(listing, images) {
         return [name, target];
       }),
   );
-  for (const image of images)
+  for (const image of images) {
+    if (!entries.has(image.pinnedReference)) continue;
     assert.equal(
       entries.get(image.pinnedReference),
       imageParts(image.pinnedReference).digest,
       "K3s did not confirm the prepared upstream image digest",
     );
+  }
+  return images.filter((image) => !entries.has(image.pinnedReference));
+}
+
+export function assertImportedUpstreamImages(listing, images) {
+  assert.equal(
+    missingImportedUpstreamImages(listing, images).length,
+    0,
+    "K3s did not confirm the prepared upstream image digest",
+  );
 }

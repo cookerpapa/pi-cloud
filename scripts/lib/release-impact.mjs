@@ -1,5 +1,7 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/prefetch-cubesandbox-images.mjs",
+  "scripts/lib/cube-upstream-images.mjs",
   "scripts/lib/cube-upgrade-plan.mjs",
   "scripts/run-live-resource-backend-check.mjs",
   "scripts/lib/registered-backend-fixture.mjs",
@@ -185,6 +187,8 @@ export const imageReleaseTargets = {
   },
 };
 export const modelTests = new Set([
+  "scripts/lib/cube-upstream-images.test.mjs",
+  "scripts/lib/image-import-cli.test.mjs",
   "scripts/lib/cube-upgrade-plan.test.mjs",
   "scripts/lib/release-plan.test.mjs",
   "scripts/lib/runtime-component-release.test.mjs",
