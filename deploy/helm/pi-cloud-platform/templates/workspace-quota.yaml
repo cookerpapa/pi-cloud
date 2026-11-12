@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        {{- include "pi-cloud-platform.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: workspace-quota
         pi-cloud.io/sandbox-domain: {{ .Values.sandboxPlane.domainId | quote }}
     spec:

@@ -6,7 +6,14 @@ import {
   assertCubeNativeVersion,
 } from "./lib/cube-workspace-contract.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  chmodSync,
+  existsSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { assertFirstInstallation } from "./lib/installation-admission.mjs";
@@ -166,10 +173,17 @@ async function build() {
     provider: ["cli-proxy-api", "deploy/provider-gateway/Dockerfile"],
   };
   const selected = args[0] === "control-plane" ? "controlPlane" : args[0];
-  if (selected !== undefined && !["provider", "web", "controlPlane", "worker"].includes(selected))
+  if (selected !== undefined && !Object.hasOwn(definitions, selected))
     throw new Error("Unsupported build component");
   const images = selected
-    ? JSON.parse(readFileSync(resolve(runtimeDirectory, "k3s/images.json"), "utf8"))
+    ? JSON.parse(
+        readFileSync(
+          existsSync(imageCatalogPath)
+            ? imageCatalogPath
+            : resolve(runtimeDirectory, "k3s/images.json"),
+          "utf8",
+        ),
+      )
     : {};
   for (const [key, [name, file]] of Object.entries(definitions)) {
     if (selected && key !== selected) continue;
@@ -213,17 +227,27 @@ async function build() {
 }
 async function importImages() {
   const images = runtimeImages();
+  const only = args[0] === "--only";
+  assert(!args.length || only, "Use import-images --only REFERENCE...");
+  const selected = [...new Set(only ? args.slice(1) : Object.values(images))];
+  assert(
+    selected.every((reference) => Object.values(images).includes(reference)),
+    "Image import is outside the candidate catalog",
+  );
+  if (only && !selected.length) return;
   const { parse } = await import("yaml");
   const pinned = parse(readFileSync(resolve(chart("infrastructure"), "values.yaml"), "utf8"));
   const aliases = [];
-  for (const [name, image] of [
-    ["postgres", pinned.postgres.image],
-    ["kafka", pinned.kafka.image],
-    ["session-images", pinned.sessionImages.image],
-    ...(environment.PI_CLOUD_OBSERVABILITY_ENABLED === "1"
-      ? Object.entries(pinned.observability.images)
-      : []),
-  ]) {
+  for (const [name, image] of only
+    ? []
+    : [
+        ["postgres", pinned.postgres.image],
+        ["kafka", pinned.kafka.image],
+        ["session-images", pinned.sessionImages.image],
+        ...(environment.PI_CLOUD_OBSERVABILITY_ENABLED === "1"
+          ? Object.entries(pinned.observability.images)
+          : []),
+      ]) {
     try {
       execFileSync("docker", ["image", "inspect", image], { stdio: "ignore" });
     } catch {
@@ -234,11 +258,9 @@ async function importImages() {
     aliases.push({ alias, image });
   }
   await new Promise((ok, fail) => {
-    const save = spawn(
-      "docker",
-      ["save", ...Object.values(images), ...aliases.map((x) => x.alias)],
-      { stdio: ["ignore", "pipe", "inherit"] },
-    );
+    const save = spawn("docker", ["save", ...selected, ...aliases.map((x) => x.alias)], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
     const load = spawn(
       "/usr/local/bin/k3s",
       ["ctr", "images", "import", "--label", "io.cri-containerd.pinned=pinned", "-"],

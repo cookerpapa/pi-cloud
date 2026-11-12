@@ -9,6 +9,12 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
 {{- end -}}
 
+{{- define "pi-cloud-platform.podLabels" -}}
+app.kubernetes.io/name: pi-cloud
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
 {{- define "pi-cloud-platform.image" -}}
 {{- printf "%s:%s" .repository .tag -}}
 {{- end -}}

@@ -34,7 +34,12 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   context checks pass; packages, current selections and Workspace files remain.
 - [ ] #34: coordinated catalog/Worker publication, retained requirement inspection
   and actual model/Guest Skill acceptance.
-- [ ] #33: verified impact plans, artifact reuse and narrow publication.
+- [x] #33 source: shared CI/operator scope policy, planned artifact reuse with
+  original provenance, metadata-only Helm publication and conditional physical
+  maintenance under ADR-0320. Current private SQL remnants are verified absent;
+  completed destructive cleanup and legacy holder initialization are removed.
+- [ ] #33: complete integrated operator checks, build/scan the candidate, apply
+  Workspace adoption and verify real scoped/metadata-only replacement.
 
 ## Repository decoupling review — complete; fixes authorized
 

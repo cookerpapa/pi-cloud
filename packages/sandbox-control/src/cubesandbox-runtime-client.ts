@@ -583,6 +583,21 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     await response.body?.cancel().catch(() => undefined);
   }
 
+  /** Metadata presence only; this never proves a VM or Workspace was deleted. */
+  async hasVolume(volumeId: string): Promise<boolean> {
+    if (!/^pcw-[0-9a-f]{48}$/.test(volumeId)) throw new Error("Invalid Workspace volume identity");
+    const response = await this.#control(`/volumes/${volumeId}`, {}, true);
+    if (response.status === 404) {
+      await response.body?.cancel();
+      return false;
+    }
+    const value = parseVolume(
+      parseJson(await readBoundedResponse(response, 64 * 1024), "Native volume metadata"),
+    );
+    if (value.volumeId !== volumeId) throw new Error("Native volume identity changed");
+    return true;
+  }
+
   async create(input: CubeSandboxCreateInput): Promise<CubeSandboxInstance> {
     const body = JSON.stringify({
       templateID: input.templateId,

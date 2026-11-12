@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
-import { basename } from "node:path";
+import { open, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { basename, dirname } from "node:path";
 
 // Cube's POSIX plugin and guest use UID 1000. The host operator's private
 // group grants that trusted reader access to its own three mounted Secrets.
@@ -39,5 +40,30 @@ export async function readPrivateRuntimeFile(path, maximumBytes, label) {
     return await handle.readFile("utf8");
   } finally {
     await handle.close();
+  }
+}
+
+/** Flush the prepared file and its rename before an operator issues effects. */
+export async function writeRuntimeFileAtomically(path, body, mode = 0o600) {
+  const temporary = `${path}.new-${randomUUID()}`;
+  const file = await open(temporary, "wx", mode);
+  try {
+    try {
+      await file.writeFile(body);
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await rename(temporary, path);
+    const directory = await open(dirname(path), "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+  } finally {
+    await unlink(temporary).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
   }
 }

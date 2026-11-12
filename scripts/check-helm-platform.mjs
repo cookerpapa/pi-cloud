@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAllDocuments } from "yaml";
+import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const chart = resolve(root, "deploy/helm/pi-cloud-platform");
@@ -38,6 +40,36 @@ const resources = parseAllDocuments(rendered)
     return document.toJSON();
   })
   .filter(Boolean);
+const metadataFixture = mkdtempSync(resolve(tmpdir(), "pma-chart-metadata-"));
+try {
+  const copiedChart = resolve(metadataFixture, "chart");
+  cpSync(chart, copiedChart, { recursive: true });
+  const manifest = resolve(copiedChart, "Chart.yaml");
+  writeFileSync(
+    manifest,
+    readFileSync(manifest, "utf8").replace(/^version:.*$/m, "version: 999.0.0"),
+  );
+  const bumped = parseAllDocuments(
+    run(["template", "pi-cloud", copiedChart, "--namespace", "pi-cloud-system"]),
+  )
+    .map((d) => d.toJSON())
+    .filter(Boolean);
+  let checked = 0;
+  for (const before of resources.filter((r) => r.spec?.template)) {
+    const after = bumped.find(
+      (r) => r.kind === before.kind && r.metadata.name === before.metadata.name,
+    );
+    assert.deepEqual(
+      after?.spec.template,
+      before.spec.template,
+      `Chart metadata rolled ${before.metadata.name}`,
+    );
+    checked++;
+  }
+  assert(checked >= 10, "Metadata check missed maintained workloads");
+} finally {
+  rmSync(metadataFixture, { recursive: true, force: true });
+}
 const find = (kind, name) =>
   resources.find((resource) => resource.kind === kind && resource.metadata?.name === name);
 const management = find("Deployment", "pi-cloud-control-plane");

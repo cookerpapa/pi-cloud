@@ -386,4 +386,16 @@ export async function prepareMatchedWorkspaceStorage({
     ],
     root,
   );
+  rootCommand(
+    process.execPath,
+    [
+      "--import",
+      resolve(root, "node_modules/tsx/dist/loader.mjs"),
+      resolve(root, "scripts/run-workspace-storage-pool.mjs"),
+      "persistence",
+      "--plan",
+      planPath,
+    ],
+    root,
+  );
 }

@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0320](0320-release-plans-and-artifact-reuse.md) separates affected artifacts,
+serving roles and physical maintenance while retaining release evidence (#33/#37).
+
 [ADR-0319](0319-dynamic-resource-backends.md) makes known resource backends
 a versioned PG registry consumed by existing management/execution roles (#31).
 

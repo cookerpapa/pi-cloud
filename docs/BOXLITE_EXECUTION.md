@@ -21,12 +21,13 @@ intent, idle deadlines and quota. [ADR-0314](adr/0314-platform-owned-elastic-exp
 supplies elastic expiry. Native AutoStop/AutoDelete are disabled; diagnostics do
 not renew resources. Dedicated machines do not expire.
 
-Workspace bytes remain in the existing Cube persistent-Volume subsystem and
-POSIX pool. BoxLite mounts only the Workspace leaf using the SDK. Its adapter
-acquires and retains the same opaque attachment receipt used by the supported
-Volume Plugin; missing metadata is never interpreted as zero references. No
-second Workspace copy, archive head or storage catalog is introduced. This is
-compute-provider integration, not removal of every Cube storage dependency.
+Workspace bytes belong to the independent persistence backend under ADR-0318.
+The local XFS storage helper/Gateway initializes and deletes bytes; BoxLite uses
+the SDK to mount only the guarded Workspace leaf. It does not construct a Cube
+client or call Cube volume APIs. The same opaque attachment receipts and pool/
+generation checks are used by Cube's supported plugin. Missing metadata is never
+zero references. No second Workspace copy or archive head is introduced.
+This source boundary awaits the matched adoption and Cube-unavailable acceptance.
 
 The node keeps bounded immutable creation/attachment connection metadata beside
 native SDK state, because native Box info does not expose arbitrary creation
@@ -92,20 +93,19 @@ node --import tsx scripts/run-boxlite-release.mjs apply PRIVATE_CANDIDATE_DIRECT
 The node operator verifies image identities/scans, uses an owned state directory
 and pins the Guest OCI digest. Registry TLS skipping is scoped to that private
 registry with an immutable digest; no global TLS/image policy is disabled.
-It refuses replacement beneath live BoxLite admission or unresolved allocations.
+It records and closes new admission for this node's registered backends in PG,
+requires all allocations/unresolved requests and native receipts to be retired,
+and preserves unrelated Cube backends. Before native mutation a failed check can
+restore unchanged prior admission; partial replacement stays drained for forward
+repair. Parent/Guest image IDs and the actual installed node identity are checked.
 
-Select the resource-domain provider through the maintained deployment settings:
-
-- `PI_CLOUD_SANDBOX_PROVIDER=boxlite`
-- `PI_CLOUD_BOXLITE_URL=http://pi-cloud-boxlite:8091`
-- `PI_CLOUD_BOXLITE_NODE_ID` matching the installed node's recorded identity.
-
-Changing provider requires the matched writer/resource drain. Retirement routes
-to the provider recorded in each capsule, independently of the next selected
-provider. Workspace bytes, stable machine intent, accounts and credentials stay
-preserved. There is no mixed-provider fallback. Keep the node installed while
-retiring its resources; offline inventory or missing receipts are not deletion
-proof. Cold Workspace maintenance stops the node after verified retirement.
+Register the compatible node in the administration page or the versioned
+[backend API](RESOURCE_BACKENDS.md). An already-open Resources page discovers it
+without a restart/reload; users explicitly select its environment/profile. The
+initial `PI_CLOUD_SANDBOX_PROVIDER` settings seed the first domain only and no
+longer switch an established registry. There is no provider fallback. Keep the
+node available while retiring its resources; missing inventory is not proof of
+delete completion. Android keeps its separate existing-device semantics.
 
 ## Acceptance
 

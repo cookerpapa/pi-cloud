@@ -393,6 +393,7 @@ async function openOnlineAuthority({ paths, options, kubectl }) {
   });
   const repository = createComputeRetirementRepository(database);
   return {
+    database,
     close: () => database.destroy(),
     schema: async () =>
       (
@@ -614,6 +615,7 @@ export async function createWorkspaceStoragePoolGuard(options, deps = {}) {
   };
   return {
     mode: "online",
+    database: authority.database,
     close: () => authority.close(),
     assertQuiescent: async () => {
       try {

@@ -1,28 +1,25 @@
 import assert from "node:assert/strict";
-import { lstat, readFile, mkdir, chown, open, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeWorkspacePoolPlan, workspacePoolPaths } from "./workspace-storage-pool.mjs";
 
-/** One-time, cold filesystem-format initialization. Runtime hooks never infer an
- * empty holder set from missing metadata. Existing holder files are never erased. */
-export async function initializeNativeVolumeAttachmentState(options, assertQuiescent) {
+/** Cold validation only. Missing metadata never proves an empty holder set. */
+export async function verifyNativeVolumeAttachmentState(options, assertQuiescent) {
   const paths = workspacePoolPaths(options.runtimeDirectory);
   const cluster = JSON.parse(
     await readFile(join(options.runtimeDirectory, "cubesandbox/cluster.json"), "utf8"),
   );
-  const initializing =
-    cluster.providerContractVersion === undefined && cluster.executionProtocolVersion === 10;
-  assert(
-    initializing || cluster.providerContractVersion === 1,
-    "Unsupported native Volume cutover source",
+  assert.equal(
+    cluster.providerContractVersion,
+    1,
+    "Install the stock native provider contract first",
   );
   const proof = await assertQuiescent();
   assert(
     proof?.runtimeQuiescent && proof.physicalVMsAbsent,
     "Cold physical retirement proof is required",
   );
-  let initialized = 0,
-    verified = 0;
+  let verified = 0;
   for (const entry of normalizeWorkspacePoolPlan(options.workspaces)) {
     if (entry.generation === null) continue;
     await assertQuiescent();
@@ -39,24 +36,11 @@ export async function initializeNativeVolumeAttachmentState(options, assertQuies
       if (error.code === "ENOENT") return undefined;
       throw error;
     });
-    if (!existing) {
-      assert(initializing, "Native attachment state is missing; do not invent zero holders");
-      await mkdir(path, { mode: 0o700 });
-      await chown(path, stat.uid, stat.gid);
-      for (const directory of [path, metadata]) {
-        const file = await open(directory, "r");
-        try {
-          await file.sync();
-        } finally {
-          await file.close();
-        }
-      }
-      initialized++;
-    } else
-      assert(
-        existing.isDirectory() && !existing.isSymbolicLink(),
-        "Native attachment state changed type",
-      );
+    assert(existing, "Native attachment state is missing; do not invent zero holders");
+    assert(
+      existing.isDirectory() && !existing.isSymbolicLink(),
+      "Native attachment state changed type",
+    );
     assert.equal(
       (await readdir(path)).length,
       0,
@@ -64,5 +48,5 @@ export async function initializeNativeVolumeAttachmentState(options, assertQuies
     );
     verified++;
   }
-  return { contract: 1, initialized, verified };
+  return { contract: 1, verified };
 }

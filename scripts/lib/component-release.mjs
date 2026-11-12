@@ -1,14 +1,9 @@
 import {
   catalogSeed,
+  permitsScopedSource,
   operatorSources,
   modelTests,
-  ordinaryControlToolSource,
-  sessionDecoderSource,
-  sessionRetentionSource,
-  workerBootstrapSource,
-  sessionApiSource,
   imageReleaseTargets,
-  providerSources,
 } from "./release-impact.mjs";
 export { catalogSeed } from "./release-impact.mjs";
 export { imageReleaseTargets } from "./release-impact.mjs";
@@ -147,60 +142,14 @@ export function scopedApplyState({ baseline, next, current, helmRevision, before
   return "apply";
 }
 
-/** Source classifications are deliberately small; protocol changes use matched release. */
+/** Protocol/ownership changes continue to require matched publication. */
 export function assertScopedSources(scope, files, runtimeInputs) {
   assert(scope === "catalog" || Object.hasOwn(imageReleaseTargets, scope), "Unknown release scope");
-  for (const file of files) {
+  for (const file of files)
     assert(
-      operatorSources.has(file) ||
-        // BoxLite node code is independently published and is absent from the
-        // ordinary role images. Require the selected Docker input closure to
-        // prove that absence; never excuse shared provider/protocol changes.
-        (runtimeInputs instanceof Set &&
-          file.startsWith("packages/boxlite-node/src/") &&
-          !runtimeInputs.has(file)) ||
-        (scope === "tool-host" && ordinaryControlToolSource(file)) ||
-        (scope === "tool-host" &&
-          file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
-        (scope === "session-decoder" && file === sessionDecoderSource) ||
-        (scope === "session-retention" && file === sessionRetentionSource) ||
-        (scope === "worker-bootstrap" &&
-          (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
-        (scope === "session-api" && sessionApiSource(file)) ||
-        (scope === "web" &&
-          (file === "packages/web-ui/index.html" ||
-            /^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
-            [
-              "session-view.ts",
-              "conversation-presentation.ts",
-              "virtual-conversation-rows.ts",
-              "composer-submission.ts",
-              "submission-presentation.ts",
-            ].some((name) => file === `packages/web-ui/src/${name}`) ||
-            [
-              "scripts/production-kubernetes.mjs",
-              "scripts/run-browser-presentation-check.mjs",
-              "scripts/run-browser-queue-check.mjs",
-              "scripts/run-skill-market-browser-check.mjs",
-              "scripts/run-live-skill-market-browser-check.mjs",
-              "scripts/run-live-browser-ui-check.mjs",
-              "scripts/run-live-queue-input-check.mjs",
-              "scripts/run-live-release-acceptance.mjs",
-              "scripts/run-live-review-repair-check.mjs",
-              "scripts/run-live-development-environment-check.mjs",
-              "scripts/run-live-missing-directory-check.mjs",
-            ].includes(file))) ||
-        (["provider", "catalog"].includes(scope) &&
-          (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
-        (scope === "provider" && providerSources.has(file)) ||
-        file === "README.md" ||
-        file === "AGENTS.md" ||
-        file.startsWith("docs/") ||
-        /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
-        /^scripts\/lib\/.*\.test\.mjs$/.test(file),
+      permitsScopedSource(scope, file, runtimeInputs),
       `Change requires a matched release: ${file}`,
     );
-  }
 }
 
 /** A built artifact can serve several roles; only the requested role value changes. */
@@ -431,6 +380,48 @@ export function assertServingComponents(deployment, resources, alternative) {
   }
 }
 
+export const catalogComponentNames = {
+  controlPlane: "control-plane",
+  sessionRuntime: "session-runtime",
+  sessionApi: "session-api",
+  toolCompletion: "tool-completion",
+  metering: "metering",
+  toolHost: "tool-host",
+  worker: "supervisor-host",
+  volumeGateway: "workspace-volume-gateway",
+  web: "web-ui",
+  relay: "provider-egress-relay",
+  sshGateway: "ssh-gateway",
+  provider: "cli-proxy-api",
+};
+
+/** Only a recorded in-progress candidate may contain a mixture of its exact
+ * baseline/planned references. Unrelated images never become a repair baseline. */
+export function assertMatchedServingComponents(baseline, plan, resources) {
+  const planned = new Map(
+    Object.entries(plan.images).map(([key, reference]) => [catalogComponentNames[key], reference]),
+  );
+  for (const artifact of plan.artifacts)
+    if (!artifact.key) planned.set(artifact.name, artifact.reference);
+  const images = new Set(
+    resources.flatMap((r) => r.spec.template.spec.containers.map((c) => c.image)),
+  );
+  const observed = structuredClone(baseline);
+  for (const [name, component] of Object.entries(observed.components)) {
+    const expected = planned.get(name);
+    if (!expected || expected === component.reference) continue;
+    const role = sharedHostRoles[name];
+    const current = role
+      ? resources
+          .find((r) => r.kind === "Deployment" && r.metadata.name === role.workload)
+          ?.spec.template.spec.containers.find((c) => c.name === role.container)?.image
+      : undefined;
+    if (current === expected || (!role && images.has(expected) && !images.has(component.reference)))
+      component.reference = expected;
+  }
+  assertServingComponents(observed, resources);
+}
+
 export function deploymentFromEvidence({
   evidence,
   evidenceDirectory,
@@ -438,21 +429,33 @@ export function deploymentFromEvidence({
   version,
   catalogRevision,
   contracts,
+  catalog,
 }) {
   const components = {};
+  const component = (image) => ({
+    reference: image.reference,
+    imageId: image.imageId,
+    repoDigests: image.repoDigests,
+    sourceRevision: image.provenance.sourceRevision,
+    ...(image.provenance.inputIdentity ? { inputIdentity: image.provenance.inputIdentity } : {}),
+    evidence: { directory: evidenceDirectory, manifestSha256: digest(evidence) },
+  });
+  if (catalog) {
+    for (const [key, reference] of Object.entries(catalog)) {
+      const role = catalogComponentNames[key];
+      assert(role, `Unknown serving role ${key}`);
+      const image = evidence.images.find((image) => image.reference === reference);
+      assert(image, `Missing evidence for ${role}`);
+      components[role] = component(image);
+    }
+  }
   for (const image of evidence.images) {
     const name = image.reference.split("/").at(-1).split(":")[0];
+    if (catalog && Object.values(catalog).includes(image.reference)) continue;
     assert(!components[name], "Duplicate component provenance");
-    const component = {
-      reference: image.reference,
-      imageId: image.imageId,
-      repoDigests: image.repoDigests,
-      sourceRevision: image.provenance.sourceRevision,
-      evidence: { directory: evidenceDirectory, manifestSha256: digest(evidence) },
-    };
     for (const role of name === "control-plane" ? Object.keys(sharedHostRoles) : [name]) {
       assert(!components[role], "Duplicate role provenance");
-      components[role] = structuredClone(component);
+      components[role] = component(image);
     }
   }
   return { formatVersion: 1, revision, version, catalogRevision, contracts, components };

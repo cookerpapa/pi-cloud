@@ -68,9 +68,26 @@ it("maps the public Tool-host scope to one shared artifact and one independent i
   expect(imageReleaseTargets["control-plane"]).toBeUndefined();
 });
 
-it("keeps maintenance changes on full CI while exposing a narrow operator repair target", () => {
+it("uses the same declared runtime replacement scopes in CI and manual publication", () => {
   expect(releaseImpact(["packages/sandbox-control/src/session-activity-retention.ts"]).scope).toBe(
-    "full",
+    "session-retention",
   );
   expect(imageReleaseTargets["session-retention"]).toEqual(imageReleaseTargets["session-decoder"]);
+});
+
+it("builds only the reviewed Web/Worker/runtime artifact for an isolated supported source change", () => {
+  for (const [file, scope, image] of [
+    ["packages/web-ui/src/App.tsx", "web", "web-ui"],
+    ["packages/supervisor-host/src/model-gateway.ts", "worker-bootstrap", "supervisor-host"],
+    ["packages/runtime-core/src/session-log-envelope.ts", "session-decoder", "control-plane"],
+    ["packages/control-plane/src/session-api-main.ts", "session-api", "control-plane"],
+  ]) {
+    const result = releaseImpact([file, "AGENTS.md", "docs/README.md"]);
+    expect(result.scope).toBe(scope);
+    expect(result.matrix.include.map((i) => i.image)).toEqual([image]);
+  }
+  expect(releaseImpact(["AGENTS.md"]).buildImages).toBe(false);
+  expect(
+    releaseImpact(["packages/web-ui/src/App.tsx", "packages/protocol/src/index.ts"]).scope,
+  ).toBe("full");
 });

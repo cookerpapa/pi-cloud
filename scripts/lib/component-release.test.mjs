@@ -11,6 +11,7 @@ import {
   deploymentFromEvidence,
   scopedImageValues,
   assertServingComponents,
+  assertMatchedServingComponents,
   scopedApplyState,
   dockerSourceInputs,
 } from "./component-release.mjs";
@@ -67,8 +68,8 @@ it("allows only provider initialization to change in a provider release", () => 
 it("accepts operator-only replacement repairs without relabeling the prepared runtime", () => {
   expect(() =>
     assertOperatorRevisionChanges([
-      "scripts/lib/tool-host-release.mjs",
-      "scripts/lib/tool-host-release.test.mjs",
+      "scripts/lib/runtime-component-release.mjs",
+      "scripts/lib/runtime-component-release.test.mjs",
       "scripts/run-live-tool-host-release-check.mjs",
       "scripts/run-live-user-upload-check.mjs",
       "scripts/lib/owned-acceptance-cleanup.mjs",
@@ -868,4 +869,60 @@ it("excludes independently built BoxLite node source only with a disjoint Docker
       new Set([api]),
     ),
   ).toThrow("matched release");
+});
+
+it("preserves independent role artifacts in a matched catalog and accepts only its owned partial apply", () => {
+  const roles = [
+    "control-plane",
+    "session-runtime",
+    "session-api",
+    "tool-completion",
+    "metering",
+    "tool-host",
+  ];
+  const keys = [
+    "controlPlane",
+    "sessionRuntime",
+    "sessionApi",
+    "toolCompletion",
+    "metering",
+    "toolHost",
+  ];
+  const catalog = Object.fromEntries(
+    keys.map((key) => [
+      key,
+      key === "sessionApi" ? "pi-cloud/control-plane:new" : "pi-cloud/control-plane:old",
+    ]),
+  );
+  const evidence = {
+    images: ["old", "new"].map((tag) => ({
+      reference: `pi-cloud/control-plane:${tag}`,
+      imageId: `sha256:${tag}`,
+      repoDigests: [],
+      provenance: { sourceRevision: tag },
+    })),
+  };
+  const recorded = deploymentFromEvidence({
+    evidence,
+    evidenceDirectory: "owned",
+    revision: "current",
+    version: "publication",
+    catalog,
+  });
+  expect(recorded.components["session-api"].sourceRevision).toBe("new");
+  expect(recorded.components["control-plane"].sourceRevision).toBe("old");
+  const baseline = {
+    components: Object.fromEntries(
+      roles.map((role) => [role, { reference: "pi-cloud/control-plane:old" }]),
+    ),
+  };
+  const plan = { images: catalog, artifacts: [] };
+  const resources = roles.map((role) =>
+    sharedHostDeployment(role, recorded.components[role].reference),
+  );
+  expect(() => assertMatchedServingComponents(baseline, plan, resources)).not.toThrow();
+  resources[0].spec.template.spec.containers[0].image = "pi-cloud/control-plane:unowned";
+  expect(() => assertMatchedServingComponents(baseline, plan, resources)).toThrow(
+    "Serving role differs",
+  );
 });

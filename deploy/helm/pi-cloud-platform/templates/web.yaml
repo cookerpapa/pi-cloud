@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "pi-cloud-platform.labels" . | nindent 8 }}
+        {{- include "pi-cloud-platform.podLabels" . | nindent 8 }}
         app.kubernetes.io/component: web
     spec:
       {{- with .Values.global.imagePullSecrets }}

@@ -3,9 +3,9 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { initializeNativeVolumeAttachmentState } from "./native-volume-attachment-state.mjs";
+import { verifyNativeVolumeAttachmentState } from "./native-volume-attachment-state.mjs";
 
-it("initializes only the retired old format and never reconstructs missing native holds", async () => {
+it("validates current cold attachments without reconstructing missing native holds", async () => {
   const root = await mkdtemp(join(tmpdir(), "pma-volume-cutover-"));
   const tenantId = randomUUID(),
     workspaceId = randomUUID(),
@@ -28,35 +28,33 @@ it("initializes only the retired old format and never reconstructs missing nativ
   try {
     await mkdir(metadata, { recursive: true });
     await mkdir(join(root, "cubesandbox"));
-    await writeFile(clusterPath, JSON.stringify({ executionProtocolVersion: 10 }));
+    await writeFile(clusterPath, JSON.stringify({ providerContractVersion: 1 }));
     await writeFile(join(metadata, "identity"), `pi-cloud-volume-v1\n${volumeId}\n${generation}\n`);
     await writeFile(join(metadata, "original"), "PRESERVE");
     await expect(
-      initializeNativeVolumeAttachmentState(options, async () => ({
+      verifyNativeVolumeAttachmentState(options, async () => ({
         runtimeQuiescent: false,
         physicalVMsAbsent: true,
       })),
     ).rejects.toThrow("proof");
-    expect(await initializeNativeVolumeAttachmentState(options, proof)).toEqual({
+    await expect(verifyNativeVolumeAttachmentState(options, proof)).rejects.toThrow(
+      "do not invent zero",
+    );
+    await mkdir(join(metadata, "attachments"));
+    expect(await verifyNativeVolumeAttachmentState(options, proof)).toEqual({
       contract: 1,
-      initialized: 1,
-      verified: 1,
-    });
-    expect(await initializeNativeVolumeAttachmentState(options, proof)).toEqual({
-      contract: 1,
-      initialized: 0,
       verified: 1,
     });
     await writeFile(clusterPath, JSON.stringify({ providerContractVersion: 1 }));
     await writeFile(join(metadata, "attachments/unknown"), "unconfirmed holder");
-    await expect(initializeNativeVolumeAttachmentState(options, proof)).rejects.toThrow(
+    await expect(verifyNativeVolumeAttachmentState(options, proof)).rejects.toThrow(
       "Unconfirmed attachment",
     );
     expect(await readFile(join(metadata, "attachments/unknown"), "utf8")).toBe(
       "unconfirmed holder",
     );
     await rm(join(metadata, "attachments"), { recursive: true });
-    await expect(initializeNativeVolumeAttachmentState(options, proof)).rejects.toThrow(
+    await expect(verifyNativeVolumeAttachmentState(options, proof)).rejects.toThrow(
       "do not invent zero",
     );
     expect(await readFile(join(metadata, "original"), "utf8")).toBe("PRESERVE");

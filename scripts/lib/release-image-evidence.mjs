@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { guestBuildIdentityAtRevision } from "./guest-build-identity.mjs";
+import { artifactInputIdentity } from "./release-plan.mjs";
 
 /** Application images belong to this release. A reused guest belongs to its
  * original source commit, which must reproduce the required guest inputs. */
 export async function inspectReleaseImage(
-  { reference, labelVersion, releaseRevision, repositoryRoot, guestIdentity },
+  { reference, labelVersion, releaseRevision, repositoryRoot, guestIdentity, artifact },
   capture,
 ) {
   const values = JSON.parse(await capture("docker", ["image", "inspect", reference]));
@@ -18,6 +19,42 @@ export async function inspectReleaseImage(
   );
   const sourceRevision = labels["org.opencontainers.image.revision"];
   assert.match(sourceRevision ?? "", /^[0-9a-f]{40}$/, `${reference} has no full source revision`);
+  if (artifact) {
+    assert.equal(artifact.reference, reference, "Artifact reference differs from its plan");
+    assert.equal(sourceRevision, artifact.sourceRevision, "Artifact source differs from its plan");
+    if (artifact.action === "reuse")
+      assert.equal(image.Id, artifact.expectedImageId, "Reused artifact bytes changed");
+    else assert.equal(sourceRevision, releaseRevision, "A new build must use current source");
+    if (artifact.dockerfile) {
+      assert.equal(
+        (await artifactInputIdentity(repositoryRoot, sourceRevision, artifact.dockerfile)).identity,
+        artifact.inputIdentity,
+        "Artifact source inputs changed",
+      );
+      if (artifact.unchangedSince) {
+        const before = await artifactInputIdentity(
+          repositoryRoot,
+          artifact.unchangedSince,
+          artifact.dockerfile,
+        );
+        const after = await artifactInputIdentity(
+          repositoryRoot,
+          releaseRevision,
+          artifact.dockerfile,
+        );
+        assert.equal(
+          before.identity,
+          after.identity,
+          "An unaffected artifact acquired changed inputs",
+        );
+        assert.equal(
+          after.identity,
+          artifact.unchangedInputIdentity,
+          "Unchanged input proof differs from its plan",
+        );
+      }
+    }
+  }
   if (guestIdentity !== undefined) {
     assert.match(guestIdentity, /^[0-9a-f]{40}$/);
     assert.equal(
@@ -25,7 +62,7 @@ export async function inspectReleaseImage(
       guestIdentity,
       `${reference} source does not reproduce the required guest build inputs`,
     );
-  } else {
+  } else if (!artifact) {
     assert.equal(sourceRevision, releaseRevision, `${reference} has the wrong OCI revision label`);
   }
   assert.match(image.Id, /^sha256:[0-9a-f]{64}$/);
@@ -43,6 +80,19 @@ export async function inspectReleaseImage(
     provenance: {
       releaseRevision,
       sourceRevision,
+      ...(artifact
+        ? {
+            artifactId: artifact.artifactId,
+            inputIdentity: artifact.inputIdentity,
+            reusedSource: artifact.action === "reuse",
+            ...(artifact.unchangedSince
+              ? {
+                  unchangedSince: artifact.unchangedSince,
+                  unchangedInputIdentity: artifact.unchangedInputIdentity,
+                }
+              : {}),
+          }
+        : {}),
       ...(guestIdentity === undefined
         ? {}
         : { guestBuildIdentity: guestIdentity, reusedSource: sourceRevision !== releaseRevision }),

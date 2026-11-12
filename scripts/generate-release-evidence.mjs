@@ -1,3 +1,5 @@
+import assert from "node:assert/strict";
+import { digest } from "./lib/component-release.mjs";
 import {
   acceptedStockCubeImage,
   STOCK_CUBE_EXCEPTION_PATH,
@@ -8,6 +10,7 @@ import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmod,
+  copyFile,
   lstat,
   mkdir,
   mkdtemp,
@@ -61,9 +64,12 @@ function parseArguments(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (["--output-dir", "--cache-dir", "--image-version", "--component"].includes(argument)) {
+    if (
+      ["--output-dir", "--cache-dir", "--image-version", "--component", "--plan"].includes(argument)
+    ) {
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${argument} requires a value`);
+      if (argument === "--plan") result.planPath = resolve(repositoryRoot, value);
       if (argument === "--output-dir") result.outputDirectory = resolve(repositoryRoot, value);
       if (argument === "--cache-dir") result.cacheDirectory = resolve(repositoryRoot, value);
       if (argument === "--image-version") result.imageVersion = value;
@@ -378,12 +384,109 @@ try {
                   guestIdentity,
                 },
               ];
-  for (const { imageName, ...descriptor } of imageDescriptors) {
+  const databaseMetadataPath = resolve(options.cacheDirectory, "db/metadata.json");
+  await copyFile(databaseMetadataPath, resolve(stageDirectory, "database-metadata.json"));
+  const databaseIdentity = await sha256File(databaseMetadataPath);
+  let javaDatabaseIdentity;
+  if (options.component === "all" || options.component === "android") {
+    const path = resolve(options.cacheDirectory, "java-db/metadata.json");
+    await copyFile(path, resolve(stageDirectory, "java-database-metadata.json"));
+    javaDatabaseIdentity = await sha256File(path);
+  }
+  let selectedDescriptors = imageDescriptors;
+  if (options.planPath) {
+    assert.equal(
+      options.component,
+      "all",
+      "A matched artifact plan cannot override a component scan",
+    );
+    const plan = JSON.parse(await readFile(options.planPath, "utf8"));
+    assert.equal(plan.formatVersion, 1);
+    assert.equal(plan.revision, revision);
+    assert.equal(plan.version, options.imageVersion);
+    selectedDescriptors = [];
+    for (const artifact of plan.artifacts) {
+      assert(/^[A-Za-z0-9_-]+$/.test(artifact.artifactId), "Invalid planned artifact identity");
+      let original, originalManifest;
+      if (artifact.action === "reuse") {
+        originalManifest = JSON.parse(
+          await readFile(resolve(artifact.priorEvidence.directory, "manifest.json"), "utf8"),
+        );
+        assert.equal(
+          digest(originalManifest),
+          artifact.priorEvidence.manifestSha256,
+          "Original artifact evidence changed",
+        );
+        original = originalManifest.images.find((image) => image.reference === artifact.reference);
+        assert(
+          original && original.imageId === artifact.expectedImageId,
+          "Original artifact identity is missing",
+        );
+      }
+      selectedDescriptors.push({
+        imageName: artifact.artifactId,
+        artifactName: artifact.name,
+        reference: artifact.reference,
+        labelVersion:
+          original?.labels.version ??
+          (artifact.name === "cubesandbox-tool" ? "cube-primary" : options.imageVersion),
+        artifact,
+        original,
+        originalManifest,
+        ...(artifact.name === "cubesandbox-tool" ? { guestIdentity: plan.guestIdentity } : {}),
+      });
+    }
+  }
+  for (const {
+    imageName,
+    artifactName = imageName,
+    original,
+    originalManifest,
+    ...descriptor
+  } of selectedDescriptors) {
     const { reference } = descriptor;
     const evidence = await inspectReleaseImage(
       { ...descriptor, releaseRevision: revision, repositoryRoot },
       capture,
     );
+    if (
+      original &&
+      originalManifest.policy.scanner === TRIVY_IMAGE &&
+      originalManifest.policy.databaseIdentity === databaseIdentity &&
+      originalManifest.policy.javaDatabaseIdentity === javaDatabaseIdentity &&
+      originalManifest.policy.exceptionPolicy.sha256 === (await sha256File(TRIVY_IGNORE_POLICY)) &&
+      originalManifest.policy.stockCubeExceptionPolicy?.sha256 ===
+        (await sha256File(resolve(repositoryRoot, STOCK_CUBE_EXCEPTION_PATH)))
+    ) {
+      const files = {};
+      for (const field of ["sbom", "vulnerabilityReport", "policyVulnerabilityReport"]) {
+        const prior = original[field];
+        assert(
+          /^[A-Za-z0-9_.\/-]+$/.test(prior.path) &&
+            !prior.path.startsWith("/") &&
+            !prior.path.split("/").includes(".."),
+        );
+        const path = `images/${imageName}.${field}.json`;
+        const source = resolve(descriptor.artifact.priorEvidence.directory, prior.path);
+        assert.equal(await sha256File(source), prior.sha256, "Original scan report changed");
+        await copyFile(source, resolve(stageDirectory, path));
+        files[field] = await fileEvidence(stageDirectory, path);
+      }
+      if (artifactName === "cubesandbox-tool")
+        assertGuestInventory(
+          JSON.parse(
+            await readFile(resolve(stageDirectory, files.vulnerabilityReport.path), "utf8"),
+          ),
+        );
+      images.push({
+        ...original,
+        ...evidence,
+        ...files,
+        scanGeneratedAt: original.scanGeneratedAt ?? originalManifest.generatedAt,
+        reusedEvidence: descriptor.artifact.priorEvidence,
+      });
+      continue;
+    }
     const archiveName = `${imageName}.tar`;
     const archivePath = resolve(temporaryDirectory, archiveName);
     await run("docker", ["image", "save", "--output", archivePath, reference]);
@@ -396,7 +499,7 @@ try {
     // Language analysis copies Chromium/JDK binaries; owned disk scratch avoids
     // a large RAM-backed temporary mount competing with running KVM guests.
     const scanScratch =
-      imageName === "cubesandbox-tool" ? resolve(temporaryDirectory, "guest-scan") : undefined;
+      artifactName === "cubesandbox-tool" ? resolve(temporaryDirectory, "guest-scan") : undefined;
     if (scanScratch) await mkdir(scanScratch, { mode: 0o700 });
     const scanBase = trivyContainerArguments({
       cacheDirectory: options.cacheDirectory,
@@ -450,7 +553,7 @@ try {
     const policyReport = JSON.parse(
       await readFile(resolve(stageDirectory, policyReportRelativePath), "utf8"),
     );
-    if (imageName === "cubesandbox-tool") assertGuestInventory(report);
+    if (artifactName === "cubesandbox-tool") assertGuestInventory(report);
     const vulnerabilities = vulnerabilitySummary(report);
     const policyVulnerabilities = vulnerabilitySummary(policyReport);
     const releaseException =
@@ -464,6 +567,7 @@ try {
     images.push({
       ...(releaseException ? { releaseException } : {}),
       ...evidence,
+      scanGeneratedAt: new Date().toISOString(),
       vulnerabilities,
       policyVulnerabilities,
       vulnerabilityReport: await fileEvidence(stageDirectory, reportRelativePath),
@@ -486,6 +590,8 @@ try {
     scope: options.component,
     policy: {
       scanner: TRIVY_IMAGE,
+      databaseIdentity,
+      ...(javaDatabaseIdentity ? { javaDatabaseIdentity } : {}),
       severities: ["HIGH", "CRITICAL"],
       reportUnfixed: true,
       maximumFixableFindings: 0,
@@ -507,6 +613,8 @@ try {
     ".trivyignore.yaml",
     "stock-cube-image-exception.json",
     "manifest.json",
+    "database-metadata.json",
+    ...(javaDatabaseIdentity ? ["java-database-metadata.json"] : []),
     ...images.flatMap((image) => [
       image.sbom.path,
       image.vulnerabilityReport.path,

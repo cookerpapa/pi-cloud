@@ -212,73 +212,88 @@ export class PostgresWorkspacePersistence implements WorkspacePersistence {
       return unavailable("Adopt retained Workspace storage before deletion");
     return row;
   }
-  async #cold(domainId: string) {
-    if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(domainId)) throw new TypeError("Invalid storage domain");
-    const active = await this.options.database.query(
-      `select 1 from workspace_runtimes where sandbox_domain_id=$1 and state<>'released'
+  /** Operator-only cold adoption; ordinary ensure never recreates an old layout. */
+  adoptDomain(domainId: string) {
+    return adoptWorkspacePersistenceDomain(this.options, domainId);
+  }
+}
+
+async function assertColdDomain(database: Pick<Pool, "query">, domainId: string) {
+  if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(domainId)) throw new TypeError("Invalid storage domain");
+  const active = await database.query(
+    `select 1 from workspace_runtimes where sandbox_domain_id=$1 and state<>'released'
       union all select 1 from development_environments where sandbox_domain_id=$1 and (not allocation_closed or not allocation_absent)
       union all select 1 from workspace_terminal_sessions where sandbox_domain_id=$1 and state<>'released' limit 1`,
+    [domainId],
+  );
+  if (active.rowCount) return unavailable("Retire physical storage consumers before adoption");
+}
+
+export async function adoptWorkspacePersistenceDomain(
+  options: Pick<PostgresWorkspacePersistence["options"], "database" | "storage">,
+  domainId: string,
+) {
+  await assertColdDomain(options.database, domainId);
+  const pool = await options.storage.pool();
+  const bound = await options.database.query(
+    `update sandbox_domains set storage_pool_id=$2 where id=$1 and (storage_pool_id is null or storage_pool_id=$2) returning id`,
+    [domainId, pool.id],
+  );
+  if (bound.rowCount !== 1)
+    return unavailable("Storage pool identity differs from its registered backend");
+  let adopted = 0;
+  for (;;) {
+    const workspaces = await options.database.query<{
+      tenant_id: string;
+      id: string;
+      prior_storage_use: boolean;
+      deleted_at: Date | null;
+    }>(
+      `select w.tenant_id,w.id,w.deleted_at,
+        (exists(select 1 from workspace_runtimes r where r.workspace_id=w.id)
+         or exists(select 1 from development_environments d where d.workspace_id=w.id)
+         or exists(select 1 from workspace_terminal_sessions t where t.workspace_id=w.id)
+         or exists(select 1 from workspace_file_transfers f where f.workspace_id=w.id)
+         or exists(select 1 from session_uploads u where u.workspace_id=w.id)) as prior_storage_use
+       from workspaces w where w.sandbox_domain_id=$1 and w.persistence_state='adoption_pending'
+       and w.storage_purged_at is null order by w.id limit 64`,
       [domainId],
     );
-    if (active.rowCount) return unavailable("Retire physical storage consumers before adoption");
-  }
-  /** Operator-only cold adoption; ordinary ensure never recreates an old layout. */
-  async adoptDomain(domainId: string) {
-    await this.#cold(domainId);
-    const pool = await this.options.storage.pool();
-    const bound = await this.options.database.query(
-      `update sandbox_domains set storage_pool_id=$2 where id=$1 and (storage_pool_id is null or storage_pool_id=$2) returning id`,
-      [domainId, pool.id],
-    );
-    if (bound.rowCount !== 1)
-      return unavailable("Storage pool identity differs from its registered backend");
-    let adopted = 0;
-    for (;;) {
-      const workspaces = await this.options.database.query<{
-        tenant_id: string;
-        id: string;
-        capacity_pending: boolean;
-        deleted_at: Date | null;
-      }>(
-        `select tenant_id,id,capacity_pending,deleted_at from workspaces where sandbox_domain_id=$1 and persistence_state='adoption_pending' and storage_purged_at is null order by id limit 64`,
-        [domainId],
-      );
-      for (const workspace of workspaces.rows) {
-        await this.#cold(domainId);
-        const identity = {
-          tenantId: workspace.tenant_id,
-          workspaceId: workspace.id,
-          volumeId: workspaceVolumeId({ tenantId: workspace.tenant_id, workspaceId: workspace.id }),
-        };
-        const observed = await this.options.storage.inspectStorage({
+    for (const workspace of workspaces.rows) {
+      await assertColdDomain(options.database, domainId);
+      const identity = {
+        tenantId: workspace.tenant_id,
+        workspaceId: workspace.id,
+        volumeId: workspaceVolumeId({ tenantId: workspace.tenant_id, workspaceId: workspace.id }),
+      };
+      const observed = await options.storage.inspectStorage({
+        ...identity,
+        poolId: pool.id,
+      });
+      if (observed.exists) {
+        if (!observed.generation) return unavailable("Existing Workspace identity is incomplete");
+        await options.storage.prepareStorage({
           ...identity,
           poolId: pool.id,
+          generation: observed.generation,
+          initialize: false,
+          adopt: true,
         });
-        if (observed.exists) {
-          if (!observed.generation) return unavailable("Existing Workspace identity is incomplete");
-          await this.options.storage.prepareStorage({
-            ...identity,
-            poolId: pool.id,
-            generation: observed.generation,
-            initialize: false,
-            adopt: true,
-          });
-          await this.options.database.query(
-            `update workspaces set persistence_state='ready',persistence_generation=$3 where tenant_id=$1::uuid and id=$2::uuid and persistence_state='adoption_pending'`,
-            [workspace.tenant_id, workspace.id, observed.generation],
-          );
-        } else {
-          if (observed.known || !workspace.capacity_pending)
-            return unavailable("Previously initialized Workspace bytes are unavailable");
-          await this.options.database.query(
-            `update workspaces set persistence_state='uninitialized' where tenant_id=$1::uuid and id=$2::uuid and persistence_state='adoption_pending'`,
-            [workspace.tenant_id, workspace.id],
-          );
-        }
-        adopted++;
+        await options.database.query(
+          `update workspaces set persistence_state='ready',persistence_generation=$3 where tenant_id=$1::uuid and id=$2::uuid and persistence_state='adoption_pending'`,
+          [workspace.tenant_id, workspace.id, observed.generation],
+        );
+      } else {
+        if (observed.known || workspace.prior_storage_use)
+          return unavailable("Previously initialized Workspace bytes are unavailable");
+        await options.database.query(
+          `update workspaces set persistence_state='uninitialized' where tenant_id=$1::uuid and id=$2::uuid and persistence_state='adoption_pending'`,
+          [workspace.tenant_id, workspace.id],
+        );
       }
-      if (workspaces.rows.length < 64) break;
+      adopted++;
     }
-    return { poolId: pool.id, adopted };
+    if (workspaces.rows.length < 64) break;
   }
+  return { poolId: pool.id, adopted };
 }

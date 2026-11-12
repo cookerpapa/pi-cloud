@@ -182,3 +182,37 @@ it("does not force a persistent sandbox to manufacture an independent volume", (
     ),
   ).toThrow("shared");
 });
+
+it("adopts an unused Workspace even when old quota reconciliation had already cleared pending", async () => {
+  const f = await fixture();
+  try {
+    await f.pg.query(
+      "update workspaces set persistence_state='adoption_pending',capacity_pending=false where id=$1::uuid",
+      [f.identity.workspaceId],
+    );
+    const domain = (
+      await f.pg.query("select sandbox_domain_id from workspaces where id=$1::uuid", [
+        f.identity.workspaceId,
+      ])
+    ).rows[0].sandbox_domain_id;
+    await f.persistence.adoptDomain(domain);
+    expect(
+      (
+        await f.pg.query("select persistence_state from workspaces where id=$1::uuid", [
+          f.identity.workspaceId,
+        ])
+      ).rows[0].persistence_state,
+    ).toBe("uninitialized");
+    expect(f.prepare).not.toHaveBeenCalled();
+    f.setState({ known: true, exists: false });
+    await f.pg.query(
+      "update workspaces set persistence_state='adoption_pending' where id=$1::uuid",
+      [f.identity.workspaceId],
+    );
+    await expect(f.persistence.adoptDomain(domain)).rejects.toThrow(
+      "Previously initialized Workspace bytes are unavailable",
+    );
+  } finally {
+    await f.close();
+  }
+});

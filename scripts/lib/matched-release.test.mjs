@@ -1,3 +1,4 @@
+import { digest } from "./component-release.mjs";
 import { expect, it } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -72,9 +73,36 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       `localhost:5000/pi-cloud/cubesandbox-tool:${guestIdentity}`,
     ];
     await mkdir(join(root, "evidence"));
+    const baseline = { formatVersion: 1, revision, version: "before", components: {} };
+    const plan = {
+      formatVersion: 1,
+      revision,
+      version,
+      guestIdentity,
+      nativeVersion: version,
+      baselineDigest: digest(baseline),
+      images: catalog,
+      artifacts: references.map((reference, index) => ({
+        artifactId: `artifact-${index}`,
+        reference,
+        action: "build",
+        sourceRevision: revision,
+        inputIdentity: "f".repeat(64),
+      })),
+    };
+    await writeFile(join(root, "baseline.json"), JSON.stringify(baseline));
+    await writeFile(join(root, "release-plan.json"), JSON.stringify(plan));
     await writeFile(
       join(root, "candidate.json"),
-      JSON.stringify({ formatVersion: 1, revision, version, guestIdentity }),
+      JSON.stringify({
+        formatVersion: 2,
+        revision,
+        version,
+        nativeVersion: version,
+        guestIdentity,
+        baselineDigest: digest(baseline),
+        releasePlanDigest: digest(plan),
+      }),
     );
     await writeFile(join(root, "images.json"), JSON.stringify(catalog));
     const report = { path: "report.json" };
@@ -87,6 +115,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       policy: { exceptionPolicy: report },
       images: references.map((reference) => ({
         reference,
+        provenance: { sourceRevision: revision, inputIdentity: "f".repeat(64) },
         imageId: "sha256:" + "b".repeat(64),
         repoDigests: [`${reference}@sha256:${"d".repeat(64)}`],
         sbom: report,
@@ -137,7 +166,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       JSON.stringify({ ...catalog, toolHost: catalog.worker }),
     );
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "shared host artifact",
+      "role catalog differs",
     );
     await writeFile(join(root, "images.json"), JSON.stringify(catalog));
     operatorRevision = "d".repeat(40);
@@ -162,7 +191,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     manifest.images.splice(templateIndex, 1);
     await writeEvidence();
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "four native images",
+      "planned artifacts",
     );
     manifest.images.splice(templateIndex, 0, {
       ...template,
@@ -170,7 +199,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     });
     await writeEvidence();
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "Unscanned image",
+      "absent from the release plan",
     );
     manifest.images[templateIndex] = template;
     await writeEvidence();
@@ -183,7 +212,7 @@ it("checks scanned image identity before any mutation and rejects catalog substi
     await writeFile(join(root, "images.json"), JSON.stringify({ ...catalog, web: catalog.worker }));
     await writeEvidence();
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "14 unique custom artifacts",
+      "absent from the release plan",
     );
     manifest.images[webIndex] = web;
     await writeFile(join(root, "images.json"), JSON.stringify(catalog));
@@ -222,31 +251,17 @@ it("checks scanned image identity before any mutation and rejects catalog substi
       JSON.stringify({ ...catalog, worker: "unscanned:latest" }),
     );
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "Unscanned image",
+      "role catalog differs",
     );
     await writeFile(join(root, "images.json"), JSON.stringify(catalog));
     await writeFile(
-      join(root, "candidate.json"),
-      JSON.stringify({
-        formatVersion: 1,
-        revision,
-        version,
-        guestIdentity,
-        retainedDeploymentDigest: "c".repeat(64),
-      }),
+      join(root, "release-plan.json"),
+      JSON.stringify({ ...plan, version: "tampered" }),
     );
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(
-      "Obsolete retained-runtime candidate",
+      "Release plan changed",
     );
-    await writeFile(
-      join(root, "candidate.json"),
-      JSON.stringify({
-        formatVersion: 1,
-        revision,
-        version,
-        guestIdentity,
-      }),
-    );
+    await writeFile(join(root, "release-plan.json"), JSON.stringify(plan));
     manifest.images[0].policyVulnerabilities.HIGH.fixable = 1;
     await writeEvidence();
     await expect(verifyMatchedRelease({ directory: root, root, capture })).rejects.toThrow(

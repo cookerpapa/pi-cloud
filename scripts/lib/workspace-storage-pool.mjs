@@ -16,7 +16,10 @@ import {
   unlink,
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { readPrivateRuntimeFile } from "./runtime-file-policy.mjs";
+import {
+  readPrivateRuntimeFile,
+  writeRuntimeFileAtomically as atomicFile,
+} from "./runtime-file-policy.mjs";
 
 const GiB = 1024 ** 3;
 const MAX_STATE_BYTES = 16 * 1024 ** 2;
@@ -171,24 +174,6 @@ async function syncDirectory(path) {
     await fd.sync();
   } finally {
     await fd.close();
-  }
-}
-async function atomicFile(path, body, mode = 0o600) {
-  const temporary = `${path}.new-${randomUUID()}`;
-  const fd = await open(temporary, "wx", mode);
-  try {
-    try {
-      await fd.writeFile(body);
-      await fd.sync();
-    } finally {
-      await fd.close();
-    }
-    await rename(temporary, path);
-    await syncDirectory(dirname(path));
-  } finally {
-    await unlink(temporary).catch((e) => {
-      if (e.code !== "ENOENT") throw e;
-    });
   }
 }
 async function readState(paths) {
@@ -577,8 +562,8 @@ async function installSystemd(paths, state, run, deps, mount) {
     await run("systemctl", ["start", unit]);
   }
 }
-async function quotaSession(paths, state, target, run, deps, work) {
-  if (!state.workspaces.length) return;
+async function quotaSession(paths, state, target, run, deps, work, allowEmpty = false) {
+  if (!state.workspaces.length && !allowEmpty) return;
   const helper = state.helper;
   const token = (
     await readPrivateRuntimeFile(helper.tokenFile, 64 * 1024, "Workspace helper credential")
@@ -638,7 +623,7 @@ async function quotaSession(paths, state, target, run, deps, work) {
       await (deps.delay ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(250);
     }
     if (!ready) throw new Error("Temporary quota helper did not become ready");
-    await work(request);
+    return await work(request);
   } finally {
     await stopHelper(state, run);
   }
@@ -1062,5 +1047,24 @@ export async function growWorkspaceStoragePool(options, deps = {}) {
       poolBytes: state.poolBytes,
       paths,
     };
+  });
+}
+
+/** Reuse the owned helper under the existing cold-operation lock and proof. */
+export async function withVerifiedWorkspaceStorage(options, work) {
+  return withLock(options, {}, async (paths, run) => {
+    await verifyWorkspaceStoragePool(options, { run });
+    const state = await readState(paths);
+    if (state.sourceId !== options.sourceId) throw new Error("Storage source identity changed");
+    await gate(options, { ...state, fresh: false });
+    return quotaSession(
+      paths,
+      { ...state, helper: helperConfiguration(options.quotaHelper) },
+      paths.canonical,
+      run,
+      {},
+      work,
+      true,
+    );
   });
 }

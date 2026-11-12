@@ -1,13 +1,21 @@
+import { writeRuntimeFileAtomically } from "./lib/runtime-file-policy.mjs";
+import { metadataRelease } from "./lib/metadata-release.mjs";
+import { retireWorkspaceRegistrations } from "./lib/retire-workspace-registrations.mjs";
+import { prepareReleasePlan } from "./lib/release-plan.mjs";
 import { nativeComputeRetirement } from "./lib/native-compute-retirement.mjs";
 import { assertBoxLiteEmpty } from "./lib/boxlite-maintenance.mjs";
-import { retireCubeExtensionTables } from "./lib/retire-cube-extension-tables.mjs";
 import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 import { reconcileCubeEgressGateway } from "./lib/cube-egress-release.mjs";
 import { ensureMeteringSecret } from "./lib/metering-secret.mjs";
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { updateProviderRuntimePolicyFile } from "./lib/provider-runtime-policy.mjs";
 import { serializeRelease } from "./lib/release-lock.mjs";
-import { deploymentFromEvidence, digest } from "./lib/component-release.mjs";
+import {
+  deploymentFromEvidence,
+  digest,
+  assertServingComponents,
+  assertMatchedServingComponents,
+} from "./lib/component-release.mjs";
 import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
@@ -26,6 +34,7 @@ import {
   workload,
   serviceAddress,
   kubeconfig,
+  namespace,
 } from "./lib/production-kubernetes.mjs";
 import { createDatabase, runMigrations } from "../packages/database/src/index.ts";
 import { OfficialCubeSandboxRuntimeClient } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
@@ -66,20 +75,21 @@ assert(
 );
 serializeRelease(runtimeDirectory);
 const directory = resolve(path);
-const capture = (command, args) =>
+const capture = (command, args, options = {}) =>
   execFileSync(command, args, {
     cwd: root,
     encoding: "utf8",
     timeout: 30_000,
     maxBuffer: 16 * 1024 * 1024,
+    ...options,
   }).trim();
 const run = (script, args = [], env = process.env) =>
   execFileSync(process.execPath, [script, ...args], { cwd: root, stdio: "inherit", env });
-const environment = (tag) => ({
+const environment = (tag, nativeVersion = tag) => ({
   ...process.env,
   PI_CLOUD_IMAGE_VERSION: tag,
   PI_CLOUD_BUILD_TAG: tag,
-  PI_CLOUD_CUBE_IMAGE_VERSION: tag,
+  PI_CLOUD_CUBE_IMAGE_VERSION: nativeVersion,
   PI_CLOUD_IMAGE_CATALOG: resolve(directory, "images.json"),
   PI_CLOUD_CUBE_RELEASE_DIRECTORY: directory,
 });
@@ -100,6 +110,48 @@ const upstreamArgs = [
   "--evidence",
   resolve(directory, "cube-upstream-images.json"),
 ];
+const componentOperator = (args) =>
+  execFileSync(
+    process.execPath,
+    ["--import", "tsx", "scripts/run-component-release.mjs", ...args],
+    { cwd: root, stdio: "inherit", env: process.env },
+  );
+if (action !== "prepare") {
+  const prepared = JSON.parse(await readFile(resolve(directory, "candidate.json"), "utf8"));
+  if (prepared.scope) {
+    componentOperator([action, directory]);
+    process.exit(0);
+  }
+  if (prepared.mode === "metadata") {
+    console.log(
+      JSON.stringify(
+        await metadataRelease({
+          action,
+          directory,
+          root,
+          capture,
+          kubectl,
+          kubeconfig,
+          namespace,
+          deploymentPath: resolve(runtimeDirectory, "k3s/deployment.json"),
+        }),
+      ),
+    );
+    process.exit(0);
+  }
+  if (prepared.mode === "none") {
+    const plan = JSON.parse(await readFile(resolve(directory, "release-plan.json"), "utf8"));
+    const baseline = JSON.parse(
+      await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+    );
+    assert.equal(digest(plan), prepared.releasePlanDigest);
+    assert.equal(digest(baseline), plan.baselineDigest);
+    assert.equal(capture("git", ["rev-parse", "HEAD"]), plan.revision);
+    assert.equal(capture("git", ["status", "--porcelain", "--untracked-files=all"]), "");
+    console.log(JSON.stringify({ mode: "none", servingChanges: false }));
+    process.exit(0);
+  }
+}
 if (action === "prepare") {
   assert(
     /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(version ?? ""),
@@ -115,31 +167,110 @@ if (action === "prepare") {
     !Object.values(serving).some((reference) => reference.endsWith(`:${version}`)),
     "Use a new tag; serving image tags cannot be rebuilt in place",
   );
+  const baseline = JSON.parse(
+    await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+  );
+  const plan = await prepareReleasePlan({
+    root,
+    baseline,
+    images: serving,
+    revision: capture("git", ["rev-parse", "HEAD"]),
+    version,
+  });
+  console.log(
+    JSON.stringify({
+      releasePlan: {
+        mode: plan.mode,
+        scope: plan.scope,
+        roles: plan.roles,
+        drainRoles: plan.drainRoles,
+        build: plan.artifacts.filter((a) => a.action !== "reuse").map((a) => a.name),
+        reuse: plan.artifacts.filter((a) => a.action === "reuse").map((a) => a.name),
+        maintenance: plan.maintenance,
+      },
+    }),
+  );
+  if (plan.mode === "metadata") {
+    console.log(
+      JSON.stringify(
+        await metadataRelease({
+          action,
+          directory,
+          root,
+          plan,
+          baseline,
+          capture,
+          kubectl,
+          kubeconfig,
+          namespace,
+          deploymentPath: resolve(runtimeDirectory, "k3s/deployment.json"),
+        }),
+      ),
+    );
+    process.exit(0);
+  }
+  if (plan.mode === "none") {
+    await mkdir(directory, { mode: 0o700 });
+    await writeFile(resolve(directory, "release-plan.json"), JSON.stringify(plan, null, 2) + "\n", {
+      mode: 0o600,
+    });
+    await writeFile(
+      resolve(directory, "candidate.json"),
+      JSON.stringify({ formatVersion: 2, mode: "none", releasePlanDigest: digest(plan) }) + "\n",
+      { mode: 0o600 },
+    );
+    console.log(JSON.stringify({ mode: "none", servingChanges: false }));
+    process.exit(0);
+  }
+  if (plan.mode === "component") {
+    componentOperator(["prepare", plan.scope, directory, version]);
+    await writeFile(resolve(directory, "release-plan.json"), JSON.stringify(plan, null, 2) + "\n", {
+      mode: 0o600,
+    });
+    process.exit(0);
+  }
   const disk = await statfs(root);
   assert(disk.bavail / disk.blocks >= 0.15, "Reclaim build cache before preparing the release");
   await mkdir(directory, { mode: 0o700 });
-  const env = environment(version);
+  const env = environment(version, plan.nativeVersion);
+  await writeFile(resolve(directory, "release-plan.json"), JSON.stringify(plan, null, 2) + "\n", {
+    mode: 0o600,
+    flag: "wx",
+  });
+  await writeFile(resolve(directory, "images.json"), JSON.stringify(plan.images, null, 2) + "\n", {
+    mode: 0o600,
+    flag: "wx",
+  });
+  await writeFile(resolve(directory, "baseline.json"), JSON.stringify(baseline, null, 2) + "\n", {
+    mode: 0o600,
+    flag: "wx",
+  });
   await ensureMeteringSecret(runtimeDirectory);
   phase("render complete pinned Cube chart against preserved installed overrides");
-  await prepareCubeUpgradePlan(cubeOptions(version));
+  await prepareCubeUpgradePlan(cubeOptions(plan.nativeVersion));
   phase("capture immutable upstream Cube dependency images");
   run("scripts/prefetch-cubesandbox-images.mjs", [...upstreamArgs, "--prepare-only"], env);
-  const cubeReleasePlanDigest = await finalizeCubeUpgradePlan(cubeOptions(version));
+  const cubeReleasePlanDigest = await finalizeCubeUpgradePlan(cubeOptions(plan.nativeVersion));
   phase("check declared Docker build inputs");
   run("scripts/check-docker-build-context.mjs");
-  {
-    phase("build guest (no registration)");
+  if (plan.artifacts.some((a) => a.name === "cubesandbox-tool" && a.action === "build")) {
+    phase("build changed guest (no registration)");
     run("scripts/build-cube-tool-image.mjs", [], env);
-    phase("build native Cube");
+  }
+  if (plan.artifacts.some((a) => a.action === "pull")) {
+    phase("prepare changed pinned native images");
     run("scripts/build-cubesandbox-runtime.mjs", [], env);
-    phase("build matched Cube API authorization callback and egress gateway");
-    for (const component of ["cube-api-authorizer", "cube-egress-gateway"])
+  }
+  for (const artifact of plan.artifacts.filter((a) => a.action === "build" && a.dockerfile)) {
+    phase(`build ${artifact.name}`);
+    if (artifact.key) run("scripts/production-kubernetes.mjs", ["build", artifact.key], env);
+    else
       execFileSync(
         "docker",
         [
           "build",
           "--file",
-          `packages/${component}/Dockerfile`,
+          artifact.dockerfile,
           "--network=host",
           "--build-arg",
           "HTTP_PROXY",
@@ -150,28 +281,36 @@ if (action === "prepare") {
           "--build-arg",
           `PI_CLOUD_VERSION=${version}`,
           "--build-arg",
-          `PI_CLOUD_REVISION=${capture("git", ["rev-parse", "HEAD"])}`,
+          `PI_CLOUD_REVISION=${plan.revision}`,
           "--tag",
-          `pi-cloud/${component}:${version}`,
+          artifact.reference,
           ".",
         ],
         { cwd: root, stdio: "inherit", env },
       );
   }
-  phase("build application candidate");
-  run("scripts/production-kubernetes.mjs", ["build"], env);
   phase("scan matched artifacts");
   run(
     "scripts/generate-release-evidence.mjs",
-    ["--image-version", version, "--output-dir", resolve(directory, "evidence")],
+    [
+      "--image-version",
+      version,
+      "--output-dir",
+      resolve(directory, "evidence"),
+      "--plan",
+      resolve(directory, "release-plan.json"),
+    ],
     env,
   );
   await writeFile(
     resolve(directory, "candidate.json"),
     JSON.stringify(
       {
-        formatVersion: 1,
+        formatVersion: 2,
         version,
+        nativeVersion: plan.nativeVersion,
+        releasePlanDigest: digest(plan),
+        baselineDigest: plan.baselineDigest,
         revision: capture("git", ["rev-parse", "HEAD"]),
         guestIdentity: await guestBuildIdentity(root),
         cubeReleasePlanDigest,
@@ -191,14 +330,56 @@ assert.match(
   /^[0-9a-f]{64}$/,
   "Prepare the complete native chart/image release plan",
 );
+const recordedDeployment = JSON.parse(
+  await readFile(resolve(runtimeDirectory, "k3s/deployment.json"), "utf8"),
+);
+if (
+  recordedDeployment.releasePlanDigest === candidate.releasePlanDigest &&
+  recordedDeployment.version === candidate.version
+) {
+  assertServingComponents(
+    recordedDeployment,
+    JSON.parse(kubectl(["get", "deployments,statefulsets,daemonsets", "-o", "json"])).items,
+  );
+  phase("recorded candidate is already applied; no runtime mutation");
+  process.exit(0);
+}
+assert.equal(
+  digest(recordedDeployment),
+  candidate.baselineDigest,
+  "Another publication changed the matched baseline",
+);
+let applyReceipt;
+try {
+  applyReceipt = JSON.parse(await readFile(resolve(directory, "apply-started.json"), "utf8"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
+const liveWorkloads = JSON.parse(
+  kubectl(["get", "deployments,statefulsets,daemonsets", "-o", "json"]),
+).items;
+if (applyReceipt) {
+  assert.equal(
+    applyReceipt.releasePlanDigest,
+    candidate.releasePlanDigest,
+    "Another candidate owns partial publication",
+  );
+  assert.equal(applyReceipt.baselineDigest, candidate.baselineDigest);
+  assertMatchedServingComponents(recordedDeployment, candidate.plan, liveWorkloads);
+} else assertServingComponents(recordedDeployment, liveWorkloads);
 const storageWasStopped = await nativeStorageMaintenancePending(directory);
+const physicalMaintenance = candidate.plan.maintenance.physical;
+assert(
+  !storageWasStopped || physicalMaintenance,
+  "An interrupted physical handoff requires its original maintenance plan",
+);
 if (action !== "apply") {
   assert(
     !storageWasStopped,
     "Resume the recorded cold storage operation with apply before native preflight",
   );
   await verifyCubeUpgradePlan({
-    ...cubeOptions(candidate.version),
+    ...cubeOptions(candidate.nativeVersion),
     expectedDigest: candidate.cubeReleasePlanDigest,
   });
   phase("matched artifact and full native chart preflight passed");
@@ -215,36 +396,52 @@ if (storageWasStopped) {
 }
 await resumeColdMatchedStorage({ directory, runtimeDirectory, root, kubectl });
 await verifyCubeUpgradePlan({
-  ...cubeOptions(candidate.version),
+  ...cubeOptions(candidate.nativeVersion),
   expectedDigest: candidate.cubeReleasePlanDigest,
 });
 phase("matched artifact and full native chart preflight passed before writer/VM drain");
-const env = environment(candidate.version);
+const env = environment(candidate.version, candidate.nativeVersion);
 rootCommand(
   process.execPath,
   [resolve(root, "scripts/prefetch-cubesandbox-images.mjs"), ...upstreamArgs],
   root,
 );
 // Import content before touching live workloads. Existing tags/catalog stay intact.
-run("scripts/production-kubernetes.mjs", ["import-images"], env);
-{
+const cachedImages = new Set(
+  capture("/usr/local/bin/k3s", ["ctr", "images", "ls", "-q"]).split("\n"),
+);
+const canonicalImage = (reference) =>
+  /[.:]/.test(reference.split("/")[0]) || reference.startsWith("localhost/")
+    ? reference
+    : `docker.io/${reference}`;
+const needsImport = (artifact) =>
+  artifact.action !== "reuse" || !cachedImages.has(canonicalImage(artifact.reference));
+run(
+  "scripts/production-kubernetes.mjs",
+  [
+    "import-images",
+    "--only",
+    ...candidate.plan.artifacts.filter((a) => a.key && needsImport(a)).map((a) => a.reference),
+  ],
+  env,
+);
+const nativeImports = candidate.plan.artifacts.filter(
+  (a) =>
+    [
+      "cube-api",
+      "cube-master",
+      "cube-templatecenter",
+      "cubelet",
+      "cube-api-authorizer",
+      "cube-egress-gateway",
+    ].includes(a.name) && needsImport(a),
+);
+if (nativeImports.length) {
   const archive = resolve(directory, "native-images.tar");
   try {
     execFileSync(
       "docker",
-      [
-        "save",
-        "--output",
-        archive,
-        ...[
-          "cube-api",
-          "cube-master",
-          "cube-templatecenter",
-          "cubelet",
-          "cube-api-authorizer",
-          "cube-egress-gateway",
-        ].map((name) => `pi-cloud/${name}:${candidate.version}`),
-      ],
+      ["save", "--output", archive, ...nativeImports.map((a) => a.reference)],
       { stdio: "inherit" },
     );
     execFileSync(
@@ -373,7 +570,15 @@ try {
       "Native inventory must cover every node and prove compute absence before storage handoff",
     );
   };
-  if (!storageWasStopped) assertNativeInventory(false);
+  if (physicalMaintenance && !storageWasStopped) assertNativeInventory(false);
+  if (!applyReceipt)
+    await writeRuntimeFileAtomically(
+      resolve(directory, "apply-started.json"),
+      JSON.stringify({
+        releasePlanDigest: candidate.releasePlanDigest,
+        baselineDigest: candidate.baselineDigest,
+      }) + "\n",
+    );
   phase("drain application writers");
   for (const service of services.slice(0, 3)) await stop(service);
   const deadline = performance.now() + 120_000;
@@ -391,7 +596,7 @@ try {
   // identities stay in PG; no normal VM shutdown is mistaken for user Release.
   await assertDrained(true, false);
   await ensureMeteringSecret(runtimeDirectory);
-  {
+  if (physicalMaintenance) {
     const repository = createComputeRetirementRepository(database);
     const assertProcessesStopped = async () =>
       assertRetirementProcessesStopped({
@@ -459,8 +664,16 @@ try {
     await restoreNative();
     assertCubeKvmAvailable({ kubectl });
   }
-  await assertDrained(true);
-  phase("matched Cube, template and application cutover");
+  await assertDrained(true, physicalMaintenance);
+  if (!physicalMaintenance && candidate.plan.maintenance.schemaChanged) {
+    cutover = true;
+    await runMigrations(database, "up");
+  }
+  phase(
+    physicalMaintenance
+      ? "matched native and application cutover"
+      : "application cutover preserving native compute and storage",
+  );
   // Existing installations do not rerun init-production. Reconcile the same
   // deployment-owned provider policy before the matched provider Pod starts.
   await ensureMeteringSecret(runtimeDirectory);
@@ -471,27 +684,58 @@ try {
       "set",
       "image",
       "deployment/pi-cloud-cube-api-authorizer",
-      `authorizer=pi-cloud/cube-api-authorizer:${candidate.version}`,
+      `authorizer=${candidate.plan.artifacts.find((a) => a.name === "cube-api-authorizer").reference}`,
     ]);
     kubectl(["rollout", "status", "deployment/pi-cloud-cube-api-authorizer", "--timeout=120s"], {
       timeout: 125000,
     });
-    run("scripts/reconcile-cubesandbox-release.mjs", [], env);
-    run("scripts/configure-tool-completion.mjs", [], env);
-    kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
-    phase("wait for native Cube node registration after Pod rollout");
-    await waitForCubeNodeReadiness({ kubectl });
-    await retireCubeExtensionTables({
-      kubectl,
-      tag: candidate.version,
-      assertDrained: () => assertDrained(true),
-      assertNativeAbsent: () => assertNativeInventory(true),
-    });
-    run(
-      "scripts/register-cubesandbox-tool-template.mjs",
-      ["--prepared-image-id", candidate.guestImageId],
-      env,
-    );
+    if (physicalMaintenance) {
+      run("scripts/reconcile-cubesandbox-release.mjs", [], env);
+      run("scripts/configure-tool-completion.mjs", [], env);
+      kubectl(["apply", "-f", "deploy/cubesandbox/template-registry.yaml"]);
+      phase("wait for native Cube node registration after Pod rollout");
+      await waitForCubeNodeReadiness({ kubectl });
+      if (candidate.plan.maintenance.storage) {
+        const native = new OfficialCubeSandboxRuntimeClient({
+          ...nativeCubeLifecycleOptions(),
+          apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
+          apiKey: (
+            await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
+          ).trim(),
+          proxyNodeIp: cluster.proxy.host,
+          proxyPort: cluster.proxy.port,
+          proxyScheme: "http",
+          sandboxDomain: cluster.sandboxDomain,
+          egressProxyIp: "10.255.255.254",
+        });
+        try {
+          const receipt = await retireWorkspaceRegistrations({
+            database,
+            native,
+            root,
+            kubectl,
+            domainId: runtimeEnvironment().PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001",
+            assertQuiescent: async () => {
+              await assertDrained(true);
+              assertNativeInventory(true);
+              await assertBoxLiteEmpty({ kubectl });
+            },
+          });
+          await writeFile(
+            resolve(directory, "workspace-registration-retirement.json"),
+            JSON.stringify(receipt) + "\n",
+            { mode: 0o600 },
+          );
+        } finally {
+          await native.close();
+        }
+      }
+      run(
+        "scripts/register-cubesandbox-tool-template.mjs",
+        ["--prepared-image-id", candidate.guestImageId],
+        env,
+      );
+    }
   }
   const { deployPlatform } = await import("./production-kubernetes.mjs");
   await deployPlatform({
@@ -501,7 +745,10 @@ try {
   // The gateway needs the restarted Control Plane's configuration before it can
   // become Ready, so reconcile it after application readiness, before recording
   // successful matched publication. Its image was built/imported/scanned above.
-  reconcileCubeEgressGateway(kubectl, `pi-cloud/cube-egress-gateway:${candidate.version}`);
+  reconcileCubeEgressGateway(
+    kubectl,
+    candidate.plan.artifacts.find((a) => a.name === "cube-egress-gateway").reference,
+  );
   const installed = resolve(runtimeDirectory, "k3s/images.json");
   await writeFile(installed + ".candidate", await readFile(resolve(directory, "images.json")), {
     mode: 0o600,
@@ -522,6 +769,7 @@ try {
     evidenceDirectory: resolve(directory, "evidence"),
     revision: candidate.revision,
     version: candidate.version,
+    catalog: JSON.parse(await readFile(resolve(directory, "images.json"), "utf8")),
     catalogRevision: digest(modelConfig),
     contracts: {
       schema: schema.rows[0].name,
@@ -540,12 +788,18 @@ try {
     await readFile(resolve(directory, "cube-upstream-images.json"), "utf8"),
   );
   deployment.operatorRevision = candidate.operatorRevision;
-  const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
-  await writeFile(deploymentPath + ".next", JSON.stringify(deployment, null, 2) + "\n", {
-    mode: 0o600,
-  });
-  await rename(deploymentPath + ".next", deploymentPath);
+  deployment.releasePlanDigest = candidate.releasePlanDigest;
   run("scripts/configure-provider-websockets.mjs");
+  const deploymentPath = resolve(runtimeDirectory, "k3s/deployment.json");
+  await writeRuntimeFileAtomically(deploymentPath, JSON.stringify(deployment, null, 2) + "\n");
+  await writeFile(
+    resolve(directory, "applied.json"),
+    JSON.stringify({
+      releasePlanDigest: candidate.releasePlanDigest,
+      deploymentDigest: digest(deployment),
+    }) + "\n",
+    { mode: 0o600 },
+  );
   phase("deployed; run maintained acceptance before user traffic");
 } catch (error) {
   // Pre-cutover failures restore exactly the observed replica counts. A partial

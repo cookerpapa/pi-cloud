@@ -1,5 +1,11 @@
 # Scoped component releases
 
+ADR-0320 shares source classification between CI and manual preflight. The
+matched entry point also delegates isolated supported scopes to this operator.
+Root Chart metadata is separate from Pod rollout inputs, and unchanged image
+provenance stays attached to its original source. Unknown/shared changes retain
+the matched path; this is not arbitrary incompatible version routing.
+
 [ADR-0267](adr/0267-scoped-releases-and-model-catalog.md) provides narrow provider,
 catalog and presentation-only Web operations. Install its initial schema 196 / Worker contract with the
 [matched procedure](MATCHED_RELEASE.md) first. Accounts and credentials survive.
@@ -90,8 +96,8 @@ key. This scope cannot install the new role into an older combined deployment.
 The explicit `session-decoder` scope only accepts runtime changes in
 `packages/runtime-core/src/session-log-envelope.ts` to correct decoding of the
 already installed envelope contract. Changes to wire meaning, producer behavior,
-ownership or storage still require matched publication. Hosted CI retains its
-full gate for this file; this is an operator-selected repair scope.
+ownership or storage still require matched publication. Hosted CI and manual
+publication now use this same reviewed scope.
 
 ```sh
 npm run release:component -- prepare session-decoder /private/releases/decoder-1 decoder-1
@@ -222,7 +228,7 @@ Worker drain or VM release runs. Existing browser connections can reconnect thro
 the usual SSE recovery; reload an open page to load new assets. Verify the relevant
 live browser flow and retain the original backend/VM identities in release evidence.
 API client, protocol, dependency, proxy or chart changes require matched release.
-Hosted CI remains conservative for Web changes and uses its full gate.
+Hosted CI now uses the same reviewed Web scope and builds only the Web image.
 
 ## Catalog
 

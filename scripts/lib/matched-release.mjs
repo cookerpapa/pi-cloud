@@ -8,7 +8,7 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { guestBuildIdentity } from "./guest-build-identity.mjs";
-import { assertOperatorRevisionChanges } from "./component-release.mjs";
+import { assertOperatorRevisionChanges, digest } from "./component-release.mjs";
 
 /** A failed control record can retain its Workspace after confirmed compute retirement. */
 export function matchedMachineDrained(machine) {
@@ -28,11 +28,17 @@ export function matchedMachineDrained(machine) {
 export async function verifyMatchedRelease({ directory, root, capture, currentGuestTemplate }) {
   const candidate = JSON.parse(await readFile(resolve(directory, "candidate.json"), "utf8"));
   const evidence = JSON.parse(await readFile(resolve(directory, "evidence/manifest.json"), "utf8"));
-  assert.equal(candidate.formatVersion, 1, "Unsupported release candidate");
-  assert(
-    !Object.hasOwn(candidate, "retainedDeploymentDigest"),
-    "Obsolete retained-runtime candidate; prepare a full matched release",
-  );
+  assert.equal(candidate.formatVersion, 2, "Prepare a current planned release candidate");
+  const plan = JSON.parse(await readFile(resolve(directory, "release-plan.json"), "utf8"));
+  const baseline = JSON.parse(await readFile(resolve(directory, "baseline.json"), "utf8"));
+  assert.equal(digest(plan), candidate.releasePlanDigest, "Release plan changed");
+  assert.equal(digest(baseline), candidate.baselineDigest, "Release baseline changed");
+  assert.equal(plan.baselineDigest, candidate.baselineDigest);
+  assert.equal(plan.formatVersion, 1);
+  assert.equal(plan.revision, candidate.revision);
+  assert.equal(plan.version, candidate.version);
+  assert.equal(plan.nativeVersion, candidate.nativeVersion);
+  assert.equal(plan.guestIdentity, candidate.guestIdentity);
   const operatorRevision = (await capture("git", ["rev-parse", "HEAD"])).trim();
   assert.match(candidate.revision, /^[0-9a-f]{40}$/, "Invalid artifact source revision");
   assert.match(operatorRevision, /^[0-9a-f]{40}$/, "Invalid operator source revision");
@@ -63,8 +69,8 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
   assert.equal(evidence.imageVersion, candidate.version);
   assert.equal(
     evidence.images.length,
-    14,
-    "Matched release requires seven apps, four native images, Cube authorizer/egress and one guest",
+    plan.artifacts.length,
+    "Release evidence does not cover its planned artifacts",
   );
   assert.equal(evidence.scope, "all", "Release evidence scope differs from publication");
   const checksums = (await readFile(resolve(directory, "evidence/SHA256SUMS"), "utf8"))
@@ -122,6 +128,20 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
         "Stock Cube exception policy changed",
       );
     }
+    const artifact = plan.artifacts.find((a) => a.reference === image.reference);
+    assert(artifact, "An image is absent from the release plan");
+    assert.equal(
+      image.provenance?.sourceRevision,
+      artifact.sourceRevision,
+      "Image source differs from its plan",
+    );
+    assert.equal(
+      image.provenance?.inputIdentity,
+      artifact.inputIdentity,
+      "Image input proof differs from its plan",
+    );
+    if (artifact.action === "reuse")
+      assert.equal(image.imageId, artifact.expectedImageId, "Reused image bytes changed");
     references.set(image.reference, image.imageId);
   }
   const catalog = JSON.parse(await readFile(resolve(directory, "images.json"), "utf8"));
@@ -129,27 +149,15 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
     Object.keys(catalog).sort().join(","),
     "controlPlane,metering,provider,relay,sessionApi,sessionRuntime,sshGateway,toolCompletion,toolHost,volumeGateway,web,worker",
   );
-  for (const role of ["sessionRuntime", "sessionApi", "toolCompletion", "metering", "toolHost"])
-    assert.equal(
-      catalog[role],
-      catalog.controlPlane,
-      `Matched ${role} must use the scanned shared host artifact`,
-    );
-  const requiredReferences = new Set([
-    ...Object.values(catalog),
-    ...[
-      "cube-api",
-      "cube-master",
-      "cube-templatecenter",
-      "cubelet",
-      "cube-api-authorizer",
-      "cube-egress-gateway",
-    ].map((name) => `pi-cloud/${name}:${candidate.version}`),
-    `localhost:5000/pi-cloud/cubesandbox-tool:${candidate.guestIdentity}`,
-  ]);
-  // Official chart auxiliaries have their own pinned inventory. They cannot
-  // fill a missing custom artifact or compensate for an aliased application.
-  assert.equal(requiredReferences.size, 14, "Matched release requires 14 unique custom artifacts");
+  assert.deepEqual(catalog, plan.images, "Serving role catalog differs from its release plan");
+  const requiredReferences = new Set(plan.artifacts.map((a) => a.reference));
+  assert.equal(
+    requiredReferences.size,
+    plan.artifacts.length,
+    "Duplicate planned artifact reference",
+  );
+  for (const reference of Object.values(catalog))
+    assert(requiredReferences.has(reference), "Unplanned serving artifact");
   for (const reference of requiredReferences)
     assert(references.has(reference), "Unscanned image in release catalog");
   const guest = evidence.images.find(
@@ -161,5 +169,5 @@ export async function verifyMatchedRelease({ directory, root, capture, currentGu
       guest.repoDigests?.some((ref) => ref.endsWith(`@${currentGuestTemplate.imageDigest}`)),
       "Scanned guest does not match the template selected for reuse",
     );
-  return { ...candidate, operatorRevision, guestImageId: guest?.imageId };
+  return { ...candidate, plan, baseline, operatorRevision, guestImageId: guest?.imageId };
 }

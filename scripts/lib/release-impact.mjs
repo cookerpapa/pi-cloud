@@ -1,5 +1,16 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/lib/runtime-file-policy.mjs",
+  "scripts/lib/boxlite-backend-maintenance.mjs",
+  "scripts/lib/metadata-release.mjs",
+  "scripts/lib/retire-workspace-registrations.mjs",
+  "scripts/lib/adopt-workspace-persistence.mjs",
+  "scripts/lib/native-volume-attachment-state.mjs",
+  "scripts/lib/native-volume-attachment-state.test.mjs",
+  "scripts/run-workspace-storage-pool.mjs",
+  "scripts/lib/workspace-storage-pool.mjs",
+  "scripts/lib/workspace-storage-pool-guard.mjs",
+  "scripts/lib/release-plan.mjs",
   "scripts/run-boxlite-release.mjs",
   "scripts/run-boxlite-node-live-check.mjs",
   "scripts/run-live-boxlite-lifecycle-check.mjs",
@@ -30,7 +41,6 @@ export const operatorSources = new Set([
   "scripts/check-helm-platform.mjs",
   "scripts/run-matched-release.mjs",
   "scripts/lib/matched-release.mjs",
-  "scripts/lib/retire-cube-extension-tables.mjs",
   "scripts/production-kubernetes.mjs",
   "scripts/lib/cube-workspace-contract.mjs",
   "scripts/lib/cube-workspace-contract.test.mjs",
@@ -53,7 +63,6 @@ export const operatorSources = new Set([
   "scripts/lib/model-catalog-probe.mjs",
   "scripts/generate-release-evidence.mjs",
   "scripts/lib/release-image-evidence.mjs",
-  "scripts/lib/tool-host-release.mjs", // Removed by the common helper; allow its deletion in old baselines.
   "scripts/lib/runtime-component-release.mjs",
   "scripts/lib/tool-host-activation.mjs",
   "scripts/lib/owned-runtime-outage.mjs",
@@ -173,7 +182,7 @@ export const imageReleaseTargets = {
   },
 };
 export const modelTests = new Set([
-  "scripts/lib/tool-host-release.test.mjs",
+  "scripts/lib/release-plan.test.mjs",
   "scripts/lib/runtime-component-release.test.mjs",
   "scripts/lib/owned-runtime-outage.test.mjs",
   "scripts/lib/component-release.test.mjs",
@@ -191,6 +200,58 @@ export const modelTests = new Set([
   "packages/web-ui/test/model-settings-menu.test.ts",
   "packages/web-ui/test/api.test.ts",
 ]);
+/** One reviewed allowlist shared by CI classification and manual preflight. */
+export function permitsScopedSource(scope, file, runtimeInputs) {
+  return (
+    operatorSources.has(file) ||
+    // BoxLite node code is independently published and is absent from the
+    // ordinary role images. Require the selected Docker input closure to
+    // prove that absence; never excuse shared provider/protocol changes.
+    (runtimeInputs instanceof Set &&
+      file.startsWith("packages/boxlite-node/src/") &&
+      !runtimeInputs.has(file)) ||
+    (scope === "tool-host" && ordinaryControlToolSource(file)) ||
+    (scope === "tool-host" &&
+      file === "deploy/helm/pi-cloud-platform/templates/network-policy.yaml") ||
+    (scope === "session-decoder" && file === sessionDecoderSource) ||
+    (scope === "session-retention" && file === sessionRetentionSource) ||
+    (scope === "worker-bootstrap" &&
+      (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
+    (scope === "session-api" && sessionApiSource(file)) ||
+    (scope === "web" &&
+      (file === "packages/web-ui/index.html" ||
+        /^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
+        [
+          "session-view.ts",
+          "conversation-presentation.ts",
+          "virtual-conversation-rows.ts",
+          "composer-submission.ts",
+          "submission-presentation.ts",
+        ].some((name) => file === `packages/web-ui/src/${name}`) ||
+        [
+          "scripts/production-kubernetes.mjs",
+          "scripts/run-browser-presentation-check.mjs",
+          "scripts/run-browser-queue-check.mjs",
+          "scripts/run-skill-market-browser-check.mjs",
+          "scripts/run-live-skill-market-browser-check.mjs",
+          "scripts/run-live-browser-ui-check.mjs",
+          "scripts/run-live-queue-input-check.mjs",
+          "scripts/run-live-release-acceptance.mjs",
+          "scripts/run-live-review-repair-check.mjs",
+          "scripts/run-live-development-environment-check.mjs",
+          "scripts/run-live-missing-directory-check.mjs",
+        ].includes(file))) ||
+    (["provider", "catalog"].includes(scope) &&
+      (file === catalogSeed || file === "deploy/provider-gateway/Dockerfile")) ||
+    (scope === "provider" && providerSources.has(file)) ||
+    file === "README.md" ||
+    file === "AGENTS.md" ||
+    file.startsWith("docs/") ||
+    /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
+    /^scripts\/lib\/.*\.test\.mjs$/.test(file)
+  );
+}
+
 const fullImages = [
   ["control-plane", "packages/control-plane/Dockerfile"],
   ["supervisor-host", "packages/supervisor-host/Dockerfile"],
@@ -203,36 +264,30 @@ const fullImages = [
   ["cubesandbox-tool", "deploy/cubesandbox/Dockerfile.tool"],
   ["cli-proxy-api", "deploy/provider-gateway/Dockerfile"],
 ].map(([image, dockerfile]) => ({ image, dockerfile }));
-const documentation = (file) => file === "README.md" || file.startsWith("docs/");
+const documentation = (file) =>
+  file === "README.md" || file === "AGENTS.md" || file.startsWith("docs/");
 export function releaseImpact(files) {
   const full = () => ({ scope: "full", matrix: { include: fullImages }, buildImages: true });
   if (!files?.length) return full();
   if (files.every(documentation))
     return { scope: "docs", matrix: { include: [] }, buildImages: false };
-  if (
-    files.some(sessionApiSource) &&
-    files.every(
-      (file) =>
-        sessionApiSource(file) ||
-        documentation(file) ||
-        operatorSources.has(file) ||
-        /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
-        /^scripts\/lib\/.*\.test\.mjs$/.test(file),
-    )
-  )
-    return { scope: "session-api", matrix: { include: [fullImages[0]] }, buildImages: true };
-  if (
-    files.some(ordinaryControlToolSource) &&
-    files.every(
-      (file) =>
-        ordinaryControlToolSource(file) ||
-        documentation(file) ||
-        operatorSources.has(file) ||
-        /(?:^|\/)test\/.*\.test\.[cm]?tsx?$/.test(file) ||
-        /^scripts\/lib\/.*\.test\.mjs$/.test(file),
-    )
-  )
-    return { scope: "tool-host", matrix: { include: [fullImages[0]] }, buildImages: true };
+  const sources = {
+    "session-api": sessionApiSource,
+    "tool-host": ordinaryControlToolSource,
+    "worker-bootstrap": (file) => file === workerBootstrapSource,
+    "session-retention": (file) => file === sessionRetentionSource,
+    "session-decoder": (file) => file === sessionDecoderSource,
+    web: (file) => file.startsWith("packages/web-ui/src/") || file === "packages/web-ui/index.html",
+  };
+  for (const [scope, source] of Object.entries(sources)) {
+    if (!files.some(source) || !files.every((file) => permitsScopedSource(scope, file))) continue;
+    const target = imageReleaseTargets[scope];
+    return {
+      scope,
+      matrix: { include: fullImages.filter((image) => image.image === target.imageName) },
+      buildImages: true,
+    };
+  }
   if (
     files.some(
       (file) =>
