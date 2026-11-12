@@ -187,6 +187,7 @@ export const imageReleaseTargets = {
   },
 };
 export const modelTests = new Set([
+  "scripts/lib/runtime-file-policy.test.mjs",
   "scripts/lib/cube-upstream-images.test.mjs",
   "scripts/lib/image-import-cli.test.mjs",
   "scripts/lib/cube-upgrade-plan.test.mjs",

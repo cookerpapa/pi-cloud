@@ -20,7 +20,7 @@ import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-c
 import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile, rename, rm, statfs, access } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm, statfs, access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { guestBuildIdentity } from "./lib/guest-build-identity.mjs";
@@ -750,10 +750,7 @@ try {
     candidate.plan.artifacts.find((a) => a.name === "cube-egress-gateway").reference,
   );
   const installed = resolve(runtimeDirectory, "k3s/images.json");
-  await writeFile(installed + ".candidate", await readFile(resolve(directory, "images.json")), {
-    mode: 0o600,
-  });
-  await rename(installed + ".candidate", installed);
+  await writeRuntimeFileAtomically(installed, await readFile(resolve(directory, "images.json")));
   const modelConfig = parseModelCatalogConfiguration(
     JSON.parse(
       JSON.parse(kubectl(["get", "configmap", "pi-cloud-model-catalog", "-o", "json"])).data[

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, chmod, symlink } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, chmod, chown, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -6,9 +6,24 @@ import {
   readPrivateRuntimeFile,
   runtimeSecretMode,
   unsafeRuntimeFileMode,
+  writeRuntimeFileAtomically,
 } from "./runtime-file-policy.mjs";
 
 const roots = [];
+
+it("keeps an existing operator's ownership across atomic privileged replacement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pma-catalog-owner-"));
+  roots.push(root);
+  const path = join(root, "catalog.json");
+  await writeFile(path, "old", { mode: 0o600 });
+  if (process.geteuid?.() === 0) await chown(path, 1000, 1000);
+  const before = await stat(path);
+  await writeRuntimeFileAtomically(path, "new");
+  const after = await stat(path);
+  expect([after.uid, after.gid, after.mode & 0o777]).toEqual([before.uid, before.gid, 0o600]);
+  expect(after.ino).not.toBe(before.ino);
+  await expect(readPrivateRuntimeFile(path, 128, "Catalog")).resolves.toBe("new");
+});
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });

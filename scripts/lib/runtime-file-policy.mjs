@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, rename, unlink } from "node:fs/promises";
+import { open, rename, unlink, lstat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { basename, dirname } from "node:path";
 
@@ -45,10 +45,18 @@ export async function readPrivateRuntimeFile(path, maximumBytes, label) {
 
 /** Flush the prepared file and its rename before an operator issues effects. */
 export async function writeRuntimeFileAtomically(path, body, mode = 0o600) {
+  const previous = await lstat(path).catch((error) => {
+    if (error.code !== "ENOENT") throw error;
+    return undefined;
+  });
+  if (previous && !previous.isFile()) throw new Error("Runtime target is not a regular file");
   const temporary = `${path}.new-${randomUUID()}`;
   const file = await open(temporary, "wx", mode);
   try {
     try {
+      // A privileged rollout must not make an existing operator-owned catalog
+      // unreadable by replacing it with a root-owned inode.
+      if (previous) await file.chown(previous.uid, previous.gid);
       await file.writeFile(body);
       await file.sync();
     } finally {
