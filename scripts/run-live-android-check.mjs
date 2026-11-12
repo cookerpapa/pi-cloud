@@ -78,6 +78,17 @@ try {
     .where("id", "=", targetId)
     .executeTakeFirstOrThrow();
   assert.equal(target.bound_session_id, null, "Never take over a user's bound device");
+  const admin = new PiCloudApi(
+    (path, init) => fetch(new URL(String(path), baseUrl), init),
+    (await readFile(runtimeDirectory + "/secrets/api-token", "utf8")).trim(),
+  );
+  const registered = await admin.registerResourceDevice({
+    targetId,
+    name: target.name,
+    endpoint: target.endpoint,
+  });
+  assert.equal(registered.targetId, targetId);
+  report.existingDeviceRegistrationConfirmed = true;
   const user = await db
     .selectFrom("users")
     .select("id")
@@ -234,6 +245,31 @@ try {
       false,
     );
     report.phoneEntryRemoved = true;
+    await page.evaluate(
+      "[...document.querySelectorAll('button')].find(b=>/资源管理|Resources/.test(b.textContent)).click()",
+    );
+    await page.waitFor("document.querySelector('.resource-devices')");
+    const row = `[...document.querySelectorAll('.resource-devices .admin-settings-row')].find(r=>r.querySelector('span').textContent.includes(${JSON.stringify(target.name)}))`;
+    await page.waitFor(
+      `${row}?.querySelector('button') && !${row}.querySelector('button').disabled`,
+    );
+    await page.evaluate(`${row}.querySelector('button').click()`);
+    await until(
+      async () => !(await api.getSessionExecutionTarget(session.sessionId)).target,
+      "Resource-page device disconnection",
+    );
+    await page.waitFor(`${row}?.querySelector('select')`);
+    await page.evaluate(
+      `(() => { const select=${row}.querySelector('select'); select.value=${JSON.stringify(session.sessionId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
+    );
+    await page.waitFor(`!${row}.querySelector('button').disabled`);
+    await page.evaluate(`${row}.querySelector('button').click()`);
+    await until(
+      async () =>
+        (await api.getSessionExecutionTarget(session.sessionId)).target?.targetId === targetId,
+      "Resource-page device connection",
+    );
+    report.resourcePageDeviceBinding = true;
   });
   const screen = await api.readExecutionTargetScreen(targetId);
   assert(screen.bytes.byteLength > 0 && screen.contentType.startsWith("image/"));
