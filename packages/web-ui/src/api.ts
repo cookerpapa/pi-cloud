@@ -1038,12 +1038,13 @@ export class PiCloudApi {
   async createProject(
     name: string,
     source: WorkspaceSourceRequest = { kind: "empty" },
+    backend?: import("@pi-cloud/protocol").ResourceBackendSelection,
   ): Promise<ProjectResource> {
     return parseProjectResource(
       await request(
         this.#fetch,
         "/v1/projects",
-        jsonRequest({ name, source }),
+        jsonRequest({ name, source, ...(backend ? { backend } : {}) }),
         this.#authorizationToken,
       ),
     );

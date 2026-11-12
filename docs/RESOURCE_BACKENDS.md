@@ -30,6 +30,10 @@ rechecks the selected backend/template/profile and records its Workspace
 selection. Internal callers that omit a selection retain automatic domain
 placement; a default template is frozen before its first native allocation.
 
+Both `POST /v1/projects` (an elastic Workspace) and development-machine creation
+accept the same explicit `backend: { id, templateId, revision }` selection. The
+Resources page exposes it for both paths.
+
 The public request is `PUT /v1/resource-backends` for the platform administrator.
 `GET /v1/resource-backends` is the user catalog; `/admin` also lists disabled
 backends. `configuration.templates` can contain multiple named environments.

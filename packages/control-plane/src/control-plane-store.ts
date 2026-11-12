@@ -1,3 +1,4 @@
+import { selectedBackendTemplate } from "./resource-backend-selection.ts";
 import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
 import { runRetainsResource } from "./resource-admission.ts";
 import { readConversationEnvironment } from "./conversation-environment.ts";
@@ -163,6 +164,7 @@ type TenantRuntimePolicy = {
 
 type AssignedSandboxDomain = {
   id: string;
+  templateId?: string;
 };
 
 function isPostgresConstraint(error: unknown, constraint: string): boolean {
@@ -329,7 +331,7 @@ export class ControlPlaneStore {
           .values({ id: projectId, tenant_id: this.#tenantId, name: request.name })
           .returning(["id", "name", "created_at"])
           .executeTakeFirstOrThrow();
-        const sandboxDomain = await this.#assignSandboxDomain(transaction);
+        const sandboxDomain = await this.#assignSandboxDomain(transaction, request.backend);
         await transaction
           .insertInto("workspaces")
           .values({
@@ -337,6 +339,7 @@ export class ControlPlaneStore {
             tenant_id: this.#tenantId,
             project_id: project.id,
             sandbox_domain_id: sandboxDomain.id,
+            backend_template_id: sandboxDomain.templateId ?? null,
             capacity_bytes: defaultWorkspaceCapacityBytes(),
             seed_kind: source.kind,
           })
@@ -391,11 +394,21 @@ export class ControlPlaneStore {
     }
   }
 
-  async #assignSandboxDomain(transaction: Transaction<Database>): Promise<AssignedSandboxDomain> {
+  async #assignSandboxDomain(
+    transaction: Transaction<Database>,
+    selection?: import("@pi-cloud/protocol").ResourceBackendSelection,
+  ): Promise<AssignedSandboxDomain> {
     const domain = await transaction
       .selectFrom("sandbox_domains")
-      .select(["id", "assigned_workspaces", "maximum_active_sandboxes"])
+      .select([
+        "id",
+        "assigned_workspaces",
+        "maximum_active_sandboxes",
+        "backend_revision",
+        "backend_catalog",
+      ])
       .where("state", "=", "active")
+      .$if(selection !== undefined, (q) => q.where("id", "=", selection!.id))
       .orderBy(
         sql<number>`(${sql.ref("assigned_workspaces")}::numeric / ${sql.ref("maximum_active_sandboxes")})`,
         "asc",
@@ -410,6 +423,7 @@ export class ControlPlaneStore {
         "No active Sandbox Domain is available",
       );
     }
+    const template = selectedBackendTemplate(domain, selection);
     const updated = await transaction
       .updateTable("sandbox_domains")
       .set({
@@ -425,7 +439,7 @@ export class ControlPlaneStore {
         "Sandbox Domain changed while assigning the Workspace",
       );
     }
-    return { id: domain.id };
+    return { id: domain.id, ...(template ? { templateId: template.id } : {}) };
   }
 
   async createSession(

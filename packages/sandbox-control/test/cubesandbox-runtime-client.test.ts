@@ -40,7 +40,25 @@ let executionStatus = 200;
 let loseExecutionReply = false;
 let tcpResponse: ServerResponse | undefined;
 let tcpConnectMode: "connected" | "refused" | "unreachable" | "pending" = "connected";
+const templateId = "tpl-" + "a".repeat(24);
+function templateDetails() {
+  return {
+    templateID: templateId,
+    status: "READY",
+    createRequest: {
+      containers: [
+        {
+          resources: { cpu: "1000m", mem: "2048Mi" },
+          volume_mounts: [{ name: "cube_rootfs_rw", container_path: "/" }],
+        },
+      ],
+      volumes: [{ name: "cube_rootfs_rw", volume_source: { empty_dir: { size_limit: "8G" } } }],
+    },
+  };
+}
+let currentTemplate = templateDetails();
 beforeEach(() => {
+  currentTemplate = templateDetails();
   loseCreateReply = false;
   createEffects = 0;
   createReceipt = undefined;
@@ -128,6 +146,11 @@ beforeAll(async () => {
         body,
       });
       const host = request.headers.host ?? "";
+      if (request.url === `/templates/${templateId}`) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify(currentTemplate));
+        return;
+      }
       if (request.url === "/health") {
         response.writeHead(200, { "content-type": "application/json" });
         response.end('{"status":"ok"}');
@@ -1013,3 +1036,25 @@ it.each(["delete", "wrong-id", "running"] as const)(
     }
   },
 );
+
+it("verifies the actual normalized native template and its writable root without starting a VM", async () => {
+  const client = executionClient();
+  try {
+    await expect(client.verifyTemplate(templateId)).resolves.toEqual({
+      cpuCount: 1,
+      memoryMiB: 2048,
+      systemDiskGiB: 8,
+    });
+    currentTemplate.createRequest.containers[0]!.volume_mounts[0]!.name = "missing-root";
+    await expect(client.verifyTemplate(templateId)).rejects.toThrow("Native root volume");
+    currentTemplate = templateDetails();
+    currentTemplate.createRequest.containers[0]!.resources.mem = "unknown";
+    await expect(client.verifyTemplate(templateId)).rejects.toThrow("capacity");
+    expect(createEffects).toBe(0);
+    expect(observed.every((r) => r.method === "GET" && r.path === `/templates/${templateId}`)).toBe(
+      true,
+    );
+  } finally {
+    await client.close();
+  }
+});

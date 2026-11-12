@@ -1,3 +1,4 @@
+import { ResourceBackendSelectionSchema } from "./resource-backend.ts";
 import { WorkspaceCapacityGiBSchema } from "./workspace-capacity.ts";
 import { ScheduledOriginSchema } from "./scheduled-origin.ts";
 import { CompactStateSchema } from "./conversation-commands.ts";
@@ -347,6 +348,7 @@ export const CreateProjectRequestSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 256 }),
     source: Type.Optional(WorkspaceSourceRequestSchema),
+    backend: Type.Optional(ResourceBackendSelectionSchema),
   },
   { additionalProperties: false },
 );
@@ -621,16 +623,7 @@ export const CreateDevelopmentEnvironmentRequestSchema = Type.Object(
       pattern: "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$",
     }),
     profileKey: DevelopmentEnvironmentProfileKeySchema,
-    backend: Type.Optional(
-      Type.Object(
-        {
-          id: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_.-]+$" }),
-          templateId: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_.-]+$" }),
-          revision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
-        },
-        { additionalProperties: false },
-      ),
-    ),
+    backend: Type.Optional(ResourceBackendSelectionSchema),
     workspaceCapacityGiB: Type.Optional(WorkspaceCapacityGiBSchema),
   },
   { additionalProperties: false },
@@ -1273,7 +1266,11 @@ export function parseCreateProjectRequest(value: unknown): CreateProjectRequest 
       "Project name must contain a non-whitespace character",
     );
   }
-  return { name, source: request.source ?? { kind: "empty" } };
+  return {
+    name,
+    source: request.source ?? { kind: "empty" },
+    ...(request.backend ? { backend: request.backend } : {}),
+  };
 }
 
 export function parseTenantIdentityResource(value: unknown): TenantIdentityResource {

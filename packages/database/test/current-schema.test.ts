@@ -23,9 +23,34 @@ describe("current PiCloud schema", () => {
       const firstMigrationPass = await sql<{ name: string }>`
         select name from kysely_migration order by name
       `.execute(database);
-      expect(firstMigrationPass.rows).toHaveLength(219);
+      expect(firstMigrationPass.rows).toHaveLength(222);
       expect(firstMigrationPass.rows[0]?.name).toBe("001_initial_control_plane");
-      expect(firstMigrationPass.rows.at(-1)?.name).toBe("219_executor_reply_continuation");
+      expect(firstMigrationPass.rows.at(-1)?.name).toBe("222_resource_backends");
+      const storageColumns = await sql<{
+        column_name: string;
+      }>`select column_name from information_schema.columns where table_name='workspaces'`.execute(
+        database,
+      );
+      expect(storageColumns.rows.map((r) => r.column_name)).toEqual(
+        expect.arrayContaining([
+          "persistence_state",
+          "persistence_generation",
+          "backend_template_id",
+        ]),
+      );
+      const backendColumns = await sql<{
+        column_name: string;
+      }>`select column_name from information_schema.columns where table_name='sandbox_domains'`.execute(
+        database,
+      );
+      expect(backendColumns.rows.map((r) => r.column_name)).toEqual(
+        expect.arrayContaining([
+          "backend_revision",
+          "backend_catalog",
+          "backend_configuration",
+          "storage_pool_id",
+        ]),
+      );
       const terminalColumns = await sql<{ column_name: string }>`select column_name
         from information_schema.columns where table_name='workspace_terminal_sessions'`.execute(
         database,

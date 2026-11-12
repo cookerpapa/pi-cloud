@@ -519,11 +519,23 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     if (value.templateID !== templateId || value.status !== "READY")
       throw new Error("Native template is not ready");
     const request = record(value.createRequest, "Native template request");
-    const overrides = record(request.container_overrides, "Native template overrides");
-    const resources = record(overrides.resources, "Native template resources");
+    if (
+      !Array.isArray(request.containers) ||
+      request.containers.length !== 1 ||
+      !Array.isArray(request.volumes)
+    )
+      throw new Error("Native fixed Guest template layout is unsupported");
+    const container = record(request.containers[0], "Native template container");
+    const resources = record(container.resources, "Native template resources");
+    const mounts = Array.isArray(container.volume_mounts) ? container.volume_mounts : [];
+    const roots = mounts.filter((m: { container_path?: unknown }) => m?.container_path === "/");
+    if (roots.length !== 1) throw new Error("Native template root mount is unavailable");
+    const root = request.volumes.find((v: { name?: unknown }) => v?.name === roots[0].name);
+    const source = record(record(root, "Native root volume").volume_source, "Native root source");
+    const writable = record(source.empty_dir, "Native writable root");
     const cpu = /^(\d+)m$/.exec(String(resources.cpu));
     const memory = /^(\d+)(Mi|Gi)$/.exec(String(resources.mem));
-    const disk = /^(\d+)G(?:i)?$/.exec(String(request.writable_layer_size));
+    const disk = /^(\d+)G(?:i)?$/.exec(String(writable.size_limit));
     const result = {
       cpuCount: cpu ? Number(cpu[1]) / 1000 : 0,
       memoryMiB: memory ? Number(memory[1]) * (memory[2] === "Gi" ? 1024 : 1) : 0,

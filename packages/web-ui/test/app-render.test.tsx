@@ -217,7 +217,8 @@ describe("product chat experience", () => {
     // verifies API-supplied choices, including a model unknown to this build.
     expect(markup).toContain("当前路由版本 读取中");
     expect(markup).toContain("<select></select>");
-    expect(markup).not.toContain("<option");
+    expect(markup).toContain("BoxLite");
+    expect(markup).toContain("Android");
     expect(markup).toContain("CubeSandbox 公网代理");
     expect(markup).not.toContain("最近对话");
     expect(markup).toContain('href="https://models.example.test/management.html"');

@@ -12,6 +12,12 @@ const profiles = Type.Object(
   { additionalProperties: false },
 );
 
+export const ResourceBackendSelectionSchema = Type.Object(
+  { id, templateId: id, revision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }) },
+  { additionalProperties: false },
+);
+export type ResourceBackendSelection = Static<typeof ResourceBackendSelectionSchema>;
+
 export const ResourceBackendConfigurationSchema = Type.Object(
   {
     storage: Type.Object(

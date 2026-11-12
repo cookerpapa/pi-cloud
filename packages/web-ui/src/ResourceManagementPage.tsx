@@ -68,6 +68,7 @@ export function ResourceManagementPage({
   const [tab, setTab] = useState<"workspaces" | "environments" | "source-control">(initialTab);
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [machineName, setMachineName] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [backend, setBackend] =
     useState<import("@pi-cloud/protocol").CreateDevelopmentEnvironmentRequest["backend"]>();
   const [storageGiB, setStorageGiB] = useState(32);
@@ -228,6 +229,39 @@ export function ResourceManagementPage({
         )}
         {tab === "workspaces" ? (
           <section className="product-resource-section">
+            <form
+              className="product-resource-create"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!backend || !workspaceName.trim() || busy) return;
+                void mutate(async () => {
+                  const created = await api.createProject(
+                    workspaceName.trim(),
+                    { kind: "empty" },
+                    backend,
+                  );
+                  setWorkspaceName("");
+                  return created;
+                });
+              }}
+            >
+              <ResourceBackendPicker api={api} value={backend} onChange={setBackend} />
+              <label>
+                <span>{language === "zh-CN" ? "Workspace 名称" : "Workspace name"}</span>
+                <input
+                  value={workspaceName}
+                  maxLength={256}
+                  onChange={(e) => setWorkspaceName(e.target.value)}
+                />
+              </label>
+              <button
+                className="product-primary-button"
+                type="submit"
+                disabled={busy || !backend || !workspaceName.trim()}
+              >
+                {language === "zh-CN" ? "创建 Workspace" : "Create Workspace"}
+              </button>
+            </form>
             {elasticWorkspaces.length === 0 ? (
               <div className="product-resource-empty">{t("resource.emptyWorkspace")}</div>
             ) : (

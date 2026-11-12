@@ -1,3 +1,4 @@
+import { registeredBackend } from "./lib/registered-backend-fixture.mjs";
 /** Owned stock-SDK/Volume check. Verifies real host/Guest UID identity,
  * pause/resume, API replacement and positive physical cleanup. */
 import assert from "node:assert/strict";
@@ -59,10 +60,11 @@ try {
   });
   const base = "http://127.0.0.1:" + runtimeEnvironment().PI_CLOUD_HTTP_PORT;
   api = new PiCloudApi((path, init) => fetch(new URL(path, base), init), tenant.credential.token);
+  const backend = await registeredBackend(api, "boxlite");
   report.tenantId = tenant.tenantId;
   report.tenantSlug = tenant.tenantSlug;
   await save();
-  project = await api.createProject("Owned Box node acceptance", { kind: "empty" });
+  project = await api.createProject("Owned Box node acceptance", { kind: "empty" }, backend);
   report.workspaceId = project.workspaceId;
   await save();
   const volumeId = workspaceVolumeId({

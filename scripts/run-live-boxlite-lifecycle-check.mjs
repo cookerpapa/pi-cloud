@@ -1,3 +1,4 @@
+import { registeredBackend } from "./lib/registered-backend-fixture.mjs";
 /** Product/API lifecycle checks for the explicit BoxLite backend.
  * Advances only one owned, retired Session's idle deadline as a clock fixture.
  * It does not claim to measure an actual 30-minute wall-clock interval. */
@@ -20,7 +21,6 @@ import {
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
 assert.equal(process.env.PI_CLOUD_LIVE_BOXLITE_CHECK, "1");
-assert.equal(runtimeEnvironment().PI_CLOUD_SANDBOX_PROVIDER, "boxlite");
 const output = resolve(process.argv[2]);
 await mkdir(dirname(output), { recursive: true, mode: 0o700 });
 const secret = async (name) =>
@@ -35,15 +35,6 @@ const client = new BoxLiteRuntimeClient({
   url: `http://${host}:8091`,
   nodeId: cfg.nodeId,
   token: await secret("sandbox-control-token"),
-  volumes: {
-    ensureVolume() {
-      throw Error("Not a storage allocator");
-    },
-    deleteVolume() {
-      throw Error("Not a storage deleter");
-    },
-    async close() {},
-  },
 });
 const base = "http://127.0.0.1:" + runtimeEnvironment().PI_CLOUD_HTTP_PORT;
 const report = {
@@ -192,10 +183,13 @@ try {
   report.tenantSlug = tenant.tenantSlug;
   await save();
   api = new PiCloudApi((path, init) => fetch(new URL(path, base), init), tenant.credential.token);
+  const backend = await registeredBackend(api, "boxlite");
   machine = await api.createDevelopmentEnvironment(
     "BoxLite lifecycle",
     "starter",
     newIdempotencyKey("box-machine"),
+    undefined,
+    backend,
   );
   report.machineId = machine.environmentId;
   report.machineWorkspaceId = machine.workspaceId;
@@ -271,7 +265,7 @@ try {
   }, "dedicated Volume purge");
   report.checks.push("dedicated-release-and-exact-volume-cleanup");
   await save();
-  project = await api.createProject("BoxLite idle expiry", { kind: "empty" });
+  project = await api.createProject("BoxLite idle expiry", { kind: "empty" }, backend);
   session = await api.createSession(
     project.projectId,
     project.workspaceId,

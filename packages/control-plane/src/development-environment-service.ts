@@ -1,3 +1,4 @@
+import { selectedBackendTemplate } from "./resource-backend-selection.ts";
 import { defaultWorkspaceCapacityBytes } from "./workspace-capacity-service.ts";
 import { workspaceCapacityBytes } from "@pi-cloud/protocol";
 import { createHash, randomUUID } from "node:crypto";
@@ -448,20 +449,7 @@ export class DevelopmentEnvironmentService {
           "No active Sandbox Domain is available",
         );
       }
-      const catalog = domain.backend_catalog as unknown as
-        import("@pi-cloud/protocol").ResourceBackendResource | null;
-      const selectedTemplate = request.backend
-        ? catalog?.templates.find((t) => t.id === request.backend!.templateId)
-        : catalog?.templates[0];
-      if (
-        request.backend &&
-        (Number(domain.backend_revision) !== request.backend.revision ||
-          !selectedTemplate?.profiles.includes(request.profileKey))
-      )
-        throw new ControlPlaneStoreError(
-          "conflict",
-          "Resource backend or template changed; refresh the selection",
-        );
+      const selectedTemplate = selectedBackendTemplate(domain, request.backend, request.profileKey);
       await transaction
         .updateTable("sandbox_domains")
         .set({

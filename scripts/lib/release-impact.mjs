@@ -1,5 +1,7 @@
 export const catalogSeed = "deploy/helm/pi-cloud-platform/files/model-catalog.json";
 export const operatorSources = new Set([
+  "scripts/run-live-resource-backend-check.mjs",
+  "scripts/lib/registered-backend-fixture.mjs",
   "scripts/lib/runtime-file-policy.mjs",
   "scripts/lib/boxlite-backend-maintenance.mjs",
   "scripts/lib/metadata-release.mjs",
