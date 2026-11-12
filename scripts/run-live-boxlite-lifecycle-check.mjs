@@ -142,7 +142,7 @@ async function terminal(command) {
     });
   });
 }
-async function run(command) {
+async function run(command, marker) {
   active = await api.acceptTurn(
     session.sessionId,
     `只调用一次 bash，command 精确使用以下 JSON 字符串：${JSON.stringify(command)}。不要搜索、委派或其他工具。完成后简短回复。`,
@@ -161,6 +161,18 @@ async function run(command) {
     600000,
   );
   assert.equal(settled.state, "completed", JSON.stringify(settled.failure));
+  const turn = (await api.getConversation(session.sessionId)).turns.find(
+    (t) => t.runId === active.runId,
+  );
+  const tools = turn?.transcript?.items.filter((item) => item.kind === "tool") ?? [];
+  assert.equal(tools.length, 1, "Expected exactly one requested Bash operation");
+  assert.equal(tools[0].toolName, "bash");
+  assert.equal(tools[0].status, "completed", "Bash failed despite a completed outer Run");
+  assert.equal(tools[0].input.command, command, "Model changed the verification command");
+  assert(
+    JSON.stringify(tools[0].output).includes(marker),
+    "Tool did not confirm the expected file content",
+  );
   await until(
     async () =>
       !(
@@ -309,7 +321,10 @@ try {
   );
   assert.match(upload.path, /^\/workspace\/[A-Za-z0-9_./-]+$/);
   report.checks.push("public-upload-without-cube-api");
-  await run("printf 'BOX_EXPIRY_RETAINED' > /workspace/box-expiry-marker; printf BOX_READY");
+  await run(
+    "printf 'BOX_EXPIRY_RETAINED' > /workspace/box-expiry-marker && printf BOX_READY",
+    "BOX_READY",
+  );
   const row = await db
     .selectFrom("workspace_runtimes")
     .selectAll()
@@ -348,7 +363,8 @@ try {
   report.checks.push("platform-deadline-reclaims-stock-boxlite");
   await save();
   await run(
-    `test "$(cat /workspace/box-expiry-marker)" = BOX_EXPIRY_RETAINED; test "$(cat '${upload.path}')" = BOX_UPLOAD_RETAINED; printf BOX_FILES_SURVIVED`,
+    `test "$(cat /workspace/box-expiry-marker)" = BOX_EXPIRY_RETAINED && test "$(cat '${upload.path}')" = BOX_UPLOAD_RETAINED && printf BOX_FILES_SURVIVED`,
+    "BOX_FILES_SURVIVED",
   );
   const next = await db
     .selectFrom("workspace_runtimes")
