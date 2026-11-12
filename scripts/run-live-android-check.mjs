@@ -82,12 +82,14 @@ try {
     (path, init) => fetch(new URL(String(path), baseUrl), init),
     (await readFile(runtimeDirectory + "/secrets/api-token", "utf8")).trim(),
   );
-  const registered = await admin.registerResourceDevice({
+  await admin.registerResourceDevice({
     targetId,
     name: target.name,
     endpoint: target.endpoint,
   });
-  assert.equal(registered.targetId, targetId);
+  assert(
+    (await admin.listExecutionTargets()).targets.some((device) => device.targetId === targetId),
+  );
   report.existingDeviceRegistrationConfirmed = true;
   const user = await db
     .selectFrom("users")
@@ -231,6 +233,9 @@ try {
     await page.send("Network.setExtraHTTPHeaders", {
       headers: { Authorization: "Bearer " + credential.token },
     });
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "localStorage.setItem('pi-cloud:ui-language','zh-CN')",
+    });
     await page.navigate(baseUrl + "/?session=" + session.sessionId);
     await page.waitFor(
       "[...document.querySelectorAll('img')].some(i=>i.complete&&i.naturalWidth>100)",
@@ -247,6 +252,10 @@ try {
     report.phoneEntryRemoved = true;
     await page.evaluate(
       "[...document.querySelectorAll('button')].find(b=>/资源管理|Resources/.test(b.textContent)).click()",
+    );
+    await page.waitFor("document.querySelector('.product-resource-tabs')");
+    await page.evaluate(
+      "[...document.querySelector('.product-resource-tabs').querySelectorAll('button')].find(b=>b.textContent.includes('云端开发机')).click()",
     );
     await page.waitFor("document.querySelector('.resource-devices')");
     const row = `[...document.querySelectorAll('.resource-devices .admin-settings-row')].find(r=>r.querySelector('span').textContent.includes(${JSON.stringify(target.name)}))`;
