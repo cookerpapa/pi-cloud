@@ -241,7 +241,10 @@ try {
     requirements: first.requirements,
     source: { kind: "files", files },
   });
-  await api.installSkill(first.packageId, { ...installed, versionId: second.versionId });
+  const secondInstalled = await api.installSkill(first.packageId, {
+    ...installed,
+    versionId: second.versionId,
+  });
   const latest = await run(
     "再次使用工作区就绪检查 Skill，读取并报告说明末尾的版本标记。本轮不用运行检查脚本。",
     ["skill"],
@@ -274,6 +277,29 @@ try {
     new Set(selections.rows.find((row) => row.run_id === latest.runId).versions),
     new Set([pureVersion.versionId, second.versionId]),
   );
+  const removed = await run(
+    `按顺序调用 skill：先 action=inspect、packageId=${first.packageId}，然后用刚查询到的个人安装 revision 执行 action=uninstall。卸载后，在当前这同一轮里继续用 action=read 读取 workspace-readiness 的 SKILL.md，报告末尾的版本标记。不要删除文件或再次安装。`,
+    ["skill"],
+  );
+  const removedSample = report.cases.find((sample) => sample.runId === removed.runId);
+  assert(removedSample.skillCalls.some((call) => call.action === "uninstall"));
+  assert(
+    removedSample.skillCalls.findIndex((call) => call.action === "read") >
+      removedSample.skillCalls.findIndex((call) => call.action === "uninstall"),
+  );
+  const removedReplies = nativeMessages(
+    await nativeHistory(db, { tenantId: tenant.tenantId, runId: removed.runId }),
+  ).filter((message) => message.role === "toolResult" && message.toolName === "skill");
+  assert(
+    removedReplies.some((message) => JSON.stringify(message.content).includes("SKILL_VERSION_TWO")),
+    "Personal uninstall changed the current Run's frozen Skill selection",
+  );
+  const retained = (await api.listSkills()).packages.find(
+    (pack) => pack.packageId === first.packageId,
+  );
+  assert(retained && retained.versions.length === 2, "Uninstall removed immutable Skill versions");
+  assert.equal(retained.installations.filter((item) => item.scope.kind === "personal").length, 0);
+  report.personalUninstall = { runId: removed.runId, frozenSelectionRetained: true };
   const publishedName = `agent-workflow-${randomUUID().slice(0, 8)}`;
   const published = await run(
     `在 /workspace/skills/${publishedName} 创建一个 Skill：SKILL.md 使用 name: ${publishedName}，description 写清楚用于展示已验证的工作流；配套 scripts/check.mjs 仅打印 AGENT_SKILL_SCRIPT_OK。先运行这个脚本验证，再用 publish_skill 将目录分享到组织。不要替任何人安装，不要复制已有Skill。`,
@@ -295,6 +321,32 @@ try {
   );
   assert.equal(repeated.versions.length, 1);
   assert.equal(repeated.versions[0].versionId, authored.versions[0].versionId);
+  const nextCatalog = await db
+    .selectFrom("run_skill_catalogs")
+    .select("versions")
+    .where("run_id", "=", published.runId)
+    .executeTakeFirstOrThrow();
+  assert(
+    !nextCatalog.versions.includes(second.versionId),
+    "Uninstalled Skill remained in the next Run",
+  );
+  const reinstalled = await api.installSkill(first.packageId, {
+    scope: { kind: "personal" },
+    versionId: second.versionId,
+    enabled: true,
+    revision: null,
+  });
+  assert(BigInt(reinstalled.revision) > BigInt(secondInstalled.revision));
+  await assert.rejects(
+    api.uninstallSkill(first.packageId, secondInstalled),
+    (error) => error.status === 409,
+  );
+  const currentInstallation = (await api.listSkills()).packages
+    .find((pack) => pack.packageId === first.packageId)
+    .installations.find((item) => item.scope.kind === "personal");
+  assert.equal(currentInstallation.revision, reinstalled.revision);
+  report.personalUninstall.nextRunExcluded = true;
+  report.personalUninstall.reinstallRejectsStaleRevision = true;
   report.agentPublication = {
     runId: published.runId,
     packageId: authored.packageId,

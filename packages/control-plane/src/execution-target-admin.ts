@@ -2,7 +2,7 @@ import { registerResourceDevice } from "./execution-target-registration.ts";
 import { readFile } from "node:fs/promises";
 import { createDatabase } from "@pi-cloud/database/client";
 import { sql } from "kysely";
-import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
+import { HttpExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 
 /** Operator-only provisioning. No public URL registration or phone lifecycle API. */
 async function main() {

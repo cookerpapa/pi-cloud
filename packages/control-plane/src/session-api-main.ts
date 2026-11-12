@@ -10,7 +10,7 @@ import { SessionEventHub } from "@pi-cloud/runtime-core/session-event-hub";
 import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-outbox";
 import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control/client";
-import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
+import { HttpExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 import { configuredImageAttachments } from "@pi-cloud/session-attachments";
 import { createControlPlaneApplication } from "./application.ts";
 import { loadSessionApiConfig } from "./production-config.ts";

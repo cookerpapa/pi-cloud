@@ -26,6 +26,16 @@ is required merely for a narrower package boundary. Dependency/asset checks must
 cover dynamic imports, native modules, Guest inputs and shutdown paths, not just
 a static bundle's unused-code elimination.
 
+The maintained image-closure check also inspects all ten Node role entrypoints
+with the lockfile-pinned esbuild. It records imported and contributing source
+separately, plus external/native imports; narrow API and ordinary Tool consumers
+must not import provider assembly through a server barrel. An optional
+`PI_CLOUD_ROLE_CLOSURE_REPORT` path saves the full source manifest. Docker COPY
+identities in the release plan remain authoritative for artifact inputs, and
+actual image boot/live acceptance covers runtime assets and external dependencies.
+The six host roles retain shared build layers and independent serving references;
+splitting them into six new images is not required for scoped replacement.
+
 Validate role startup with unrelated fields absent, required fields invalid,
 actual assembly/failure cleanup and the rendered environment/mounts. Verify the
 Worker image without Control Plane/accounting code before retiring those build

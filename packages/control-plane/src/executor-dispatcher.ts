@@ -1,5 +1,8 @@
 import { type KafkaToolDispatchRecord } from "@pi-cloud/runtime-core/kafka-accepted-fact-consumer";
-import { ExecutorTransportFailure, type ExecutorTransport } from "@pi-cloud/sandbox-control";
+import {
+  ExecutorTransportFailure,
+  type ExecutorTransport,
+} from "@pi-cloud/sandbox-control/executor-transport";
 import { type ToolReply } from "@pi-cloud/event-log";
 import { type AcceptedExecutorToolCommand } from "@pi-cloud/protocol";
 import { ExecutionBindingView, executionBinding } from "./execution-target-service.ts";

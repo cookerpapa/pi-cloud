@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkRoleSourceClosure } from "./lib/role-source-closure.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const packagesDirectory = resolve(repositoryRoot, "packages");
@@ -167,3 +168,4 @@ for (const dockerfilePath of dockerfileCandidates) {
 process.stdout.write(
   `supervisor_image_closure_passed workspaces=${String(closure.size)} root=${rootName} dockerfiles=${String(verifiedDockerfiles)} copy_sources=${String(verifiedCopySources)}\n`,
 );
+await checkRoleSourceClosure(repositoryRoot, process.env.PI_CLOUD_ROLE_CLOSURE_REPORT);

@@ -10,7 +10,7 @@ import {
   type ExecutorBinding,
   type SessionControlChange,
 } from "@pi-cloud/protocol";
-import type { ExecutorTransport } from "@pi-cloud/sandbox-control";
+import type { ExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 import { ControlPlaneStoreError } from "./control-plane-store-error.ts";
 import { kafkaProducerLane } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 

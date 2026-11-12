@@ -35,7 +35,7 @@ HTTPS completion path. There is no automatic provider fallback or phone picker.
   Forks keep the source Workspace, directory and stable development-machine
   binding. Files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
-  Persistent Workspace files, browser tooling, terminals, SSH and application previews.
+  Workspace files, browser tooling, terminals, SSH and application previews.
 - **Attachments:** long text pastes become editable text files. Uploaded originals
   stay with the conversation in object storage; Workspace copies support normal
   file/shell tools. History originals can be viewed, downloaded and reused.

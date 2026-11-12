@@ -5,7 +5,7 @@ import {
   parseRegisterResourceDevice,
   parseUuidPathParameter,
 } from "@pi-cloud/protocol";
-import type { ExecutorTransport } from "@pi-cloud/sandbox-control";
+import type { ExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 
 /** Registers an existing device executor. It creates no emulator, disk or Linux Workspace. */
 export async function registerResourceDevice(

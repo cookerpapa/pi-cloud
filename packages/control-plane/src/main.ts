@@ -1,5 +1,5 @@
 import { registerResourceDevice } from "./execution-target-registration.ts";
-import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
+import { HttpExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import Fastify from "fastify";

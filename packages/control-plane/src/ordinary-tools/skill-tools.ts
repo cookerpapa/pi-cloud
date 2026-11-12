@@ -11,7 +11,8 @@ import {
 import type { RegisteredControlTool } from "../control-tool-registry.ts";
 import type { AcceptedControlToolCommand } from "@pi-cloud/runtime-core/accepted-fact";
 import { ControlPlaneStoreError } from "../control-plane-store-error.ts";
-import { SandboxControlError, SandboxControlClientError } from "@pi-cloud/sandbox-control";
+import { SandboxControlError } from "@pi-cloud/sandbox-control/provider";
+import { SandboxControlClientError } from "@pi-cloud/sandbox-control/client";
 import type { SkillMarketService } from "../skill-market-service.ts";
 
 const string = { type: "string" };

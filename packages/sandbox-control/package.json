@@ -7,6 +7,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/sandbox-control-client.ts",
+    "./executor-transport": "./src/executor-transport.ts",
+    "./execution": "./src/sandbox-execution.ts",
+    "./provider": "./src/sandbox-provider.ts",
     "./runtime": "./src/sandbox-control-runtime.ts",
     "./session-runtime": "./src/sandbox-session-runtime.ts",
     "./dispatch": "./src/tool-command-dispatcher.ts",

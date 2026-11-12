@@ -19,6 +19,10 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   narrow execution client, and check the actual Worker assembly in its image.
   Dependency/context checks, type checking and five lifecycle tests pass.
 - [ ] #37: verify the built Worker and finish role-input integration with #33.
+- [x] #37 source follow-up: narrow client imports keep provider assembly out of
+  API and ordinary Tool-host startup. The maintained closure gate records ten
+  role entrypoints; 16 affected tests and type checks pass. The full 432-case
+  fault matrix, RF3 transport checks and 310 release/helper tests have passed.
 - [x] #30 source: independent Workspace persistence and pool/generation identity;
   BoxLite no longer constructs a Cube client or loads Cube credentials. The mount
   adapter no longer creates/deletes bytes. Schema 221 and ADR-0318 record ownership.
