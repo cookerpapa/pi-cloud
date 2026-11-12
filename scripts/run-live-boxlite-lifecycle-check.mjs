@@ -13,6 +13,7 @@ import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { BoxLiteRuntimeClient } from "../packages/sandbox-control/src/boxlite-runtime-client.ts";
+import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
 import {
   runtimeDirectory,
   runtimeEnvironment,
@@ -300,6 +301,14 @@ try {
   report.sessionId = session.sessionId;
   report.workspaceId = project.workspaceId;
   await save();
+  const upload = await api.uploadWorkspaceFile(
+    session.sessionId,
+    randomUUID(),
+    new Blob(["BOX_UPLOAD_RETAINED"]),
+    "box-upload-marker.txt",
+  );
+  assert.match(upload.path, /^\/workspace\/[A-Za-z0-9_./-]+$/);
+  report.checks.push("public-upload-without-cube-api");
   await run("printf 'BOX_EXPIRY_RETAINED' > /workspace/box-expiry-marker; printf BOX_READY");
   const row = await db
     .selectFrom("workspace_runtimes")
@@ -339,7 +348,7 @@ try {
   report.checks.push("platform-deadline-reclaims-stock-boxlite");
   await save();
   await run(
-    'test "$(cat /workspace/box-expiry-marker)" = BOX_EXPIRY_RETAINED; printf BOX_FILES_SURVIVED',
+    `test "$(cat /workspace/box-expiry-marker)" = BOX_EXPIRY_RETAINED; test "$(cat '${upload.path}')" = BOX_UPLOAD_RETAINED; printf BOX_FILES_SURVIVED`,
   );
   const next = await db
     .selectFrom("workspace_runtimes")
@@ -432,11 +441,17 @@ if (cubeOutage) {
 // product's independently completed VM/Workspace release above.
 try {
   if (tenant && report.physicalCleanupConfirmed) {
-    await purgeOwnedAcceptanceTenant(db, tenant, {
-      delete: async () => {
-        throw Error("Unexpected blob");
-      },
+    const blobs = new S3AttachmentBlobStore({
+      endpoint: `http://${serviceAddress("session-images")}:8333`,
+      region: "us-east-1",
+      bucket: "pi-cloud-session-images",
+      ...JSON.parse(await secret("session-image-s3-credentials.json")),
     });
+    try {
+      await purgeOwnedAcceptanceTenant(db, tenant, blobs);
+    } finally {
+      await blobs.close();
+    }
     report.cleanupConfirmed = true;
   }
 } catch (error) {
