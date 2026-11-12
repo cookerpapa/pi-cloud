@@ -507,6 +507,33 @@ export class OfficialCubeSandboxRuntimeClient implements CubeSandboxRuntimeClien
     const response = await this.#control("/health");
     await response.body?.cancel().catch(() => undefined);
   }
+  async verifyTemplate(
+    templateId: string,
+  ): Promise<{ cpuCount: number; memoryMiB: number; systemDiskGiB: number }> {
+    if (!/^tpl-[a-z0-9]{24}$/.test(templateId)) throw new Error("Invalid native template identity");
+    const response = await this.#control(`/templates/${templateId}`);
+    const value = record(
+      parseJson(await readBoundedResponse(response, 256 * 1024), "Cube template detail"),
+      "Cube template detail",
+    );
+    if (value.templateID !== templateId || value.status !== "READY")
+      throw new Error("Native template is not ready");
+    const request = record(value.createRequest, "Native template request");
+    const overrides = record(request.container_overrides, "Native template overrides");
+    const resources = record(overrides.resources, "Native template resources");
+    const cpu = /^(\d+)m$/.exec(String(resources.cpu));
+    const memory = /^(\d+)(Mi|Gi)$/.exec(String(resources.mem));
+    const disk = /^(\d+)G(?:i)?$/.exec(String(request.writable_layer_size));
+    const result = {
+      cpuCount: cpu ? Number(cpu[1]) / 1000 : 0,
+      memoryMiB: memory ? Number(memory[1]) * (memory[2] === "Gi" ? 1024 : 1) : 0,
+      systemDiskGiB: disk ? Number(disk[1]) : 0,
+    };
+    if (!Object.values(result).every((n) => Number.isSafeInteger(n) && n > 0))
+      throw new Error("Native template capacity is unavailable");
+    return result;
+  }
+
   async ensureVolume(volumeId: string, driver: string): Promise<CubeSandboxVolume> {
     const id = bounded(volumeId, "CubeSandbox volume ID", 128);
     const selectedDriver = bounded(driver, "CubeSandbox volume driver", 64);

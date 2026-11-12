@@ -1,7 +1,7 @@
+import { registerResourceDevice } from "./execution-target-registration.ts";
 import { readFile } from "node:fs/promises";
 import { createDatabase } from "@pi-cloud/database/client";
 import { sql } from "kysely";
-import { ANDROID_CAPABILITIES } from "@pi-cloud/protocol";
 import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
 
 /** Operator-only provisioning. No public URL registration or phone lifecycle API. */
@@ -56,49 +56,7 @@ async function main() {
         );
       });
     } else {
-      if (!name || name.length > 128 || !endpoint) throw Error("Name and endpoint are required");
-      const url = new URL(endpoint);
-      if (
-        !["http:", "https:"].includes(url.protocol) ||
-        url.username ||
-        url.password ||
-        url.search ||
-        url.hash ||
-        url.pathname !== "/"
-      )
-        throw Error("Use an internal endpoint origin");
-      const status = await transport.inspect(url.origin);
-      if (
-        status.targetId !== targetId ||
-        !ANDROID_CAPABILITIES.every((c) => status.capabilities.includes(c))
-      )
-        throw Error("Executor identity/capabilities do not match");
-      await db.transaction().execute(async (tx) => {
-        const prior = await sql<{
-          tenant_id: string;
-          endpoint: string;
-          name: string;
-          capabilities: string[];
-        }>`select tenant_id,endpoint,name,capabilities from execution_targets where id=${targetId}::uuid for update`.execute(
-          tx,
-        );
-        if (prior.rows[0]) {
-          const row = prior.rows[0];
-          if (
-            row.tenant_id !== tenantId ||
-            row.endpoint !== url.origin ||
-            row.name !== name ||
-            JSON.stringify(row.capabilities) !== JSON.stringify(ANDROID_CAPABILITIES)
-          )
-            throw Error(
-              "Existing target configuration differs; unbind and remove it before reconfiguration",
-            );
-          return;
-        }
-        await sql`insert into execution_targets(id,tenant_id,kind,name,endpoint,capabilities) values(${targetId}::uuid,${tenantId}::uuid,'android',${name},${url.origin},${JSON.stringify(ANDROID_CAPABILITIES)}::jsonb)`.execute(
-          tx,
-        );
-      });
+      await registerResourceDevice(db, transport, tenantId, { targetId, name, endpoint });
     }
     console.log(JSON.stringify({ action, targetId }));
   } finally {

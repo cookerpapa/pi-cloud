@@ -1,3 +1,4 @@
+import * as resourceBackends from "./222_resource_backends.ts";
 import * as skillInstallationRevisions from "./220_skill_installation_revisions.ts";
 import * as workspacePersistence from "./221_workspace_persistence.ts";
 import * as retainedUserAttachments from "./208_retained_user_attachments.ts";
@@ -411,6 +412,7 @@ export const migrationProvider: MigrationProvider = {
       "219_executor_reply_continuation": executorReplyContinuation,
       "220_skill_installation_revisions": skillInstallationRevisions,
       "221_workspace_persistence": workspacePersistence,
+      "222_resource_backends": resourceBackends,
     };
   },
 };

@@ -51,10 +51,16 @@ it("separates management lifetime settings from Session execution transport sett
       PI_CLOUD_KAFKA_BROKERS: "kafka.invalid:9092",
       PI_CLOUD_CONTROL_PLANE_URL: "http://runtime.invalid:3000",
       DATABASE_URL_FILE: "/unused/missing-database",
+      PI_CLOUD_CUBESANDBOX_API_KEY_FILE: "/unused/missing-native-key",
+      PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS: "invalid unused templates",
+      PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: "/unused/missing-storage-key",
       PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS: "invalid unused duration",
       PI_CLOUD_ELASTIC_RETENTION_MS: "invalid unused duration",
     });
     expect(execution.kafkaBrokers).toEqual(["kafka.invalid:9092"]);
+    expect(execution).not.toHaveProperty("cubeSandbox");
+    expect(execution).not.toHaveProperty("storage");
+    expect(execution).not.toHaveProperty("webProxy");
     expect(execution).not.toHaveProperty("ownershipLeaseMs");
     expect(execution).not.toHaveProperty("elasticRetentionMs");
     expect(execution).not.toHaveProperty("databaseNotificationUrl");

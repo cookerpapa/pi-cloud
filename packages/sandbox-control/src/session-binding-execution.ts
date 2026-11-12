@@ -13,7 +13,6 @@ import type { ToolLogFact } from "./workflow-command-dispatcher.ts";
 
 type Provider = Pick<
   FixedGuestSandboxProvider,
-  | "attachExecutionData"
   | "clearExecutionData"
   | "openWorkflow"
   | "preparePackage"
@@ -21,7 +20,13 @@ type Provider = Pick<
   | "imageIo"
   | "prepareInputImage"
   | "discoverHttpServices"
->;
+> & {
+  attachExecutionData(
+    descriptor: import("./sandbox-execution.ts").SandboxExecutionDescriptor,
+  ):
+    | import("./sandbox-provider.ts").SandboxHandle
+    | Promise<import("./sandbox-provider.ts").SandboxHandle>;
+};
 type Operation = {
   binding: SandboxBinding;
   controller: AbortController;
@@ -71,8 +76,9 @@ export class SessionBindingExecution {
       throw unavailable();
     return route;
   }
-  #handle(route: SandboxBinding) {
-    const handle = this.options.provider.attachExecutionData(route.descriptor);
+  async #handle(route: SandboxBinding) {
+    const handle = await this.options.provider.attachExecutionData(route.descriptor);
+    this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
     if (
       handle.activationId !== route.snapshot.physicalActivationId ||
       handle.assignment.tenantId !== route.snapshot.assignment.tenantId ||
@@ -157,7 +163,7 @@ export class SessionBindingExecution {
     });
     return this.#run(route, request.operationId, request, signal, async (current) => {
       this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
-      const handle = this.#handle(route);
+      const handle = await this.#handle(route);
       const stream = await this.options.provider.openWorkflow(handle, {
         script: request.script,
         operationId: request.operationId,
@@ -202,7 +208,7 @@ export class SessionBindingExecution {
       signal,
       async (current) => {
         this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
-        const handle = this.#handle(route);
+        const handle = await this.#handle(route);
         const result = await this.options.provider.exportPackage(
           handle,
           {
@@ -235,7 +241,7 @@ export class SessionBindingExecution {
       signal,
       async (current) => {
         this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
-        const handle = this.#handle(route);
+        const handle = await this.#handle(route);
         const result = await this.options.provider.preparePackage(
           handle,
           {
@@ -308,7 +314,7 @@ export class SessionBindingExecution {
       (current) =>
         this.#image(current, async () => {
           this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
-          const handle = this.#handle(route);
+          const handle = await this.#handle(route);
           const base = {
             cwd: route.descriptor.attachment.toolRoot,
             operationId: request.operationId,
@@ -375,7 +381,7 @@ export class SessionBindingExecution {
       (current) =>
         this.#image(current, async () => {
           this.#binding(route.bindingId, route.snapshot.assignment.executionReference);
-          const handle = this.#handle(route);
+          const handle = await this.#handle(route);
           const images = [];
           for (const source of request.images) {
             current.throwIfAborted();
@@ -423,7 +429,7 @@ export class SessionBindingExecution {
   };
   refreshServices: SandboxController["refreshServices"] = async (id, assignment) => {
     const route = this.#binding(id, assignment.executionReference, assignment);
-    const handle = this.#handle(route);
+    const handle = await this.#handle(route);
     const discovery = await this.options.provider.discoverHttpServices(handle);
     const environment = route.snapshot.developmentEnvironmentId;
     const target = environment

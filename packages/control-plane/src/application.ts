@@ -1,3 +1,4 @@
+import { ResourceBackendService } from "./resource-backend-service.ts";
 import { installBinaryBodyParser } from "./binary-body-parser.ts";
 import type { SessionPublicationService } from "./session-publication-service.ts";
 import "reflect-metadata";
@@ -57,6 +58,7 @@ export type ControlPlaneApplicationOptions = Omit<
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
   platformRuntimeSettings?: PlatformRuntimeSettingsService;
+  resourceBackends?: ResourceBackendService;
   workspaceTerminalGateway?: WorkspaceTerminalGateway;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sandboxPreviewGateway?: SandboxPreviewGateway;

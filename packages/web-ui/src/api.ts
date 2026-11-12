@@ -568,11 +568,42 @@ export class PiCloudApi {
       this.#authorizationToken,
     )) as WorkspaceCapacitySnapshot;
   }
+  async registerResourceDevice(
+    input: import("@pi-cloud/protocol").RegisterResourceDevice,
+  ): Promise<void> {
+    await request(
+      this.#fetch,
+      "/v1/resource-backends/devices",
+      jsonRequest(input),
+      this.#authorizationToken,
+    );
+  }
+  async resourceBackends(
+    administrator = false,
+  ): Promise<{ backends: readonly import("@pi-cloud/protocol").ResourceBackendResource[] }> {
+    return (await request(
+      this.#fetch,
+      `/v1/resource-backends${administrator ? "/admin" : ""}`,
+      { method: "GET" },
+      this.#authorizationToken,
+    )) as { backends: import("@pi-cloud/protocol").ResourceBackendResource[] };
+  }
+  async putResourceBackend(
+    input: import("@pi-cloud/protocol").PutResourceBackend,
+  ): Promise<import("@pi-cloud/protocol").ResourceBackendResource> {
+    return (await request(
+      this.#fetch,
+      "/v1/resource-backends",
+      { ...jsonRequest(input), method: "PUT" },
+      this.#authorizationToken,
+    )) as import("@pi-cloud/protocol").ResourceBackendResource;
+  }
   async createDevelopmentEnvironment(
     name: string,
     profileKey: import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey,
     idempotencyKey: string,
     workspaceCapacityGiB?: number,
+    backend?: import("@pi-cloud/protocol").CreateDevelopmentEnvironmentRequest["backend"],
   ): Promise<DevelopmentEnvironmentResource> {
     return parseDevelopmentEnvironmentResource(
       await request(
@@ -582,6 +613,7 @@ export class PiCloudApi {
           {
             name,
             profileKey,
+            ...(backend ? { backend } : {}),
             ...(workspaceCapacityGiB === undefined ? {} : { workspaceCapacityGiB }),
           },
           idempotencyKey,

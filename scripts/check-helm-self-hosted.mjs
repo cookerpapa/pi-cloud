@@ -171,9 +171,16 @@ try {
   const env = Object.fromEntries(
     cp.spec.template.spec.containers[0].env.map((x) => [x.name, x.value]),
   );
-  assert.equal(env.PI_CLOUD_CUBESANDBOX_API_URL, "http://cube-api:3000");
-  assert.equal(env.PI_CLOUD_WEB_SESSION_COOKIE_SECURE, "false");
-  assert.equal(env.PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, "http://preview.localhost:8080");
+  assert.equal(env.PI_CLOUD_CUBESANDBOX_API_URL, undefined);
+  const managementEnv = Object.fromEntries(
+    management.spec.template.spec.containers[0].env.map((x) => [x.name, x.value]),
+  );
+  assert.equal(managementEnv.PI_CLOUD_CUBESANDBOX_API_URL, "http://cube-api:3000");
+  const apiEnv = Object.fromEntries(
+    api.spec.template.spec.containers[0].env.map((x) => [x.name, x.value]),
+  );
+  assert.equal(apiEnv.PI_CLOUD_WEB_SESSION_COOKIE_SECURE, "false");
+  assert.equal(apiEnv.PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, "http://preview.localhost:8080");
   assert.equal(cp.spec.replicas, 1);
   const negative = execFileSync;
   assert.throws(

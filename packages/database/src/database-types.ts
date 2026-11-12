@@ -214,6 +214,11 @@ export interface SourceControlCredentialTable {
 }
 
 export interface SandboxDomainTable {
+  backend_revision: GeneratedInt8;
+  backend_endpoint: GeneratedNullable<string>;
+  backend_location: Generated<string>;
+  backend_configuration: GeneratedNullable<string>;
+  backend_catalog: GeneratedNullable<Record<string, unknown>>;
   storage_pool_id: GeneratedNullable<string>;
   id: string;
   display_name: string;
@@ -534,6 +539,7 @@ export interface EnvironmentValidationTable {
 }
 
 export interface WorkspaceTable {
+  backend_template_id: GeneratedNullable<string>;
   persistence_state: Generated<"adoption_pending" | "uninitialized" | "initializing" | "ready">;
   persistence_generation: GeneratedNullable<string>;
   capacity_bytes: GeneratedInt8;

@@ -11,7 +11,8 @@ checks serially, and broaden publication only after the affected boundary passes
 ADR-0315's control-Tool source slice passes focused checks; integrated publication
 remains pending. ADR-0318 separates storage initialization/deletion from native
 mount registration; its cold adoption and live provider checks remain pending.
-Dynamic registration retains its own acceptance scope.
+Dynamic registration source under ADR-0319 is connected through API, management,
+execution and Web; its real no-restart/native acceptance remains pending.
 
 ## Alternate runtime production integration — deployed
 

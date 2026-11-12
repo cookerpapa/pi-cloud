@@ -14,6 +14,7 @@ export async function createSandboxRuntimeTransport(
   config: SandboxRuntimeTransportConfig,
   database: Kysely<Database>,
   role: "execution" | "management",
+  selectTemplate?: (spec: import("./sandbox-provider.ts").SandboxCreateSpec) => Promise<string>,
 ) {
   let volume: HttpWorkspaceVolumeGateway | undefined;
   let boxlite: BoxLiteRuntimeClient | undefined;
@@ -34,6 +35,7 @@ export async function createSandboxRuntimeTransport(
       });
       const provider = new BoxLiteSandboxProvider({
         runtimeClient: boxlite,
+        ...(selectTemplate ? { selectTemplate } : {}),
         ...(role === "management"
           ? {
               templateId: config.boxlite.templateId,
@@ -91,6 +93,7 @@ export async function createSandboxRuntimeTransport(
       imageRevision: config.imageRevision,
       persistentStateKey: config.persistentStateKey,
       runtimeClient: client,
+      ...(selectTemplate ? { selectTemplate } : {}),
       webProxy: {
         host: config.webProxy.host,
         port: config.webProxy.port,

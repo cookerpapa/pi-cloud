@@ -744,3 +744,5 @@ export * from "./session-activity.ts";
 export * from "./guest-executor.ts";
 
 export * from "./resource-retention.ts";
+
+export * from "./resource-backend.ts";

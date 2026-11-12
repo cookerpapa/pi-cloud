@@ -147,6 +147,20 @@ export class BoxLiteRuntimeClient implements GuestRuntimeClient<BoxLiteInstance>
     )
       throw new Error("BoxLite node is not ready at the pinned contract");
   }
+  async verifyTemplate(
+    templateId: string,
+  ): Promise<{ cpuCount: number; memoryMiB: number; systemDiskGiB: number }> {
+    const value = await this.#request(BOXLITE_NODE_PATH + "/templates");
+    const profile = value.templates?.[templateId];
+    if (
+      !profile ||
+      ![profile.cpus, profile.memoryMiB, profile.diskGiB].every(
+        (n) => Number.isSafeInteger(n) && n > 0,
+      )
+    )
+      throw new Error("Native template is unavailable");
+    return { cpuCount: profile.cpus, memoryMiB: profile.memoryMiB, systemDiskGiB: profile.diskGiB };
+  }
   async create(input: GuestRuntimeCreateInput) {
     return this.#remember(await this.#request(BOXLITE_NODE_PATH + "/boxes", "POST", input));
   }

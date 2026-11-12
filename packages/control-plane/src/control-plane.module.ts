@@ -1,3 +1,5 @@
+import { ResourceBackendController } from "./resource-backend-controller.ts";
+import { ResourceBackendService } from "./resource-backend-service.ts";
 import { WorkspaceCapacityController } from "./workspace-capacity-controller.ts";
 import { WorkspaceCapacityService } from "./workspace-capacity-service.ts";
 import { ModelBillingController } from "./model-billing-controller.ts";
@@ -71,6 +73,7 @@ export type ControlPlaneModuleOptions = Omit<
   platformModelSourceTenantId?: string;
   cubeEgressConfigToken?: string;
   platformRuntimeSettings?: PlatformRuntimeSettingsService;
+  resourceBackends?: ResourceBackendService;
   nativeInputBackendFactory?: NativeInputBackendFactory;
   developmentEnvironmentService?: DevelopmentEnvironmentService;
   sshAccessTicketService?: SshAccessTicketService;
@@ -124,6 +127,7 @@ export class ControlPlaneModule {
     return {
       module: ControlPlaneModule,
       controllers: [
+        ResourceBackendController,
         WorkspaceCapacityController,
         ResourceBillingController,
         ModelBillingController,
@@ -132,6 +136,10 @@ export class ControlPlaneModule {
         WorkspaceFileTransferController,
       ],
       providers: [
+        {
+          provide: ResourceBackendService,
+          useValue: options.resourceBackends ?? new ResourceBackendService(options.database),
+        },
         {
           provide: WorkspaceCapacityService,
           useValue: new WorkspaceCapacityService(options.database),

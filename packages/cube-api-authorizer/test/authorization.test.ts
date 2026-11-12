@@ -7,6 +7,7 @@ const SANDBOX = "sandbox-123";
 describe("Cube API authorizer", () => {
   it.each([
     ["POST", "/sandboxes"],
+    ["GET", "/templates/tpl-0123456789abcdef01234567"],
     ["GET", `/sandboxes/${SANDBOX}`],
     ["DELETE", `/sandboxes/${SANDBOX}`],
     ["POST", `/sandboxes/${SANDBOX}/pause`],

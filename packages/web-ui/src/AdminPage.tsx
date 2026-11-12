@@ -1,3 +1,4 @@
+import { ResourceBackendAdmin } from "./ResourceBackendAdmin.tsx";
 import { useEffect, useState } from "react";
 import type {
   CubeProxyConfigurationResource,
@@ -288,6 +289,7 @@ export function AdminPage({
             ))}
           </div>
         </section>
+        <ResourceBackendAdmin api={api} />
       </section>
     </main>
   );

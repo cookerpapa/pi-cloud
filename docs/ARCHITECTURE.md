@@ -468,6 +468,16 @@ platform URL. Each request resolves current authorization and owner; HTTP and
 WebSocket traffic pass through the existing relay. Port numbers are guest ports.
 Terminal and SSH entry points remain separate from Agent Tool authority.
 
+The backend registry in [ADR-0319](adr/0319-dynamic-resource-backends.md) extends
+PG resource domains with private adapter configuration, public templates and
+revisions. Known Cube/BoxLite backends instantiate existing lifecycle controllers
+behind management's one listener; execution maintains separate data clients keyed
+by the binding's original endpoint. Notifications plus revision reconciliation
+update both roles without a release. Registration and physical placement are
+different operations; it creates no VPN or shared storage. The
+[backend contract](RESOURCE_BACKENDS.md) describes mutation/quiescence and Android
+existing-device boundaries. This source stage awaits matched live acceptance.
+
 ## Models, Subagents and integrations
 
 Workers call native Pi Models through their local Model Gateway. CLIProxyAPI owns

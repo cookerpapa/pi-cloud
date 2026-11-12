@@ -1,9 +1,14 @@
+import { registerResourceDevice } from "./execution-target-registration.ts";
+import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import Fastify from "fastify";
 import { createDatabase } from "@pi-cloud/database";
 import { operationalLog, startServiceObservability } from "@pi-cloud/observability";
-import { createSandboxControl } from "@pi-cloud/sandbox-control/runtime";
+import {
+  createResourceBackendFleet,
+  installResourceBackendRoutes,
+} from "@pi-cloud/sandbox-control/resource-backends";
 import { HttpPublicationClient } from "@pi-cloud/runtime-core/http-publication-client";
 import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-outbox";
 import { configuredImageAttachments, AttachmentReaper } from "@pi-cloud/session-attachments";
@@ -65,7 +70,7 @@ export async function startControlPlane(): Promise<void> {
     });
     cleanup.push(() => publication.close());
     const changes = new SessionControlOutbox(publicationDatabase, publication);
-    const sandbox = await createSandboxControl({
+    const sandbox = await createResourceBackendFleet({
       database,
       publicationDatabase,
       instanceId: randomUUID(),
@@ -78,6 +83,15 @@ export async function startControlPlane(): Promise<void> {
     });
     cleanup.push(() => sandbox.close());
     const server = Fastify({ logger: false });
+    const devices = new HttpExecutorTransport(config.supervisorManagementToken);
+    cleanup.push(() => devices.close());
+    installResourceBackendRoutes(
+      server,
+      sandbox.registry,
+      config.supervisorManagementToken,
+      sandbox.refresh,
+      (tenant, input) => registerResourceDevice(database, devices, tenant, input),
+    );
     server.get("/health/live", async () => ({ live: true }));
     server.get("/health/ready", async (_request, reply) =>
       reply.code(sandbox.ready ? 200 : 503).send({ ready: sandbox.ready }),

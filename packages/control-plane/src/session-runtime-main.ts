@@ -163,6 +163,7 @@ export async function startSessionRuntime(): Promise<void> {
     });
     sandboxControl = await createSandboxSessionRuntime({
       database,
+      notificationUrl: config.databaseNotificationUrl,
       publicationDatabase,
       instanceId: controlPlaneInstanceId,
       managementToken: config.supervisorManagementToken,

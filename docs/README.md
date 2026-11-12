@@ -84,3 +84,5 @@ Earlier assessment: [Guest and provider resource boundaries](research/guest-and-
 [Complete Cube patch inventory](research/cube-patch-inventory-20261110.md) lists
 all 87 patched upstream paths, runtime callers, supporting/generated changes and
 the additional build-time Dockerfile transformations for #26.
+
+- [Resource backend registration](RESOURCE_BACKENDS.md): registry, placement, private configuration and device boundaries.

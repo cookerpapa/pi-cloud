@@ -25,8 +25,9 @@ vi.mock("../src/sandbox-control-config.ts", () => ({
     maximumActiveCommands: 32,
   }),
 }));
-vi.mock("../src/sandbox-runtime-transport.ts", () => ({
-  createSandboxRuntimeTransport: async () => ({
+vi.mock("../src/execution-backend-directory.ts", () => ({
+  createExecutionBackendDirectory: async () => ({
+    close: calls.providerClose,
     provider: {
       providerId: "cubesandbox",
       close: calls.providerClose,
@@ -67,6 +68,7 @@ it("opens its real listener before bootstrap, advertises readiness only after st
     publicationDatabase: database,
     instanceId: "fixture-instance",
     managementToken: "fixture-management".repeat(4),
+    notificationUrl: "unused",
     metrics: new PiCloudMetrics("session-bootstrap-test"),
     publishBindingChanges: async () => {},
     partitionFor: () => 0,
@@ -100,6 +102,7 @@ it("releases the provider if callback credential loading fails before the listen
       publicationDatabase: {} as Kysely<Database>,
       instanceId: "fixture-instance",
       managementToken: "fixture-management".repeat(4),
+      notificationUrl: "unused",
       metrics: new PiCloudMetrics("session-failed-bootstrap-test"),
       publishBindingChanges: async () => {},
       partitionFor: () => 0,

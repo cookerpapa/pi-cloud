@@ -15,7 +15,8 @@
     "./guest-runtime": "./src/guest-runtime-client.ts",
     "./boxlite-node-contract": "./src/boxlite-node-contract.ts",
     "./boxlite-client": "./src/boxlite-runtime-client.ts",
-    "./workspace-persistence": "./src/workspace-persistence.ts"
+    "./workspace-persistence": "./src/workspace-persistence.ts",
+    "./resource-backends": "./src/resource-backend-fleet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

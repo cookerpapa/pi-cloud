@@ -53,9 +53,10 @@ export async function bootstrapProductionDatabase(
         .executeTakeFirst();
       const existing = await transaction
         .selectFrom("sandbox_domains")
-        .select(["sandbox_control_base_url", "workspace_storage_key"])
+        .select(["sandbox_control_base_url", "workspace_storage_key", "backend_revision"])
         .where("id", "=", domain.id)
         .executeTakeFirstOrThrow();
+      if (Number(existing.backend_revision) > 0) continue; // Registered PG configuration owns future changes.
       exact(
         existing.workspace_storage_key === domain.workspaceStorageKey,
         `Domain ${domain.id} Workspace storage route`,
@@ -70,6 +71,7 @@ export async function bootstrapProductionDatabase(
           updated_at: new Date(),
         })
         .where("id", "=", domain.id)
+        .where("backend_revision", "=", "0")
         .executeTakeFirstOrThrow();
     }
     await transaction

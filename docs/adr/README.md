@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0319](0319-dynamic-resource-backends.md) makes known resource backends
+a versioned PG registry consumed by existing management/execution roles (#31).
+
 [ADR-0318](0318-workspace-persistence-and-native-mounts.md) gives Workspace bytes
 and initialization to the storage port, with native compute mount adapters (#30).
 

@@ -275,6 +275,7 @@ export type PostgresWorkspaceRuntimeStateRepositoryOptions = {
   sandboxDomainId: string;
   instanceId: string;
   ownerBaseUrl: string;
+  backendRevision?: () => number;
   leaseMs?: number;
   heartbeatMs?: number;
   clock?: () => Date;
@@ -329,6 +330,7 @@ function developmentProfileKey(value: string): DevelopmentEnvironmentProfileKey 
 
 export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntimeStateRepository {
   readonly #database: Kysely<Database>;
+  readonly #backendRevision: (() => number) | undefined;
   readonly #sandboxDomainId: string;
   readonly #instanceId: string;
   readonly #ownerBaseUrl: string;
@@ -347,6 +349,7 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
   constructor(options: PostgresWorkspaceRuntimeStateRepositoryOptions) {
     this.#database = options.database;
     this.#sandboxDomainId = options.sandboxDomainId;
+    this.#backendRevision = options.backendRevision;
     this.#instanceId = options.instanceId;
     this.#ownerBaseUrl = new URL(options.ownerBaseUrl).toString();
     this.#leaseMs = positiveInteger(options.leaseMs ?? 15_000, "leaseMs");
@@ -854,12 +857,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       const domain = await transaction
         .selectFrom("sandbox_domains")
-        .select("maximum_active_sandboxes")
+        .select(["maximum_active_sandboxes", "backend_revision"])
         .where("id", "=", this.#sandboxDomainId)
         .where("state", "=", "active")
         .forUpdate()
         .executeTakeFirst();
-      if (domain === undefined) {
+      if (
+        domain === undefined ||
+        (this.#backendRevision && Number(domain.backend_revision) !== this.#backendRevision())
+      ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Sandbox Domain is not active",
@@ -1008,12 +1014,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       if (terminal !== undefined) return { status: "busy" };
       const domain = await transaction
         .selectFrom("sandbox_domains")
-        .select("maximum_active_sandboxes")
+        .select(["maximum_active_sandboxes", "backend_revision"])
         .where("id", "=", this.#sandboxDomainId)
         .where("state", "=", "active")
         .forUpdate()
         .executeTakeFirst();
-      if (domain === undefined) {
+      if (
+        domain === undefined ||
+        (this.#backendRevision && Number(domain.backend_revision) !== this.#backendRevision())
+      ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Workspace terminal Sandbox Domain is unavailable",
@@ -1158,12 +1167,15 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
       }
       const domain = await transaction
         .selectFrom("sandbox_domains")
-        .select("maximum_active_sandboxes")
+        .select(["maximum_active_sandboxes", "backend_revision"])
         .where("id", "=", this.#sandboxDomainId)
         .where("state", "=", "active")
         .forUpdate()
         .executeTakeFirst();
-      if (domain === undefined) {
+      if (
+        domain === undefined ||
+        (this.#backendRevision && Number(domain.backend_revision) !== this.#backendRevision())
+      ) {
         throw new WorkspaceRuntimeStateRepositoryError(
           "state_conflict",
           "Development environment Sandbox Domain is unavailable",

@@ -13,13 +13,18 @@ export class SessionResourceAccess {
     readonly database: Kysely<Database>,
     readonly provider: Pick<
       FixedGuestSandboxProvider,
-      | "openDataCapsule"
       | "listWorkspaceDirectory"
       | "readWorkspaceFile"
       | "listMachineWorkspaceDirectory"
       | "readMachineWorkspaceFile"
       | "openPreviewConnection"
-    >,
+    > & {
+      openDataCapsule(
+        capsule: string,
+      ):
+        | import("./sandbox-provider.ts").SandboxHandle
+        | Promise<import("./sandbox-provider.ts").SandboxHandle>;
+    },
     readonly retention: RuntimeRetention,
   ) {}
   async #machine(
@@ -46,7 +51,7 @@ export class SessionResourceAccess {
         "Machine Workspace is not running or owned by this user",
         false,
       );
-    const handle = this.provider.openDataCapsule(row.runtime_capsule);
+    const handle = await this.provider.openDataCapsule(row.runtime_capsule);
     if (
       handle.activationId !== row.allocation_id ||
       handle.assignment.workspaceId !== request.workspaceId ||
@@ -114,7 +119,7 @@ export class SessionResourceAccess {
           "Application runtime is unavailable",
           true,
         );
-      handle = this.provider.openDataCapsule(row.runtime_capsule);
+      handle = await this.provider.openDataCapsule(row.runtime_capsule);
       if (handle.activationId !== row.workspace_runtime_id)
         throw new Error("Preview data identity changed");
     }

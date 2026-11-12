@@ -24,7 +24,11 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   adapter no longer creates/deletes bytes. Schema 221 and ADR-0318 record ownership.
 - [ ] #30: operator cold adoption, native registration retirement and serial live
   Cube/BoxLite storage/quota/recovery acceptance with original assets preserved.
-- [ ] #31: dynamic administrator backend registration and resource selection.
+- [x] #31 source: versioned PG backend registry, private configuration, per-domain
+  lifecycle controllers and execution data directory; no per-Tool lease reads.
+  Web catalog/selection and existing-device registration use the maintained APIs.
+- [ ] #31: complete integrated admission/browser checks and live registration of
+  another native backend while existing Sessions, resources and Pods stay intact.
 - [x] #34 source: `skill` plus `publish_skill`, exact personal uninstall and
   non-reused PG installation revisions (schema 220 / ADR-0317). Skill/PG/native
   context checks pass; packages, current selections and Workspace files remain.

@@ -40,6 +40,9 @@ export function createBoxLiteNodeServer(backend: BoxLiteNodeBackend, token: stri
       protocolVersion: BOXLITE_NODE_PROTOCOL_VERSION,
     };
   });
+  server.get(prefix + "/templates", async () => ({
+    templates: backend.options.profiles,
+  }));
   server.get(prefix + "/boxes", async () => ({ instances: await backend.list() }));
   server.get(prefix + "/inventory", async () => backend.inventory());
   server.post<{ Body: GuestRuntimeCreateInput }>(prefix + "/boxes", async (request) =>

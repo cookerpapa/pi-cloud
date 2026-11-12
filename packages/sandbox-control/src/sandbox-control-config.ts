@@ -20,6 +20,7 @@ type SandboxConfigurationFields = {
   maximumActiveCommands: number;
   sandboxDomainId: string;
   advertisedBaseUrl: string;
+  managementBaseUrl: string;
   ownershipLeaseMs: number;
   ownershipHeartbeatMs: number;
   serviceToken: string;
@@ -53,6 +54,7 @@ type SandboxConfigurationFields = {
 };
 
 type ManagementFields =
+  | "managementBaseUrl"
   | "databaseNotificationUrl"
   | "ownershipLeaseMs"
   | "ownershipHeartbeatMs"
@@ -68,7 +70,11 @@ type SandboxServingConfig = Omit<
 >;
 export type SandboxControlConfig = SandboxServingConfig &
   Pick<SandboxConfigurationFields, ManagementFields>;
-export type SandboxExecutionConfig = SandboxServingConfig &
+type SharedSandboxConfig = Omit<
+  SandboxServingConfig,
+  "runtimeProvider" | "boxlite" | "cubeSandbox" | "storage" | "webProxy"
+>;
+export type SandboxExecutionConfig = SharedSandboxConfig &
   Pick<SandboxConfigurationFields, ExecutionFields>;
 export type SandboxRuntimeTransportConfig = Pick<
   SandboxConfigurationFields,
@@ -268,36 +274,10 @@ async function executionEndpoints(path: string | undefined) {
   }
 }
 
-async function loadSandboxServingConfig(
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<SandboxServingConfig> {
-  const runtimeProvider = environment.PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox";
-  if (runtimeProvider !== "cubesandbox" && runtimeProvider !== "boxlite")
-    throw new TypeError("PI_CLOUD_SANDBOX_PROVIDER is invalid");
-  const cubeProxyScheme = environment.PI_CLOUD_CUBESANDBOX_PROXY_SCHEME ?? "http";
-  if (cubeProxyScheme !== "http" && cubeProxyScheme !== "https") {
-    throw new TypeError("PI_CLOUD_CUBESANDBOX_PROXY_SCHEME is invalid");
-  }
+async function loadSharedSandboxConfig(
+  environment: NodeJS.ProcessEnv,
+): Promise<SharedSandboxConfig> {
   return {
-    runtimeProvider,
-    ...(runtimeProvider === "boxlite"
-      ? {
-          boxlite: {
-            url: serviceUrl(required(environment, "PI_CLOUD_BOXLITE_URL"), "BoxLite node URL"),
-            nodeId: bounded(
-              required(environment, "PI_CLOUD_BOXLITE_NODE_ID"),
-              "BoxLite node identity",
-              100,
-            ),
-            templateId: "tool",
-            developmentTemplateIds: {
-              starter: "starter",
-              standard: "standard",
-              performance: "performance",
-            },
-          },
-        }
-      : {}),
     host: bounded(environment.PI_CLOUD_SANDBOX_CONTROL_HOST ?? "127.0.0.1", "host", 256),
     port: integer(environment.PI_CLOUD_SANDBOX_CONTROL_PORT, 4300, 1, 65535),
     sandboxDomainId: bounded(
@@ -332,6 +312,40 @@ async function loadSandboxServingConfig(
       "PI_CLOUD_IMAGE_REVISION",
       128,
     ),
+  };
+}
+
+async function loadSandboxServingConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<SandboxServingConfig> {
+  const runtimeProvider = environment.PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox";
+  if (runtimeProvider !== "cubesandbox" && runtimeProvider !== "boxlite")
+    throw new TypeError("PI_CLOUD_SANDBOX_PROVIDER is invalid");
+  const cubeProxyScheme = environment.PI_CLOUD_CUBESANDBOX_PROXY_SCHEME ?? "http";
+  if (cubeProxyScheme !== "http" && cubeProxyScheme !== "https") {
+    throw new TypeError("PI_CLOUD_CUBESANDBOX_PROXY_SCHEME is invalid");
+  }
+  return {
+    runtimeProvider,
+    ...(runtimeProvider === "boxlite"
+      ? {
+          boxlite: {
+            url: serviceUrl(required(environment, "PI_CLOUD_BOXLITE_URL"), "BoxLite node URL"),
+            nodeId: bounded(
+              required(environment, "PI_CLOUD_BOXLITE_NODE_ID"),
+              "BoxLite node identity",
+              100,
+            ),
+            templateId: "tool",
+            developmentTemplateIds: {
+              starter: "starter",
+              standard: "standard",
+              performance: "performance",
+            },
+          },
+        }
+      : {}),
+    ...(await loadSharedSandboxConfig(environment)),
     storage: {
       url: bounded(
         required(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
@@ -440,6 +454,10 @@ export async function loadSandboxControlConfig(
     throw new TypeError("Sandbox control heartbeat must leave lease failure margin");
   return {
     ...(await loadSandboxServingConfig(environment)),
+    managementBaseUrl: serviceUrl(
+      environment.PI_CLOUD_RESOURCE_MANAGEMENT_EXECUTION_URL ?? "http://control-plane:4300",
+      "managementBaseUrl",
+    ),
     databaseNotificationUrl: await readDatabaseUrl(
       environment.DATABASE_NOTIFICATION_URL_FILE ?? required(environment, "DATABASE_URL_FILE"),
     ),
@@ -475,7 +493,7 @@ export async function loadSandboxExecutionConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<SandboxExecutionConfig> {
   return {
-    ...(await loadSandboxServingConfig(environment)),
+    ...(await loadSharedSandboxConfig(environment)),
     kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
       .split(",")
       .map((value) => bounded(value.trim(), "Kafka broker", 256)),

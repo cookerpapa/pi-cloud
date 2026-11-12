@@ -5201,3 +5201,41 @@ body.product-panel-resizing {
 .workspace-capacity-control input {
   width: 90px;
 }
+
+.resource-backend-admin {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid #383838;
+  border-radius: 12px;
+  background: #202020;
+}
+.resource-backend-admin form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+.resource-backend-admin label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #bbb;
+  font-size: 12px;
+}
+.resource-backend-admin label:has(textarea) {
+  grid-column: 1 / -1;
+}
+.resource-backend-admin textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+}
+.resource-backend-admin .admin-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid #383838;
+}

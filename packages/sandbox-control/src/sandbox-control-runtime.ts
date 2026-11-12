@@ -10,7 +10,7 @@ import { PostgresWorkspaceRuntimeStateRepository } from "./workspace-runtime-sta
 import { PostgresSandboxHttpServiceRegistry } from "./sandbox-http-service-registry.ts";
 import { WorkspaceVolumeDeletionReaper } from "./workspace-volume-deletion-reaper.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
-import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
+import { loadSandboxControlConfig, type SandboxControlConfig } from "./sandbox-control-config.ts";
 
 /** Management only: owns resource lifecycle; never consumes the Session log. */
 export async function createSandboxControl(options: {
@@ -23,8 +23,12 @@ export async function createSandboxControl(options: {
   publishBindingChanges(ids: readonly string[]): Promise<void>;
   confirmBindingClosure(ids: readonly string[]): Promise<void>;
   onOwnershipLost(): void;
+  config?: SandboxControlConfig;
+  backendRevision?: () => number;
+  listen?: boolean;
+  transportFactory?: () => ReturnType<typeof createSandboxRuntimeTransport>;
 }) {
-  const config = await loadSandboxControlConfig();
+  const config = options.config ?? (await loadSandboxControlConfig());
   const { database, instanceId, metrics } = options;
   const cleanup: Array<() => unknown | Promise<unknown>> = [];
   let controllerOwns = false,
@@ -49,6 +53,7 @@ export async function createSandboxControl(options: {
     const ownership = new PostgresWorkspaceRuntimeStateRepository({
       database,
       sandboxDomainId: config.sandboxDomainId,
+      ...(options.backendRevision ? { backendRevision: options.backendRevision } : {}),
       instanceId,
       ownerBaseUrl: config.advertisedBaseUrl,
       leaseMs: config.ownershipLeaseMs,
@@ -69,7 +74,8 @@ export async function createSandboxControl(options: {
     cleanup.push(() => (controllerOwns ? undefined : ownership.close()));
     await ownership.start();
     const { volume, provider, persistence, unregisterWorkspaceVolume } =
-      await createSandboxRuntimeTransport(config, database, "management");
+      await (options.transportFactory?.() ??
+        createSandboxRuntimeTransport(config, database, "management"));
     cleanup.push(() => (controllerOwns ? undefined : provider.close()));
     const wake = new PostgresNotificationWake(
       config.databaseNotificationUrl,
@@ -108,22 +114,25 @@ export async function createSandboxControl(options: {
     });
     controllerOwns = true;
     cleanup.push(() => (serverOwns ? undefined : controller.close()));
-    const server = new SandboxControlServer({
-      retainResources: (uses) => ownership.recordResourceUse(uses),
-      host: config.host,
-      port: config.port,
-      serviceToken: config.serviceToken,
-      terminalToken: config.terminalToken,
-      ...(config.workspaceServiceToken
-        ? { workspaceServiceToken: config.workspaceServiceToken }
-        : {}),
-      broker: controller,
-      metrics,
-      executionBaseUrl: new URL(config.sessionExecutionBaseUrl).toString(),
-      managementOnly: true,
-    });
-    serverOwns = true;
-    cleanup.push(() => server.close());
+    let server: SandboxControlServer | undefined;
+    if (options.listen !== false) {
+      server = new SandboxControlServer({
+        retainResources: (uses) => ownership.recordResourceUse(uses),
+        host: config.host,
+        port: config.port,
+        serviceToken: config.serviceToken,
+        terminalToken: config.terminalToken,
+        ...(config.workspaceServiceToken
+          ? { workspaceServiceToken: config.workspaceServiceToken }
+          : {}),
+        broker: controller,
+        metrics,
+        executionBaseUrl: new URL(config.sessionExecutionBaseUrl).toString(),
+        managementOnly: true,
+      });
+      serverOwns = true;
+      cleanup.push(() => server!.close());
+    }
     // Session runtime closes admission durably even while management is stopped.
     // Retire the original controller's now-closed logical bindings on its return.
     let bindingCleanup: Promise<void> | undefined;
@@ -186,8 +195,10 @@ export async function createSandboxControl(options: {
       volume,
     );
     cleanup.push(() => capacityReconciler.close());
-    await server.listen();
+    await server?.listen();
     return {
+      retainResources: (uses: readonly import("@pi-cloud/protocol").PhysicalResourceUse[]) =>
+        ownership.recordResourceUse(uses),
       controller,
       close,
       observeMachine: (

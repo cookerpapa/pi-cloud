@@ -1,3 +1,4 @@
+import { ResourceBackendService } from "./resource-backend-service.ts";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { sql } from "kysely";
@@ -165,6 +166,10 @@ export async function startSessionApi(): Promise<void> {
         remote: { baseUrl: runtimeUrl, token: config.supervisorManagementToken },
       },
       platformRuntimeSettings,
+      resourceBackends: new ResourceBackendService(database, {
+        url: process.env.PI_CLOUD_RESOURCE_MANAGEMENT_URL ?? "http://control-plane:3000",
+        token: config.supervisorManagementToken,
+      }),
       developmentEnvironmentService,
       nativeInputBackendFactory: async (workerId) => {
         const host = await database

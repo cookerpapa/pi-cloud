@@ -61,6 +61,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
   mountPath: /run/pi-cloud-secrets/cube-persistent-state-key
   subPath: cube-persistent-state-key
   readOnly: true
+{{- end }}
+{{- if eq $role "control-plane" }}
 - name: platform-secrets
   mountPath: /run/pi-cloud-secrets/workspace-volume-gateway-token
   subPath: workspace-volume-gateway-token

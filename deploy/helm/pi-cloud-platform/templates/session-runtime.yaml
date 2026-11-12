@@ -76,9 +76,6 @@ spec:
             - name: POD_IP
               valueFrom: { fieldRef: { fieldPath: status.podIP } }
             - { name: PI_CLOUD_SANDBOX_DOMAIN_ID, value: {{ .Values.sandboxPlane.domainId | quote }} }
-            - { name: PI_CLOUD_SANDBOX_PROVIDER, value: {{ .Values.sandboxPlane.provider | quote }} }
-            - { name: PI_CLOUD_BOXLITE_URL, value: {{ .Values.sandboxPlane.boxlite.url | quote }} }
-            - { name: PI_CLOUD_BOXLITE_NODE_ID, value: {{ .Values.sandboxPlane.boxlite.nodeId | quote }} }
             - name: PI_CLOUD_SANDBOX_CONTROL_ADVERTISED_URL
               value: {{ printf "http://$(POD_IP):4300" | quote }}
             - { name: PI_CLOUD_SANDBOX_CONTROL_HOST, value: 0.0.0.0 }
@@ -88,24 +85,6 @@ spec:
             - { name: PI_CLOUD_CONTROL_PLANE_URL, value: {{ index .Values "pi-workers" "services" "controlPlaneUrl" | quote }} }
             - { name: PI_CLOUD_SESSION_EXECUTION_URL, value: {{ .Values.sessionRuntime.executionBaseUrl | quote }} }
             - { name: PI_CLOUD_CUBE_PERSISTENT_STATE_KEY_FILE, value: /run/pi-cloud-secrets/cube-persistent-state-key }
-            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: {{ .Values.sandboxPlane.volumeGatewayUrl | quote }} }
-            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
-            - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayRequestTimeoutMs | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_API_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
-            - { name: PI_CLOUD_CUBESANDBOX_TEMPLATE_ID, value: {{ .Values.sandboxPlane.cube.templateId | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_DEVELOPMENT_TEMPLATE_IDS, value: {{ .Values.sandboxPlane.cube.developmentTemplateIds | toJson | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_PROXY_NODE_IP, value: {{ .Values.sandboxPlane.cube.proxyNodeIp | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.proxyPort | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_PROXY_SCHEME, value: {{ .Values.sandboxPlane.cube.proxyScheme | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_DOMAIN, value: {{ .Values.sandboxPlane.cube.domain | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_HOST, value: {{ .Values.sandboxPlane.cube.egressProxyHost | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, value: {{ .Values.sandboxPlane.cube.egressProxyPort | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS, value: {{ join "," (.Values.sandboxPlane.cube.directPrivateCidrs | default (list)) | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.cube.requestTimeoutMs | quote }} }
-            {{- if .Values.sandboxPlane.cube.executionEndpoints }}
-            - { name: PI_CLOUD_CUBE_EXECUTION_ENDPOINTS_FILE, value: /run/pi-cloud-config/cube-execution-endpoints.json }
-            {{- end }}
             - { name: PORT, value: "3000" }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: DATABASE_NOTIFICATION_URL_FILE, value: /run/pi-cloud-secrets/database-notification-url }
@@ -156,22 +135,12 @@ spec:
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
             {{- end }}
             {{- include "pi-cloud-platform.secretMounts" (dict "root" . "role" "session-runtime") | nindent 12 }}
-            {{- if .Values.sandboxPlane.cube.executionEndpoints }}
-            - { name: cube-execution-endpoints, mountPath: /run/pi-cloud-config, readOnly: true }
-            {{- range .Values.sandboxPlane.cube.executionEndpoints }}
-            - { name: platform-secrets, mountPath: {{ printf "/run/pi-cloud-secrets/%s" .apiKeySecretKey | quote }}, subPath: {{ .apiKeySecretKey }}, readOnly: true }
-            {{- end }}
-            {{- end }}
             - { name: tmp, mountPath: /tmp }
       volumes:
         - name: completion-ca
           secret: { secretName: {{ .Values.toolCompletion.tlsSecretName }}, defaultMode: 288, items: [{ key: ca.crt, path: ca.crt }] }
         - name: model-catalog
           configMap: { name: {{ $name }}-model-catalog }
-        {{- if .Values.sandboxPlane.cube.executionEndpoints }}
-        - name: cube-execution-endpoints
-          configMap: { name: {{ $name }}-cube-execution-endpoints }
-        {{- end }}
         - name: platform-secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
         - name: tmp

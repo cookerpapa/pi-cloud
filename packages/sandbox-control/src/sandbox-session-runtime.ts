@@ -13,7 +13,7 @@ import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
 import { loadSandboxExecutionConfig } from "./sandbox-control-config.ts";
-import { createSandboxRuntimeTransport } from "./sandbox-runtime-transport.ts";
+import { createExecutionBackendDirectory } from "./execution-backend-directory.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { SandboxBindingView } from "./sandbox-binding-view.ts";
 import { SessionBindingExecution } from "./session-binding-execution.ts";
@@ -42,6 +42,7 @@ export async function createSandboxSessionRuntime(options: {
   publicationDatabase: Kysely<Database>;
   instanceId: string;
   managementToken: string;
+  notificationUrl: string;
   managementBaseUrls?: readonly string[];
   metrics: PiCloudMetrics;
   images?: ConfiguredImageAttachments;
@@ -70,8 +71,13 @@ export async function createSandboxSessionRuntime(options: {
       if (errors.length) throw new AggregateError(errors, "Session execution cleanup failed");
     })());
   try {
-    const { client, provider } = await createSandboxRuntimeTransport(config, database, "execution");
-    cleanup.push(() => provider.close());
+    const directory = await createExecutionBackendDirectory({
+      config,
+      database,
+      notificationUrl: options.notificationUrl,
+    });
+    const { client, provider } = directory;
+    cleanup.push(() => directory.close());
     const completion = new ToolCompletionIssuer({
       url:
         process.env.PI_CLOUD_TOOL_COMPLETION_URL ?? "https://tool-completion:4320/v1/completions",

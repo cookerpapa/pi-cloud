@@ -621,6 +621,16 @@ export const CreateDevelopmentEnvironmentRequestSchema = Type.Object(
       pattern: "^(?!\\s)(?!.*\\s$)[^\\u0000-\\u001f\\u007f]+$",
     }),
     profileKey: DevelopmentEnvironmentProfileKeySchema,
+    backend: Type.Optional(
+      Type.Object(
+        {
+          id: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_.-]+$" }),
+          templateId: Type.String({ minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_.-]+$" }),
+          revision: Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     workspaceCapacityGiB: Type.Optional(WorkspaceCapacityGiBSchema),
   },
   { additionalProperties: false },

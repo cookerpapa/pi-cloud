@@ -15,6 +15,7 @@ export const CUBESANDBOX_PROVIDER_ID = "cubesandbox";
 export const CUBESANDBOX_RUNTIME_NAME = "cubesandbox-kvm";
 export const CUBESANDBOX_TOOL_POLICY = FIXED_GUEST_TOOL_POLICY;
 export type CubeSandboxProviderOptions = Readonly<{
+  selectTemplate?: (spec: import("./sandbox-provider.ts").SandboxCreateSpec) => Promise<string>;
   templateId?: string;
   developmentTemplateIds?: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;

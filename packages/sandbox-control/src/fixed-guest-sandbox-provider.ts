@@ -205,6 +205,7 @@ export type FixedGuestSandboxProviderOptions<I extends GuestRuntimeInstance> = R
   providerId: string;
   runtimeName: "cubesandbox-kvm" | "boxlite-kvm";
   connections: { valid(instance: I): boolean; merge(previous: I, observed: I): I };
+  selectTemplate?: (spec: SandboxCreateSpec) => Promise<string>;
   templateId?: string;
   developmentTemplateIds?: Readonly<Record<DevelopmentEnvironmentProfileKey, string>>;
   imageRevision: string;
@@ -591,6 +592,7 @@ export class FixedGuestSandboxProvider<
   readonly #runtimeName: "cubesandbox-kvm" | "boxlite-kvm";
   readonly #connections: FixedGuestSandboxProviderOptions<I>["connections"];
   readonly defaultPolicy = FIXED_GUEST_TOOL_POLICY;
+  readonly #selectTemplate: FixedGuestSandboxProviderOptions<I>["selectTemplate"];
   readonly #templateId: string | undefined;
   readonly #developmentTemplateIds:
     ReadonlyMap<DevelopmentEnvironmentProfileKey, string> | undefined;
@@ -605,6 +607,7 @@ export class FixedGuestSandboxProvider<
 
   constructor(options: FixedGuestSandboxProviderOptions<I>) {
     this.providerId = options.providerId;
+    this.#selectTemplate = options.selectTemplate;
     this.#runtimeName = options.runtimeName;
     this.#connections = options.connections;
     if ((options.templateId === undefined) !== (options.developmentTemplateIds === undefined))
@@ -838,7 +841,13 @@ export class FixedGuestSandboxProvider<
     );
     const volumeId = workspaceVolumeId(spec.assignment);
     let storage: WorkspaceVolumeReference;
+    let selectedTemplate: string;
     try {
+      selectedTemplate = this.#selectTemplate
+        ? await this.#selectTemplate(spec)
+        : spec.sandboxProfileKey !== undefined
+          ? profiles.get(spec.sandboxProfileKey)!
+          : templateId;
       storage = await this.#ensureWorkspace(spec.assignment);
       await this.prepareVolumeMount(storage);
       await this.#workspaceVolumeGateway.verify({
@@ -853,8 +862,7 @@ export class FixedGuestSandboxProvider<
     let instance: I;
     try {
       instance = await this.#client.create({
-        templateId:
-          spec.sandboxProfileKey !== undefined ? profiles.get(spec.sandboxProfileKey)! : templateId,
+        templateId: selectedTemplate,
         metadata: {
           ...assignmentMetadata(
             this.providerId,

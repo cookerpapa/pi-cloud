@@ -1,3 +1,5 @@
+import { ResourceDevices } from "./ResourceDevices.tsx";
+import { ResourceBackendPicker } from "./ResourceBackendPicker.tsx";
 import { WorkspaceCapacity } from "./WorkspaceCapacity.tsx";
 import { useEffect, useState } from "react";
 import type {
@@ -66,6 +68,8 @@ export function ResourceManagementPage({
   const [tab, setTab] = useState<"workspaces" | "environments" | "source-control">(initialTab);
   const [profileKey, setProfileKey] = useState<DevelopmentEnvironmentProfileKey>("standard");
   const [machineName, setMachineName] = useState("");
+  const [backend, setBackend] =
+    useState<import("@pi-cloud/protocol").CreateDevelopmentEnvironmentRequest["backend"]>();
   const [storageGiB, setStorageGiB] = useState(32);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +100,6 @@ export function ResourceManagementPage({
   }
 
   useEffect(() => {
-    if (!environments.length) return;
     const interval = resourceRefreshPending(environments) ? 750 : 15_000;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -220,6 +223,9 @@ export function ResourceManagementPage({
         </nav>
         {error === null ? null : <div className="product-form-error">{error}</div>}
 
+        {tab === "environments" && (
+          <ResourceDevices api={api} conversations={conversations} onRefresh={onRefresh} />
+        )}
         {tab === "workspaces" ? (
           <section className="product-resource-section">
             {elasticWorkspaces.length === 0 ? (
@@ -405,7 +411,7 @@ export function ResourceManagementPage({
                 className="product-resource-create product-environment-create"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (creationPending) return;
+                  if (creationPending || !backend) return;
                   const name = machineName.trim();
                   if (name.length === 0) {
                     setError(t("resource.machineNameRequired"));
@@ -418,6 +424,7 @@ export function ResourceManagementPage({
                         profileKey,
                         newIdempotencyKey("environment"),
                         storageGiB,
+                        backend,
                       )
                       .then((result) => {
                         setMachineName("");
@@ -426,6 +433,7 @@ export function ResourceManagementPage({
                   );
                 }}
               >
+                <ResourceBackendPicker api={api} value={backend} onChange={setBackend} />
                 <label>
                   <span>{t("resource.machineName")}</span>
                   <input
@@ -486,6 +494,7 @@ export function ResourceManagementPage({
                   disabled={
                     busy ||
                     creationPending ||
+                    !backend ||
                     selectedProfile === undefined ||
                     machineName.trim().length === 0
                   }

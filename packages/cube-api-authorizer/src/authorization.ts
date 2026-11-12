@@ -36,6 +36,12 @@ export function isAllowedCubeApiOperation(path: string, method: string): boolean
     return false;
   }
   if (parsed.origin !== "http://cube-api.internal" || parsed.hash !== "") return false;
+  if (
+    normalizedMethod === "GET" &&
+    /^\/templates\/tpl-[a-z0-9]{24}$/.test(parsed.pathname) &&
+    parsed.search === ""
+  )
+    return true;
   if (normalizedMethod === "POST" && parsed.pathname === "/sandboxes" && parsed.search === "") {
     return true;
   }
