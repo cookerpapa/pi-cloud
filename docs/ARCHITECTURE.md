@@ -494,6 +494,13 @@ fix the selected implementation release and do not retry uncertain effects.
 Fixed guest Tools retain the matched protocol. See
 [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md).
 
+Under [ADR-0315](adr/0315-control-tool-dispatch-authority.md), ordinary control
+Tool dispatch does not read Worker lease expiry. The ordered consumer supplies
+admission and cancellation/closure; the exact native intent/task remains readable
+from PG. Cold restoration excludes closed or superseded Run/writer identities.
+Concrete handlers retain their own tenant, resource and business transaction
+checks. A confirmed effect can retry its original reply without repeating it.
+
 Worker Tool availability and Skill requirements use the same effective-capability
 resolver, including child grants, depth, roles and accepted device targets.
 Availability is independent of the prompt policy controlling proactive delegation.

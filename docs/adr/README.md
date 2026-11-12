@@ -1,5 +1,9 @@
 # Current architecture decisions
 
+[ADR-0315](0315-control-tool-dispatch-authority.md) removes Worker lease-clock
+checks from ordinary control Tool dispatch while preserving cold Run/writer
+closure, native task cancellation and resource/business admission.
+
 [ADR-0313](0313-alternate-runtime-production-integration.md) authorizes full
 alternate-provider integration and shared original-operation reply recovery in
 #27, with serial deployment acceptance and no upstream engine patches.

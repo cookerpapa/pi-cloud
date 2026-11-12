@@ -222,9 +222,15 @@ export class ControlToolDispatcher {
         from pi_durable_commits c
         join pi_sessions p on p.tenant_id=c.tenant_id and p.id=c.session_id
         cross join lateral jsonb_array_elements(c.cloud_metadata::jsonb->'controlTools') effect
+        join runs owner on owner.tenant_id=c.tenant_id
+          and owner.id=(effect->'scope'->>'runId')::uuid
+          and owner.lease_id=(effect->'scope'->>'writerId')::uuid
+          and owner.fencing_token=(effect->'scope'->>'fencingToken')::bigint
         join pi_durable_records r on r.tenant_id=c.tenant_id and r.session_id=c.session_id
           and r.id=(effect->>'taskId')::bigint and r.kind='task'
         where c.cloud_metadata is not null
+          and owner.state='running' and owner.output_seal_id is null
+          and owner.output_sealed_at is null
           and r.fields->>'nativeKind'='"pi.tool"'
           and r.fields->>'status' in ('pending','running')
           and coalesce(r.fields->>'abortRequested','false')='false'
@@ -269,8 +275,9 @@ export class ControlToolDispatcher {
   }
   async #load(pending: Pending): Promise<AcceptedControlToolCommand | undefined> {
     const d = pending.dispatch;
-    // Authority and the current task are checked together. This control-effect
-    // admission query is not added to fixed Cube Tool dispatch.
+    // The ordered Session consumer owns dispatch eligibility. Read only the
+    // original native intent and current task here, never the Worker's lease.
+    // Cold recovery separately excludes closed/superseded Run identities.
     const sourceSequence = d.recovery?.sequence ?? pending.sequence;
     const row = await sql<{
       body: string;
@@ -280,15 +287,11 @@ export class ControlToolDispatcher {
         and l.seq=${sourceSequence} and l.record_id=${d.sourceDocumentId ?? d.taskId}
         and l.record_kind=${d.sourceDocumentId === undefined ? "task" : "document.create"}
       join pi_durable_commits c on c.tenant_id=l.tenant_id and c.session_id=l.session_id and c.seq=l.seq
-      join active_execution_scopes a on a.tenant_id=r.tenant_id
-        and a.pi_session_id=r.session_id and a.run_id=${d.scope.runId}::uuid
       where r.tenant_id=${d.scope.tenantId}::uuid and r.session_id=${d.scope.piSessionId}
         and r.id=${d.taskId} and r.kind='task'
         and r.fields->>'conversation'=${String(d.conversationId)}
         and r.fields->>'status' in ('pending','running')
-        and coalesce(r.fields->>'abortRequested','false')='false'
-        and a.writer_id=${d.scope.writerId}::uuid and a.fencing_token=${d.scope.fencingToken}
-        and a.valid_until>clock_timestamp() and a.accepting_effects`.execute(this.options.database);
+        and coalesce(r.fields->>'abortRequested','false')='false'`.execute(this.options.database);
     if (!row.rows[0]) return;
     const write = JSON.parse(row.rows[0].body) as Record<string, unknown>;
     if (d.sourceDocumentId !== undefined) {

@@ -32,10 +32,11 @@ async function fixture(replayable = true) {
     create table pi_durable_records(tenant_id uuid,session_id text,id bigint,kind text,seq bigint,fields jsonb,retired_seq bigint);
     create table pi_durable_commits(tenant_id uuid,session_id text,seq bigint,cloud_metadata text);
     create table pi_durable_log(tenant_id uuid,session_id text,seq bigint,record_id bigint,record_kind text,body text);
-    create table active_execution_scopes(tenant_id uuid,pi_session_id text,run_id uuid,writer_id uuid,fencing_token bigint,valid_until timestamptz,accepting_effects boolean);
+    create table runs(tenant_id uuid,id uuid,lease_id uuid,fencing_token bigint,state text,output_seal_id uuid,output_sealed_at timestamptz);
   `);
   await sql`insert into pi_sessions values(${tenant}::uuid,'physical',1)`.execute(database);
-  await sql`insert into active_execution_scopes values(${tenant}::uuid,'physical',${run}::uuid,${writer}::uuid,2,clock_timestamp()+interval '1 hour',true)`.execute(
+  // There is deliberately no Worker or lease-expiry relation in this fixture.
+  await sql`insert into runs values(${tenant}::uuid,${run}::uuid,${writer}::uuid,2,'running',null,null)`.execute(
     database,
   );
   const dispatch: DurableControlToolDispatch = {
@@ -94,6 +95,39 @@ async function fixture(replayable = true) {
 }
 
 describe("native control Tool reconciliation", () => {
+  it("dispatches admitted control intent without any Worker lease relation", async () => {
+    const f = await fixture(false);
+    await f.dispatcher.consume(
+      intent(f),
+      () => true,
+      async () => true,
+    );
+    await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+    expect(f.execute).toHaveBeenCalledTimes(1);
+  }, 20_000);
+
+  it.each(["replacement", "seal_requested", "sealed", "settled"])(
+    "cold recovery excludes %s owners even if their native task is pending",
+    async (kind) => {
+      const f = await fixture();
+      if (kind === "replacement")
+        await sql`update runs set lease_id='20000000-0000-4000-8000-000000000009'::uuid`.execute(
+          f.database,
+        );
+      else if (kind === "seal_requested")
+        await sql`update runs set output_seal_id='20000000-0000-4000-8000-000000000009'::uuid`.execute(
+          f.database,
+        );
+      else if (kind === "sealed")
+        await sql`update runs set output_sealed_at=clock_timestamp()`.execute(f.database);
+      else await sql`update runs set state='completed'`.execute(f.database);
+      await f.dispatcher.recover([1], () => true);
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.publish).not.toHaveBeenCalled();
+    },
+    20_000,
+  );
+
   it("keeps the same reference when recovered waits replay their original native intent", async () => {
     const f = await fixture();
     f.execute.mockResolvedValue({ waiting: true });
@@ -198,6 +232,11 @@ describe("native control Tool reconciliation", () => {
     f.publish.mockRejectedValueOnce(new Error("Kafka unavailable"));
     await f.dispatcher.recover([1], () => true);
     await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(1));
+    // Result delivery belongs to the accepted operation, not a renewed Worker
+    // lease. A later owner can consume the protected original reply destination.
+    await sql`update runs set lease_id='20000000-0000-4000-8000-000000000009'::uuid`.execute(
+      f.database,
+    );
     f.dispatcher.wake(tenant, "physical");
     await vi.waitFor(() => expect(f.publish).toHaveBeenCalledTimes(2));
     expect(f.execute).toHaveBeenCalledTimes(1);

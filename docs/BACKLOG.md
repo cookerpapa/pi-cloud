@@ -1,5 +1,23 @@
 # Maintained backlog
 
+## Authorized decoupling and resource integration — in progress
+
+The owner authorized #30, #31 and #33–#37 for implementation on 2026-11-12.
+Work proceeds in complete slices; heavy checks, builds and live acceptance are
+serial. Preserve accounts/configuration/credentials, Workspace bytes and Android
+userdata. Push completed commits and perform the required matched/scoped rollout.
+
+- [x] #35 source: ordinary control dispatch no longer reads Worker lease expiry;
+  cold recovery filters closed/superseded Run identities. Forty-two focused tests
+  and the Control Plane type check pass under ADR-0315.
+- [ ] #35: coordinated publication and relevant live Tool/recovery acceptance.
+- [ ] #36: role-specific startup configuration and narrow assembly.
+- [ ] #37: verified production artifact and role dependency boundaries.
+- [ ] #30: Workspace persistence independent of the compute provider.
+- [ ] #31: dynamic administrator backend registration and resource selection.
+- [ ] #34: two Skill tools with precise installation removal.
+- [ ] #33: verified impact plans, artifact reuse and narrow publication.
+
 ## Repository decoupling review — complete; fixes await discussion
 
 - [x] [#32](https://github.com/cookerpapa/pi-managed-agents/issues/32): review current

@@ -3,6 +3,20 @@
   "description": "Deterministic infrastructure fault contracts for the maintained PostgreSQL, Kafka, Pi Worker and Cube Tool path.",
   "cases": [
     {
+      "id": "control-dispatch-lease-independent",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "dispatches admitted control intent without any Worker lease relation",
+      "invariant": "An ordered admitted control Tool executes without Worker ownership or lease-clock reads."
+    },
+    {
+      "id": "control-recovery-old-writer",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/control-tool-dispatcher.test.ts",
+      "test": "cold recovery excludes replacement owners even if their native task is pending",
+      "invariant": "Cold restoration excludes superseded intent identities without using Worker lease expiry as a dispatch gate."
+    },
+    {
       "id": "worker-inventory-retirement-reachable",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/sandbox-controller.test.ts",

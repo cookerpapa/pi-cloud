@@ -1,13 +1,15 @@
 # Implementation roadmap
 
-## Decoupling review before release expansion
+## Authorized decoupling implementation
 
 [#32](https://github.com/cookerpapa/pi-managed-agents/issues/32) is reviewed at
 `ae05797e`; [findings and verification](reports/repository-decoupling-review-20261112.md)
 retain the current authorities while identifying startup, control-Tool,
-storage/provider and build/publication coupling. Discuss those boundaries before
-implementing [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33).
-Persistence #30 and dynamic registration #31 remain separate proposed slices.
+storage/provider and build/publication coupling. The owner subsequently authorized
+#30, #31 and #33–#37. Implement complete slices, preserve existing assets, run heavy
+checks serially, and broaden publication only after the affected boundary passes.
+ADR-0315's control-Tool source slice passes focused checks; integrated publication
+remains pending. Persistence and registration retain their own acceptance scopes.
 
 ## Alternate runtime production integration — deployed
 
