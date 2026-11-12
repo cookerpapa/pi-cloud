@@ -11,7 +11,9 @@ import {
   ProductionBootstrapError,
   bootstrapProductionDatabase,
   loadProductionApiToken,
-  loadProductionControlPlaneConfig,
+  loadSessionApiConfig,
+  loadSessionRuntimeConfig,
+  loadResourceManagementConfig,
   type ProductionBootstrapConfig,
 } from "../src/index.ts";
 
@@ -228,17 +230,12 @@ describe.sequential("production bootstrap and configuration", () => {
     for (const [key, value] of Object.entries(environment)) {
       if (key.endsWith("_FILE")) await chmod(value, mode);
     }
-    const runtime = await loadProductionControlPlaneConfig(environment);
+    const runtime = await loadSessionApiConfig(environment);
     expect(runtime).toMatchObject({
       databaseUrl: "postgresql://db.invalid/picloud",
       databaseNotificationUrl: "postgresql://db.invalid/picloud",
       kafkaBrokers: ["kafka-1:9092", "kafka-2:9092"],
       kafkaReplicas: 1,
-      supervisorIdPrefix: "pi-worker-",
-      supervisorManagementBaseUrlTemplates: [
-        "http://{supervisorId}:4100",
-        "http://{supervisorId}.workers.example:4100",
-      ],
       sandboxControlBaseUrls: ["http://sandbox-control:4300/"],
       host: "0.0.0.0",
       port: 3000,
@@ -255,6 +252,16 @@ describe.sequential("production bootstrap and configuration", () => {
         },
       },
     });
+    expect(runtime).not.toHaveProperty("supervisorEnrollmentToken");
+    expect(runtime).not.toHaveProperty("supervisorManagementBaseUrlTemplates");
+    const workerControl = await loadSessionRuntimeConfig(environment);
+    expect(workerControl.supervisorIdPrefix).toBe("pi-worker-");
+    expect(workerControl.supervisorManagementBaseUrlTemplates).toHaveLength(2);
+    expect(workerControl).not.toHaveProperty("previewPublicOriginBaseUrl");
+    expect(workerControl).not.toHaveProperty("publicRegistration");
+    const manager = await loadResourceManagementConfig(environment);
+    expect(manager).not.toHaveProperty("kafkaBrokers");
+    expect(manager).not.toHaveProperty("supervisorEnrollmentToken");
     expect(runtime).not.toHaveProperty("tenantId");
     expect(runtime).not.toHaveProperty("defaultModelProfileId");
     expect(runtime).not.toHaveProperty("apiToken");
@@ -262,20 +269,20 @@ describe.sequential("production bootstrap and configuration", () => {
     await chmod(direct, mode);
     expect(
       (
-        await loadProductionControlPlaneConfig({
+        await loadSessionApiConfig({
           ...environment,
           DATABASE_NOTIFICATION_URL_FILE: direct,
         })
       ).databaseNotificationUrl,
     ).toBe("postgresql://direct.invalid/picloud");
     await expect(
-      loadProductionControlPlaneConfig({
+      loadSessionApiConfig({
         ...environment,
         DATABASE_NOTIFICATION_URL_FILE: join(root, "missing-direct"),
       }),
     ).rejects.toThrow();
     await expect(
-      loadProductionControlPlaneConfig({
+      loadSessionApiConfig({
         ...environment,
         DATABASE_NOTIFICATION_URL_FILE: direct,
         DATABASE_NOTIFICATION_URL: "postgresql://conflicting",
@@ -287,7 +294,7 @@ describe.sequential("production bootstrap and configuration", () => {
       mode: 0o600,
     });
     await chmod(githubPrivateKeyPath, mode);
-    const githubRuntime = await loadProductionControlPlaneConfig({
+    const githubRuntime = await loadSessionApiConfig({
       ...environment,
       PI_CLOUD_PUBLIC_ORIGIN_BASE_URL: "https://picloud.example.com",
       PI_CLOUD_GITHUB_APP_ID: "12345",
@@ -304,7 +311,7 @@ describe.sequential("production bootstrap and configuration", () => {
       webhookSecret: "github-webhook-secret-with-at-least-32-bytes",
     });
     expect(githubRuntime.githubApp?.privateKeyPem).toContain("PRIVATE KEY");
-    const gitlabRuntime = await loadProductionControlPlaneConfig({
+    const gitlabRuntime = await loadSessionApiConfig({
       ...environment,
       PI_CLOUD_GITLAB_ENABLED: "true",
       PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE: await secret(
@@ -317,6 +324,7 @@ describe.sequential("production bootstrap and configuration", () => {
       PI_CLOUD_GITLAB_WORKSPACE_BASE_URL: "https://gitlab-workspace.example.com",
     });
     expect(gitlabRuntime.gitlabProject).toEqual({
+      publicOrigin: "http://preview.localhost:8080/",
       credentialMasterKey: Buffer.alloc(32, 6).toString("base64url"),
       webhookUrl: "https://picloud.example.com/v1/source-control/gitlab/webhook",
       issueLabel: "picloud",

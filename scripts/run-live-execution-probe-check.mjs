@@ -59,7 +59,7 @@ import {loadSandboxControlConfig,OfficialCubeSandboxRuntimeClient} from '@pi-clo
 import {CubePersistentCapsuleCodec} from '/app/packages/sandbox-control/src/cube-persistent-capsule.ts';
 import {ToolCompletionIssuer} from '/app/packages/sandbox-control/src/tool-completion-issuer.ts';
 const config=await loadSandboxControlConfig(),cube=config.cubeSandbox;
-const database=createDatabase({connectionString:config.databaseUrl,maxConnections:1});
+const database=createDatabase({connectionString:config.databaseNotificationUrl,maxConnections:1});
 const client=new OfficialCubeSandboxRuntimeClient({...cube,egressProxyIp:cube.egressProxyHost});
 const completion=new ToolCompletionIssuer({
  url:process.env.PI_CLOUD_TOOL_COMPLETION_URL,

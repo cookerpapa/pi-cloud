@@ -1,5 +1,13 @@
 # Configuration
 
+Startup settings are loaded by the role that consumes them (ADR-0316). Public
+Session API does not require Worker enrollment or provisioning templates. Session
+execution does not load Web registration, preview or SCM settings. Resource
+management does not load Kafka dispatch or Worker enrollment settings. Shared
+credential names/values are unchanged; each Helm workload mounts only its
+declared consumers. Provider execution/data and lifecycle configuration continue
+through their respective sandbox-module loaders.
+
 `session-runtime:3000` is the API/publication/observation and Worker membership
 endpoint; `session-runtime:4300` serves existing-binding data channels.
 `control-plane:4300` admits and manages resources. `PI_CLOUD_SESSION_EXECUTION_URL`

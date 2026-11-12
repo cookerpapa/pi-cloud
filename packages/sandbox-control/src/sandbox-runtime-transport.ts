@@ -1,7 +1,7 @@
 import { CubeSandboxProvider } from "./cubesandbox-sandbox-provider.ts";
 import { OfficialCubeSandboxRuntimeClient } from "./cubesandbox-runtime-client.ts";
 import { HttpWorkspaceVolumeGateway } from "./workspace-volume-gateway.ts";
-import type { SandboxControlConfig } from "./sandbox-control-config.ts";
+import type { SandboxRuntimeTransportConfig } from "./sandbox-control-config.ts";
 import { lookup } from "node:dns/promises";
 import type { Database } from "@pi-cloud/database";
 import type { Kysely } from "kysely";
@@ -11,7 +11,7 @@ import { BoxLiteSandboxProvider } from "./boxlite-sandbox-provider.ts";
 
 /** Each process owns its transport clients; only management receives lifecycle consumers. */
 export async function createSandboxRuntimeTransport(
-  config: SandboxControlConfig,
+  config: SandboxRuntimeTransportConfig,
   database: Kysely<Database>,
 ) {
   const cube = config.cubeSandbox;

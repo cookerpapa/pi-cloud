@@ -12,7 +12,7 @@ import {
 import { parseExecutionReference } from "@pi-cloud/protocol";
 import { sql, type Kysely } from "kysely";
 import { setTimeout as delay } from "node:timers/promises";
-import { loadSandboxControlConfig } from "./sandbox-control-config.ts";
+import { loadSandboxExecutionConfig } from "./sandbox-control-config.ts";
 import { createSandboxRuntimeTransport } from "./sandbox-runtime-transport.ts";
 import { PostgresSandboxBindings } from "./sandbox-bindings.ts";
 import { SandboxBindingView } from "./sandbox-binding-view.ts";
@@ -51,7 +51,7 @@ export async function createSandboxSessionRuntime(options: {
   ownerForPartition(partition: number): Promise<string | undefined>;
   canStart?(): boolean;
 }) {
-  const config = await loadSandboxControlConfig();
+  const config = await loadSandboxExecutionConfig();
   const { database, instanceId, metrics } = options;
   const cleanup: Array<() => unknown | Promise<unknown>> = [];
   let closing: Promise<void> | undefined;

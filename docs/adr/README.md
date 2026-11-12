@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0316](0316-role-configuration-and-artifact-boundaries.md) assigns startup
+configuration and artifact inputs to their actual serving roles (#36/#37).
+
 [ADR-0315](0315-control-tool-dispatch-authority.md) removes Worker lease-clock
 checks from ordinary control Tool dispatch while preserving cold Run/writer
 closure, native task cancellation and resource/business admission.

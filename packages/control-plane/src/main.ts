@@ -9,7 +9,7 @@ import { SessionControlOutbox } from "@pi-cloud/runtime-core/session-control-out
 import { configuredImageAttachments, AttachmentReaper } from "@pi-cloud/session-attachments";
 import { reapUnreferencedEntryBodies } from "@pi-cloud/pi-session-postgres/durable";
 import { reconcileUploadPins } from "./upload-input-pins.ts";
-import { loadProductionControlPlaneConfig } from "./production-config.ts";
+import { loadResourceManagementConfig } from "./production-config.ts";
 import { closeControlPlaneResources } from "./close-resources.ts";
 import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 import { ownershipRetirement } from "./ownership-retirement.ts";
@@ -23,7 +23,7 @@ export { closeControlPlaneResources } from "./close-resources.ts";
 
 /** Resource management has no Projector, public API or Worker execution transport. */
 export async function startControlPlane(): Promise<void> {
-  const config = await loadProductionControlPlaneConfig();
+  const config = await loadResourceManagementConfig();
   runtimeModelCatalog();
   const cleanup: Array<() => unknown | Promise<unknown>> = [];
   let closing: Promise<void> | undefined;

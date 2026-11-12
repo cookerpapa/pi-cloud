@@ -4,7 +4,7 @@ import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { directPrivateEgressCidrs } from "./direct-private-egress.ts";
 
-export type SandboxControlConfig = {
+type SandboxConfigurationFields = {
   runtimeProvider?: "cubesandbox" | "boxlite";
   boxlite?: {
     url: string;
@@ -55,6 +55,34 @@ export type SandboxControlConfig = {
     workspaceVolumeGatewayRequestTimeoutMs: number;
   };
 };
+
+type ManagementFields =
+  | "databaseNotificationUrl"
+  | "ownershipLeaseMs"
+  | "ownershipHeartbeatMs"
+  | "maximumActiveSandboxes"
+  | "runtimeProbeConcurrency"
+  | "elasticRetentionMs"
+  | "workspaceDeletionReaperIntervalMs"
+  | "workspaceDeletionReaperBatchSize";
+type ExecutionFields = "kafkaBrokers" | "maximumActiveCommands" | "controlPlaneUrl";
+type SandboxServingConfig = Omit<
+  SandboxConfigurationFields,
+  ManagementFields | ExecutionFields | "databaseUrl"
+>;
+export type SandboxControlConfig = SandboxServingConfig &
+  Pick<SandboxConfigurationFields, ManagementFields>;
+export type SandboxExecutionConfig = SandboxServingConfig &
+  Pick<SandboxConfigurationFields, ExecutionFields>;
+export type SandboxRuntimeTransportConfig = Pick<
+  SandboxConfigurationFields,
+  | "runtimeProvider"
+  | "boxlite"
+  | "persistentStateKey"
+  | "serviceToken"
+  | "imageRevision"
+  | "cubeSandbox"
+>;
 
 function required(environment: NodeJS.ProcessEnv, name: string): string {
   const value = environment[name];
@@ -242,30 +270,15 @@ async function executionEndpoints(path: string | undefined) {
   }
 }
 
-export async function loadSandboxControlConfig(
+async function loadSandboxServingConfig(
   environment: NodeJS.ProcessEnv = process.env,
-): Promise<SandboxControlConfig> {
+): Promise<SandboxServingConfig> {
   const runtimeProvider = environment.PI_CLOUD_SANDBOX_PROVIDER ?? "cubesandbox";
   if (runtimeProvider !== "cubesandbox" && runtimeProvider !== "boxlite")
     throw new TypeError("PI_CLOUD_SANDBOX_PROVIDER is invalid");
   const cubeProxyScheme = environment.PI_CLOUD_CUBESANDBOX_PROXY_SCHEME ?? "http";
   if (cubeProxyScheme !== "http" && cubeProxyScheme !== "https") {
     throw new TypeError("PI_CLOUD_CUBESANDBOX_PROXY_SCHEME is invalid");
-  }
-  const ownershipLeaseMs = integer(
-    environment.PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS,
-    15_000,
-    3_000,
-    300_000,
-  );
-  const ownershipHeartbeatMs = integer(
-    environment.PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS,
-    5_000,
-    1_000,
-    60_000,
-  );
-  if (ownershipHeartbeatMs * 2 >= ownershipLeaseMs) {
-    throw new TypeError("Sandbox control heartbeat must leave lease failure margin");
   }
   return {
     runtimeProvider,
@@ -288,15 +301,7 @@ export async function loadSandboxControlConfig(
         }
       : {}),
     host: bounded(environment.PI_CLOUD_SANDBOX_CONTROL_HOST ?? "127.0.0.1", "host", 256),
-    port: integer(environment.PI_CLOUD_SANDBOX_CONTROL_PORT, 4_300, 1, 65_535),
-    databaseUrl: await readDatabaseUrl(required(environment, "DATABASE_URL_FILE")),
-    databaseNotificationUrl: await readDatabaseUrl(
-      environment.DATABASE_NOTIFICATION_URL_FILE ?? required(environment, "DATABASE_URL_FILE"),
-    ),
-    kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
-      .split(",")
-      .map((value) => bounded(value.trim(), "Kafka broker", 256)),
-    maximumActiveCommands: integer(environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, 32, 1, 4096),
+    port: integer(environment.PI_CLOUD_SANDBOX_CONTROL_PORT, 4300, 1, 65535),
     sandboxDomainId: bounded(
       required(environment, "PI_CLOUD_SANDBOX_DOMAIN_ID"),
       "sandboxDomainId",
@@ -306,13 +311,7 @@ export async function loadSandboxControlConfig(
       required(environment, "PI_CLOUD_SANDBOX_CONTROL_ADVERTISED_URL"),
       "advertisedBaseUrl",
     ),
-    ownershipLeaseMs,
-    ownershipHeartbeatMs,
     serviceToken: await readSecret(required(environment, "PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE")),
-    controlPlaneUrl: serviceUrl(
-      required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
-      "controlPlaneUrl",
-    ),
     sessionExecutionBaseUrl: serviceUrl(
       environment.PI_CLOUD_SESSION_EXECUTION_URL ?? "http://session-runtime:4300",
       "sessionExecutionBaseUrl",
@@ -335,29 +334,6 @@ export async function loadSandboxControlConfig(
       "PI_CLOUD_IMAGE_REVISION",
       128,
     ),
-    maximumActiveSandboxes: resourceLimit(
-      environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES,
-      "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES",
-    ),
-    runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
-    elasticRetentionMs: integer(
-      environment.PI_CLOUD_ELASTIC_RETENTION_MS,
-      30 * 60_000,
-      1_000,
-      24 * 60 * 60_000,
-    ),
-    workspaceDeletionReaperIntervalMs: integer(
-      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS,
-      30_000,
-      1_000,
-      3_600_000,
-    ),
-    workspaceDeletionReaperBatchSize: integer(
-      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE,
-      16,
-      1,
-      256,
-    ),
     cubeSandbox: {
       ...(environment.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
         ? {
@@ -376,7 +352,7 @@ export async function loadSandboxControlConfig(
       apiUrl: bounded(
         required(environment, "PI_CLOUD_CUBESANDBOX_API_URL"),
         "cubeSandboxApiUrl",
-        2_048,
+        2048,
       ),
       apiKey: await readCubeCredential(required(environment, "PI_CLOUD_CUBESANDBOX_API_KEY_FILE")),
       templateId: bounded(
@@ -396,7 +372,7 @@ export async function loadSandboxControlConfig(
         environment.PI_CLOUD_CUBESANDBOX_PROXY_PORT,
         cubeProxyScheme === "https" ? 443 : 80,
         1,
-        65_535,
+        65535,
       ),
       proxyScheme: cubeProxyScheme,
       sandboxDomain: bounded(
@@ -409,35 +385,96 @@ export async function loadSandboxControlConfig(
         "cubeSandboxEgressProxyHost",
         15,
       ),
-      egressProxyPort: integer(
-        environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT,
-        3_128,
-        1,
-        65_535,
-      ),
+      egressProxyPort: integer(environment.PI_CLOUD_CUBESANDBOX_EGRESS_PROXY_PORT, 3128, 1, 65535),
       directPrivateCidrs: directPrivateEgressCidrs(
         environment.PI_CLOUD_CUBESANDBOX_DIRECT_PRIVATE_CIDRS,
       ),
       requestTimeoutMs: integer(
         environment.PI_CLOUD_CUBESANDBOX_REQUEST_TIMEOUT_MS,
-        120_000,
-        1_000,
-        300_000,
+        120000,
+        1000,
+        300000,
       ),
       workspaceVolumeGatewayUrl: bounded(
         required(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL"),
         "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL",
-        2_048,
+        2048,
       ),
       workspaceVolumeGatewayToken: await readSecret(
         required(environment, "PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE"),
       ),
       workspaceVolumeGatewayRequestTimeoutMs: integer(
         environment.PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS,
-        660_000,
-        1_000,
-        900_000,
+        660000,
+        1000,
+        900000,
       ),
     },
+  };
+}
+
+export async function loadSandboxControlConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<SandboxControlConfig> {
+  const ownershipLeaseMs = integer(
+    environment.PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_LEASE_MS,
+    15000,
+    3000,
+    300000,
+  );
+  const ownershipHeartbeatMs = integer(
+    environment.PI_CLOUD_SANDBOX_CONTROL_OWNERSHIP_HEARTBEAT_MS,
+    5000,
+    1000,
+    60000,
+  );
+  if (ownershipHeartbeatMs * 2 >= ownershipLeaseMs)
+    throw new TypeError("Sandbox control heartbeat must leave lease failure margin");
+  return {
+    ...(await loadSandboxServingConfig(environment)),
+    databaseNotificationUrl: await readDatabaseUrl(
+      environment.DATABASE_NOTIFICATION_URL_FILE ?? required(environment, "DATABASE_URL_FILE"),
+    ),
+    ownershipLeaseMs,
+    ownershipHeartbeatMs,
+    maximumActiveSandboxes: resourceLimit(
+      environment.PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES,
+      "PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES",
+    ),
+    runtimeProbeConcurrency: integer(environment.PI_CLOUD_RUNTIME_PROBE_CONCURRENCY, 4, 1, 64),
+    elasticRetentionMs: integer(
+      environment.PI_CLOUD_ELASTIC_RETENTION_MS,
+      30 * 60000,
+      1000,
+      24 * 60 * 60000,
+    ),
+    workspaceDeletionReaperIntervalMs: integer(
+      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS,
+      30000,
+      1000,
+      3600000,
+    ),
+    workspaceDeletionReaperBatchSize: integer(
+      environment.PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE,
+      16,
+      1,
+      256,
+    ),
+  };
+}
+
+export async function loadSandboxExecutionConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<SandboxExecutionConfig> {
+  return {
+    ...(await loadSandboxServingConfig(environment)),
+    kafkaBrokers: required(environment, "PI_CLOUD_KAFKA_BROKERS")
+      .split(",")
+      .map((value) => bounded(value.trim(), "Kafka broker", 256)),
+    maximumActiveCommands: integer(environment.PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, 32, 1, 4096),
+    controlPlaneUrl: serviceUrl(
+      required(environment, "PI_CLOUD_CONTROL_PLANE_URL"),
+      "controlPlaneUrl",
+    ),
   };
 }

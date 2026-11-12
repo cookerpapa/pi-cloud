@@ -56,6 +56,31 @@ assert(sessionApi && find("Service", "session-api"));
 assert.deepEqual(sessionApi.spec.template.spec.containers[0].args, [
   "/app/packages/control-plane/src/session-api-main.ts",
 ]);
+const roleEnvironment = (workload) =>
+  new Set(workload.spec.template.spec.containers[0].env.map((entry) => entry.name));
+const apiEnvironment = roleEnvironment(sessionApi);
+for (const field of [
+  "PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE",
+  "PI_CLOUD_SUPERVISOR_ID_PREFIX",
+  "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES",
+  "PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES",
+])
+  assert(!apiEnvironment.has(field), `Public API must not require ${field}`);
+const apiMounts = sessionApi.spec.template.spec.containers[0].volumeMounts;
+for (const key of [
+  "supervisor-enrollment-token",
+  "cubesandbox-api-key",
+  "cube-persistent-state-key",
+])
+  assert(!apiMounts.some((mount) => mount.subPath === key), `Public API mounts unrelated ${key}`);
+const executionEnvironment = roleEnvironment(controlPlane);
+for (const field of [
+  "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED",
+  "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL",
+  "PI_CLOUD_GITHUB_APP_ID",
+])
+  assert(!executionEnvironment.has(field), `Session execution must not require ${field}`);
+assert(!roleEnvironment(management).has("PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE"));
 const completion = find("Deployment", "pi-cloud-tool-completion");
 assert(completion && find("Service", "tool-completion"));
 assert.deepEqual(completion.spec.template.spec.containers[0].args, [
@@ -148,7 +173,9 @@ assert.equal(webEnvironment.PI_CLOUD_CONTROL_PLANE_UPSTREAM, "session-api:3000")
 assert.equal(webEnvironment.PI_CLOUD_PREVIEW_UPSTREAM, "session-api:3001");
 assert.equal(
   webEnvironment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
-  environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL,
+  sessionApi.spec.template.spec.containers[0].env.find(
+    (entry) => entry.name === "PI_CLOUD_PUBLIC_ORIGIN_BASE_URL",
+  )?.value,
 );
 assert.equal(webEnvironment.PI_CLOUD_ADMIN_ORIGIN_BASE_URL, "https://admin.pi-cloud.example.com");
 assert.equal(webEnvironment.PI_CLOUD_GRAFANA_URL, "");

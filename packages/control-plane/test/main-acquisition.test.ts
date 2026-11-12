@@ -29,7 +29,7 @@ vi.mock("@pi-cloud/event-log", async (original) => ({
     }
   },
 }));
-vi.mock("../src/production-config.ts", () => ({ loadProductionControlPlaneConfig: calls.config }));
+vi.mock("../src/production-config.ts", () => ({ loadSessionRuntimeConfig: calls.config }));
 vi.mock("../src/subagent-controller.ts", () => ({ SubagentController: calls.subagents }));
 vi.mock("@pi-cloud/runtime-core/session-projector", () => ({ SessionProjector: calls.projector }));
 vi.mock("@pi-cloud/sandbox-control/session-runtime", () => ({

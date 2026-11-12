@@ -65,7 +65,13 @@ export {
   type WorkspaceTerminalConnection,
   type WorkspaceTerminalOpenInput,
 } from "./sandbox-controller.ts";
-export { loadSandboxControlConfig, type SandboxControlConfig } from "./sandbox-control-config.ts";
+export {
+  loadSandboxControlConfig,
+  loadSandboxExecutionConfig,
+  type SandboxControlConfig,
+  type SandboxExecutionConfig,
+  type SandboxRuntimeTransportConfig,
+} from "./sandbox-control-config.ts";
 export {
   SandboxControlServer,
   SANDBOX_CONTROL_TERMINAL_PATH,

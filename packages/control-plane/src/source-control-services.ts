@@ -4,12 +4,12 @@ import { Agent, EnvHttpProxyAgent, fetch as undiciFetch } from "undici";
 import { GitHubAppClient } from "./github-app-client.ts";
 import { SourceControlService } from "./source-control-service.ts";
 import { SourceControlCredentialVault } from "./source-control-credential-vault.ts";
-import type { loadProductionControlPlaneConfig } from "./production-config.ts";
+import type { SourceControlRuntimeConfig } from "./production-config.ts";
 
 /** HTTP API and management background reconcilers share adapters, never scheduler ownership. */
 export function createSourceControlServices(
   database: Kysely<Database>,
-  config: Awaited<ReturnType<typeof loadProductionControlPlaneConfig>>,
+  config: SourceControlRuntimeConfig,
 ) {
   let sourceControlDispatcher: EnvHttpProxyAgent | undefined;
   let internalSourceControlDispatcher: Agent | undefined;
@@ -42,7 +42,7 @@ export function createSourceControlServices(
       : {
           vault: new SourceControlCredentialVault(config.gitlabProject.credentialMasterKey),
           webhookUrl: config.gitlabProject.webhookUrl,
-          publicOrigin: config.publicOriginBaseUrl,
+          publicOrigin: config.gitlabProject.publicOrigin,
           issueLabel: config.gitlabProject.issueLabel,
           ...(config.gitlabProject.internalBaseUrl === undefined
             ? {}

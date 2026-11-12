@@ -32,7 +32,7 @@ import {
   SupervisorBootProvisioner,
   SupervisorProvisioningGateway,
 } from "./supervisor-boot-provisioner.ts";
-import { loadProductionControlPlaneConfig } from "./production-config.ts";
+import { loadSessionRuntimeConfig } from "./production-config.ts";
 import { SupervisorControlRuntime } from "./supervisor-control-runtime.ts";
 import { SessionLiveService } from "./session-live-service.ts";
 import { SessionEventStream } from "@pi-cloud/runtime-core/session-event-stream";
@@ -64,7 +64,7 @@ async function verifyBootstrap(database: ReturnType<typeof createDatabase>): Pro
 }
 
 export async function startSessionRuntime(): Promise<void> {
-  const config = await loadProductionControlPlaneConfig();
+  const config = await loadSessionRuntimeConfig();
   runtimeModelCatalog();
   let ownedObservability: Awaited<ReturnType<typeof startServiceObservability>> | undefined;
   let ownedDatabase: ReturnType<typeof createDatabase> | undefined;

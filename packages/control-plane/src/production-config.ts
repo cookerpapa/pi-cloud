@@ -3,74 +3,11 @@ import { parseUuidPathParameter } from "@pi-cloud/protocol";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { TenantQuotaConfiguration } from "./tenant-administration.ts";
-import {
-  loadProducerCapacity,
-  type ProducerCapacity,
-} from "@pi-cloud/runtime-core/kafka-accepted-fact";
+import { loadProducerCapacity } from "@pi-cloud/runtime-core/kafka-accepted-fact";
 
 const MAX_SECRET_BYTES = 16 * 1_024;
 
 export type ProductionControlPlaneEnvironment = Readonly<Record<string, string | undefined>>;
-
-export type ProductionControlPlaneConfig = {
-  databaseUrl: string;
-  databaseNotificationUrl: string;
-  kafkaBrokers: readonly string[];
-  kafkaPartitions: number;
-  kafkaReplicas: number;
-  producerCapacity: ProducerCapacity;
-  acceptedFactRetentionMs: number;
-  projectorAdvertisedBaseUrl: string;
-  supervisorEnrollmentToken: string;
-  supervisorManagementToken: string;
-  cubeEgressConfigToken: string;
-  enabledControlTools?: readonly string[];
-  imageGeneration?: { baseUrl: string; apiKey: string; model: string };
-  sandboxControlBaseUrls: readonly string[];
-  workspaceServiceToken: string;
-  workspaceTerminalToken: string;
-  previewPublicOriginBaseUrl: string;
-  previewPort: number;
-  sshGatewayEnabled: boolean;
-  sshAdvertisedHost: string;
-  sshAdvertisedPort: number;
-  sshTicketTtlMs: number;
-  supervisorIdPrefix: string;
-  supervisorMaximumCapacity: number | null;
-  subagentTreePolicy: {
-    maximumDepth: number | null;
-    maximumNodes: number | null;
-  };
-  supervisorManagementBaseUrlTemplates: readonly string[];
-  allowInsecureInternalHttp: boolean;
-  host: string;
-  port: number;
-  platformModelSourceTenantId: string;
-  platformOperatorTenantId: string;
-  environmentImageRevision: string;
-  webSessionCookieSecure: boolean;
-  webSessionTtlMs: number;
-  publicRegistration: {
-    enabled: boolean;
-    maximumTenants: number | null;
-    tenantQuotas: TenantQuotaConfiguration;
-  };
-  publicOriginBaseUrl: string;
-  githubApp?: {
-    appId: string;
-    privateKeyPem: string;
-    webhookSecret: string;
-    issueLabel: string;
-  };
-  gitlabProject?: {
-    credentialMasterKey: string;
-    webhookUrl: string;
-    issueLabel: string;
-    internalBaseUrl?: string;
-    workspaceBaseUrl?: string;
-  };
-};
 
 export type ProductionBootstrapConfig = {
   tenantId: string;
@@ -430,144 +367,192 @@ export async function loadToolHostConfig(
   };
 }
 
-export async function loadProductionControlPlaneConfig(
-  environment: ProductionControlPlaneEnvironment = process.env,
-): Promise<ProductionControlPlaneConfig> {
-  const allowInlineSecrets = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
-  const allowInsecureInternalHttp = booleanValue(
-    environment,
-    "PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP",
-  );
-  const platformModelSourceTenantId = parseUuidPathParameter(
-    required(environment, "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID"),
-    "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID",
-  );
-  const configuredPlatformOperatorTenantId = environment.PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID;
-  const platformOperatorTenantId = parseUuidPathParameter(
-    configuredPlatformOperatorTenantId === undefined ||
-      configuredPlatformOperatorTenantId.length === 0
-      ? platformModelSourceTenantId
-      : configuredPlatformOperatorTenantId,
-    "PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID",
-  );
+async function loadSharedRoleConfig(environment: ProductionControlPlaneEnvironment) {
+  const inline = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
   const databaseUrl = await loadProductionDatabaseUrl(environment);
-  const databaseNotificationUrl =
-    environment.DATABASE_NOTIFICATION_URL !== undefined ||
-    environment.DATABASE_NOTIFICATION_URL_FILE !== undefined
-      ? await secret(environment, "DATABASE_NOTIFICATION_URL", allowInlineSecrets)
-      : databaseUrl;
-  const githubFields = [
-    environment.PI_CLOUD_GITHUB_APP_ID,
-    environment.PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE,
-    environment.PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE,
-  ];
-  const githubConfigured = githubFields.some((value) => value !== undefined && value.length > 0);
-  if (githubConfigured && githubFields.some((value) => value === undefined || value.length === 0)) {
-    throw new TypeError("GitHub App configuration must provide ID, private key and Webhook secret");
-  }
-  const previewPublicOriginBaseUrl = managementUrl(
-    required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
-    true,
-  );
-  const publicOriginBaseUrl = managementUrl(
-    environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ?? previewPublicOriginBaseUrl,
-    true,
-  );
-  const gitlabEnabled = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
-  const enabledControlTools: unknown =
-    environment.PI_CLOUD_CONTROL_TOOLS_ENABLED === undefined
-      ? undefined
-      : JSON.parse(environment.PI_CLOUD_CONTROL_TOOLS_ENABLED);
-  if (
-    enabledControlTools !== undefined &&
-    (!Array.isArray(enabledControlTools) ||
-      enabledControlTools.some(
-        (name) => typeof name !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(name),
-      ) ||
-      new Set(enabledControlTools).size !== enabledControlTools.length)
-  )
-    throw new TypeError("PI_CLOUD_CONTROL_TOOLS_ENABLED must be an array of unique Tool names");
   return {
-    ...(enabledControlTools === undefined
-      ? {}
-      : { enabledControlTools: enabledControlTools as string[] }),
-    ...(environment.PI_CLOUD_IMAGE_GENERATION_MODEL
-      ? {
-          imageGeneration: {
-            model: bounded(
-              environment.PI_CLOUD_IMAGE_GENERATION_MODEL,
-              "PI_CLOUD_IMAGE_GENERATION_MODEL",
-              200,
-            ),
-            baseUrl: managementUrl(required(environment, "PI_CLOUD_IMAGE_GENERATION_URL"), true),
-            apiKey: await secret(
-              environment,
-              "PI_CLOUD_IMAGE_GENERATION_API_KEY",
-              allowInlineSecrets,
-            ),
-          },
-        }
-      : {}),
     databaseUrl,
-    databaseNotificationUrl,
-    projectorAdvertisedBaseUrl: managementUrl(
-      environment.PI_CLOUD_PROJECTOR_ADVERTISED_URL ??
-        `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,
-      true,
+    databaseNotificationUrl:
+      environment.DATABASE_NOTIFICATION_URL !== undefined ||
+      environment.DATABASE_NOTIFICATION_URL_FILE !== undefined
+        ? await secret(environment, "DATABASE_NOTIFICATION_URL", inline)
+        : databaseUrl,
+    supervisorManagementToken: await secret(
+      environment,
+      "PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN",
+      inline,
     ),
+    allowInsecureInternalHttp: booleanValue(environment, "PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP"),
+    host: bounded(environment.HOST ?? "127.0.0.1", "HOST"),
+    port: integerValue(environment, "PORT", 3000, 1, 65535),
+  };
+}
+
+function loadKafkaCatalogConfig(environment: ProductionControlPlaneEnvironment) {
+  return {
     kafkaBrokers: boundedList(
       required(environment, "PI_CLOUD_KAFKA_BROKERS"),
       "PI_CLOUD_KAFKA_BROKERS",
     ),
-    kafkaPartitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1_024),
     kafkaReplicas: integerValue(environment, "PI_CLOUD_KAFKA_REPLICAS", 3, 1, 5),
-    producerCapacity: loadProducerCapacity(environment),
-    acceptedFactRetentionMs: integerValue(
-      environment,
-      "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
-      2 * 60 * 60_000,
-      60 * 60_000,
-      7 * 24 * 60 * 60_000,
+  };
+}
+
+function modelSourceTenant(environment: ProductionControlPlaneEnvironment) {
+  return parseUuidPathParameter(
+    required(environment, "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID"),
+    "PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID",
+  );
+}
+function operatorTenant(environment: ProductionControlPlaneEnvironment) {
+  return parseUuidPathParameter(
+    environment.PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID || modelSourceTenant(environment),
+    "PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID",
+  );
+}
+function imageRevision(environment: ProductionControlPlaneEnvironment) {
+  return bounded(required(environment, "PI_CLOUD_IMAGE_REVISION"), "PI_CLOUD_IMAGE_REVISION", 128);
+}
+function subagentPolicy(environment: ProductionControlPlaneEnvironment) {
+  return {
+    maximumDepth: resourceLimit(
+      environment.PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH,
+      "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH",
     ),
-    supervisorEnrollmentToken: await secret(
-      environment,
-      "PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN",
-      allowInlineSecrets,
+    maximumNodes: resourceLimit(
+      environment.PI_CLOUD_SUBAGENT_MAXIMUM_NODES,
+      "PI_CLOUD_SUBAGENT_MAXIMUM_NODES",
     ),
-    supervisorManagementToken: await secret(
-      environment,
-      "PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN",
-      allowInlineSecrets,
-    ),
+  };
+}
+async function workspaceAccess(environment: ProductionControlPlaneEnvironment) {
+  const inline = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
+  return {
+    workspaceServiceToken: await secret(environment, "PI_CLOUD_WORKSPACE_SERVICE_TOKEN", inline),
+    workspaceTerminalToken: await secret(environment, "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN", inline),
+  };
+}
+
+async function loadSourceControlConfig(environment: ProductionControlPlaneEnvironment) {
+  const inline = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
+  const allowHttp = booleanValue(environment, "PI_CLOUD_ALLOW_INSECURE_INTERNAL_HTTP");
+  const fields = [
+    environment.PI_CLOUD_GITHUB_APP_ID,
+    environment.PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE,
+    environment.PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE,
+  ];
+  const github = fields.some((value) => value !== undefined && value.length > 0);
+  if (github && fields.some((value) => value === undefined || value.length === 0))
+    throw new TypeError("GitHub App configuration must provide ID, private key and Webhook secret");
+  const gitlab = booleanValue(environment, "PI_CLOUD_GITLAB_ENABLED");
+  const publicOrigin = gitlab
+    ? managementUrl(
+        environment.PI_CLOUD_PUBLIC_ORIGIN_BASE_URL ??
+          required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
+        true,
+      )
+    : undefined;
+  return {
+    ...(github
+      ? {
+          githubApp: {
+            appId: bounded(
+              required(environment, "PI_CLOUD_GITHUB_APP_ID"),
+              "PI_CLOUD_GITHUB_APP_ID",
+              31,
+            ),
+            privateKeyPem: await privatePem(
+              required(environment, "PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE"),
+            ),
+            webhookSecret: await secret(environment, "PI_CLOUD_GITHUB_WEBHOOK_SECRET", inline),
+            issueLabel: bounded(
+              environment.PI_CLOUD_GITHUB_ISSUE_LABEL ?? "picloud",
+              "PI_CLOUD_GITHUB_ISSUE_LABEL",
+              50,
+            ),
+          },
+        }
+      : {}),
+    ...(gitlab
+      ? {
+          gitlabProject: {
+            publicOrigin: publicOrigin!,
+            credentialMasterKey: await secret(
+              environment,
+              "PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY",
+              inline,
+            ),
+            webhookUrl: gitlabWebhookUrl(
+              environment.PI_CLOUD_GITLAB_WEBHOOK_URL ??
+                new URL("v1/source-control/gitlab/webhook", publicOrigin).toString(),
+              true,
+            ),
+            issueLabel: bounded(
+              environment.PI_CLOUD_GITLAB_ISSUE_LABEL ?? "picloud",
+              "PI_CLOUD_GITLAB_ISSUE_LABEL",
+              50,
+            ),
+            ...(environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL
+              ? {
+                  internalBaseUrl: managementUrl(
+                    environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL,
+                    allowHttp,
+                  ),
+                }
+              : {}),
+            ...(environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL
+              ? {
+                  workspaceBaseUrl: managementUrl(
+                    environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL,
+                    allowHttp,
+                  ),
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+export type SourceControlRuntimeConfig = Awaited<ReturnType<typeof loadSourceControlConfig>> & {
+  workspaceServiceToken: string;
+  allowInsecureInternalHttp: boolean;
+};
+
+export async function loadSessionApiConfig(
+  environment: ProductionControlPlaneEnvironment = process.env,
+) {
+  const shared = await loadSharedRoleConfig(environment);
+  return {
+    ...shared,
+    ...loadKafkaCatalogConfig(environment),
+    ...(await workspaceAccess(environment)),
+    ...(await loadSourceControlConfig(environment)),
     cubeEgressConfigToken: await secret(
       environment,
       "PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN",
-      allowInlineSecrets,
+      booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS"),
     ),
     sandboxControlBaseUrls: managementUrls(
       required(environment, "PI_CLOUD_SANDBOX_CONTROL_URLS"),
-      allowInsecureInternalHttp,
+      shared.allowInsecureInternalHttp,
     ),
-    workspaceServiceToken: await secret(
-      environment,
-      "PI_CLOUD_WORKSPACE_SERVICE_TOKEN",
-      allowInlineSecrets,
+    platformModelSourceTenantId: modelSourceTenant(environment),
+    platformOperatorTenantId: operatorTenant(environment),
+    environmentImageRevision: imageRevision(environment),
+    subagentTreePolicy: subagentPolicy(environment),
+    previewPublicOriginBaseUrl: managementUrl(
+      required(environment, "PI_CLOUD_PREVIEW_ORIGIN_BASE_URL"),
+      true,
     ),
-    workspaceTerminalToken: await secret(
-      environment,
-      "PI_CLOUD_WORKSPACE_TERMINAL_TOKEN",
-      allowInlineSecrets,
-    ),
-    previewPublicOriginBaseUrl,
     previewPort: integerValue(environment, "PI_CLOUD_PREVIEW_PORT", 3001, 1, 65535),
-    publicOriginBaseUrl,
     sshGatewayEnabled: booleanValue(environment, "PI_CLOUD_SSH_GATEWAY_ENABLED"),
     sshAdvertisedHost: bounded(
       environment.PI_CLOUD_SSH_ADVERTISED_HOST ?? "127.0.0.1",
       "PI_CLOUD_SSH_ADVERTISED_HOST",
       253,
     ),
-    sshAdvertisedPort: integerValue(environment, "PI_CLOUD_SSH_ADVERTISED_PORT", 2_222, 1, 65_535),
+    sshAdvertisedPort: integerValue(environment, "PI_CLOUD_SSH_ADVERTISED_PORT", 2222, 1, 65535),
     sshTicketTtlMs: integerValue(
       environment,
       "PI_CLOUD_SSH_TICKET_TTL_MS",
@@ -575,44 +560,13 @@ export async function loadProductionControlPlaneConfig(
       60_000,
       24 * 60 * 60_000,
     ),
-    supervisorIdPrefix: supervisorIdPrefixValue(
-      required(environment, "PI_CLOUD_SUPERVISOR_ID_PREFIX"),
-    ),
-    supervisorMaximumCapacity: resourceLimit(
-      environment.PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY,
-      "PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY",
-    ),
-    subagentTreePolicy: {
-      maximumDepth: resourceLimit(
-        environment.PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH,
-        "PI_CLOUD_SUBAGENT_MAXIMUM_DEPTH",
-      ),
-      maximumNodes: resourceLimit(
-        environment.PI_CLOUD_SUBAGENT_MAXIMUM_NODES,
-        "PI_CLOUD_SUBAGENT_MAXIMUM_NODES",
-      ),
-    },
-    supervisorManagementBaseUrlTemplates: managementUrlTemplates(
-      required(environment, "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES"),
-      allowInsecureInternalHttp,
-    ),
-    allowInsecureInternalHttp,
-    host: bounded(environment.HOST ?? "127.0.0.1", "HOST"),
-    port: integerValue(environment, "PORT", 3000, 1, 65_535),
-    platformModelSourceTenantId,
-    platformOperatorTenantId,
-    environmentImageRevision: bounded(
-      required(environment, "PI_CLOUD_IMAGE_REVISION"),
-      "PI_CLOUD_IMAGE_REVISION",
-      128,
-    ),
     webSessionCookieSecure: booleanValue(environment, "PI_CLOUD_WEB_SESSION_COOKIE_SECURE"),
     webSessionTtlMs: integerValue(
       environment,
       "PI_CLOUD_WEB_SESSION_TTL_MS",
-      30 * 24 * 60 * 60 * 1_000,
+      30 * 24 * 60 * 60_000,
       60_000,
-      365 * 24 * 60 * 60 * 1_000,
+      365 * 24 * 60 * 60_000,
     ),
     publicRegistration: {
       enabled: booleanValue(environment, "PI_CLOUD_PUBLIC_REGISTRATION_ENABLED"),
@@ -631,71 +585,71 @@ export async function loadProductionControlPlaneConfig(
         ),
       },
     },
-    ...(githubConfigured
-      ? {
-          githubApp: {
-            appId: bounded(
-              required(environment, "PI_CLOUD_GITHUB_APP_ID"),
-              "PI_CLOUD_GITHUB_APP_ID",
-              31,
-            ),
-            privateKeyPem: await privatePem(
-              required(environment, "PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE"),
-            ),
-            webhookSecret: await secret(
-              environment,
-              "PI_CLOUD_GITHUB_WEBHOOK_SECRET",
-              allowInlineSecrets,
-            ),
-            issueLabel: bounded(
-              environment.PI_CLOUD_GITHUB_ISSUE_LABEL ?? "picloud",
-              "PI_CLOUD_GITHUB_ISSUE_LABEL",
-              50,
-            ),
-          },
-        }
-      : {}),
-    ...(gitlabEnabled
-      ? {
-          gitlabProject: {
-            credentialMasterKey: await secret(
-              environment,
-              "PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY",
-              allowInlineSecrets,
-            ),
-            webhookUrl: gitlabWebhookUrl(
-              environment.PI_CLOUD_GITLAB_WEBHOOK_URL ??
-                new URL("v1/source-control/gitlab/webhook", publicOriginBaseUrl).toString(),
-              true,
-            ),
-            issueLabel: bounded(
-              environment.PI_CLOUD_GITLAB_ISSUE_LABEL ?? "picloud",
-              "PI_CLOUD_GITLAB_ISSUE_LABEL",
-              50,
-            ),
-            ...(environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL === undefined ||
-            environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL.length === 0
-              ? {}
-              : {
-                  internalBaseUrl: managementUrl(
-                    environment.PI_CLOUD_GITLAB_INTERNAL_BASE_URL,
-                    allowInsecureInternalHttp,
-                  ),
-                }),
-            ...(environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL === undefined ||
-            environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL.length === 0
-              ? {}
-              : {
-                  workspaceBaseUrl: managementUrl(
-                    environment.PI_CLOUD_GITLAB_WORKSPACE_BASE_URL,
-                    allowInsecureInternalHttp,
-                  ),
-                }),
-          },
-        }
-      : {}),
   };
 }
+
+export async function loadSessionRuntimeConfig(
+  environment: ProductionControlPlaneEnvironment = process.env,
+) {
+  const shared = await loadSharedRoleConfig(environment);
+  const inline = booleanValue(environment, "PI_CLOUD_ALLOW_INLINE_SECRETS");
+  return {
+    ...shared,
+    ...loadKafkaCatalogConfig(environment),
+    platformOperatorTenantId: operatorTenant(environment),
+    cubeEgressConfigToken: await secret(environment, "PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN", inline),
+    sandboxControlBaseUrls: managementUrls(
+      required(environment, "PI_CLOUD_SANDBOX_CONTROL_URLS"),
+      shared.allowInsecureInternalHttp,
+    ),
+    projectorAdvertisedBaseUrl: managementUrl(
+      environment.PI_CLOUD_PROJECTOR_ADVERTISED_URL ??
+        `http://${required(environment, "POD_IP").includes(":") ? `[${environment.POD_IP}]` : environment.POD_IP}:${environment.PORT ?? "3000"}`,
+      true,
+    ),
+    kafkaPartitions: integerValue(environment, "PI_CLOUD_KAFKA_PARTITIONS", 32, 1, 1024),
+    producerCapacity: loadProducerCapacity(environment),
+    acceptedFactRetentionMs: integerValue(
+      environment,
+      "PI_CLOUD_ACCEPTED_FACT_RETENTION_MS",
+      2 * 60 * 60_000,
+      60 * 60_000,
+      7 * 24 * 60 * 60_000,
+    ),
+    supervisorEnrollmentToken: await secret(
+      environment,
+      "PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN",
+      inline,
+    ),
+    supervisorIdPrefix: supervisorIdPrefixValue(
+      required(environment, "PI_CLOUD_SUPERVISOR_ID_PREFIX"),
+    ),
+    supervisorMaximumCapacity: resourceLimit(
+      environment.PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY,
+      "PI_CLOUD_SUPERVISOR_MAXIMUM_CAPACITY",
+    ),
+    supervisorManagementBaseUrlTemplates: managementUrlTemplates(
+      required(environment, "PI_CLOUD_SUPERVISOR_MANAGEMENT_URL_TEMPLATES"),
+      shared.allowInsecureInternalHttp,
+    ),
+    subagentTreePolicy: subagentPolicy(environment),
+  };
+}
+
+export async function loadResourceManagementConfig(
+  environment: ProductionControlPlaneEnvironment = process.env,
+) {
+  return {
+    ...(await loadSharedRoleConfig(environment)),
+    ...(await workspaceAccess(environment)),
+    ...(await loadSourceControlConfig(environment)),
+    environmentImageRevision: imageRevision(environment),
+  };
+}
+
+export type SessionApiConfig = Awaited<ReturnType<typeof loadSessionApiConfig>>;
+export type SessionRuntimeConfig = Awaited<ReturnType<typeof loadSessionRuntimeConfig>>;
+export type ResourceManagementConfig = Awaited<ReturnType<typeof loadResourceManagementConfig>>;
 
 export async function loadProductionDatabaseUrl(
   environment: ProductionControlPlaneEnvironment = process.env,

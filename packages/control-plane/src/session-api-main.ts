@@ -12,7 +12,7 @@ import { ReplicatedSandboxControlClient } from "@pi-cloud/sandbox-control/client
 import { HttpExecutorTransport } from "@pi-cloud/sandbox-control";
 import { configuredImageAttachments } from "@pi-cloud/session-attachments";
 import { createControlPlaneApplication } from "./application.ts";
-import { loadProductionControlPlaneConfig } from "./production-config.ts";
+import { loadSessionApiConfig } from "./production-config.ts";
 import { closeControlPlaneResources } from "./close-resources.ts";
 import { ProductionHttpGateway } from "./production-http-gateway.ts";
 import { PostgresTenantApiAuthenticator } from "./tenant-identity.ts";
@@ -34,7 +34,7 @@ import { runtimeModelCatalog } from "./runtime-model-catalog.ts";
 /** Public admission/history/UI only: no Session consumer, Worker membership,
  * lease controller, VM allocator or Tool dispatcher is started in this process. */
 export async function startSessionApi(): Promise<void> {
-  const config = await loadProductionControlPlaneConfig();
+  const config = await loadSessionApiConfig();
   runtimeModelCatalog();
   const cleanup: Array<() => unknown | Promise<unknown>> = [];
   let closing: Promise<void> | undefined;

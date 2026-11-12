@@ -11,7 +11,10 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   cold recovery filters closed/superseded Run identities. Forty-two focused tests
   and the Control Plane type check pass under ADR-0315.
 - [ ] #35: coordinated publication and relevant live Tool/recovery acceptance.
-- [ ] #36: role-specific startup configuration and narrow assembly.
+- [x] #36 configuration source: API/execution/management loaders and Helm mounts
+  are role-specific. Twenty-five focused configuration/assembly checks, type
+  checks and the maintained Helm gate pass under ADR-0316.
+- [ ] #36: finish provider construction integration with #30/#31 and live role replacement.
 - [ ] #37: verified production artifact and role dependency boundaries.
 - [ ] #30: Workspace persistence independent of the compute provider.
 - [ ] #31: dynamic administrator backend registration and resource selection.

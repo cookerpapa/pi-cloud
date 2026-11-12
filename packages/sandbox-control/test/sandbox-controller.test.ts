@@ -2642,9 +2642,7 @@ describe("provider-backed Sandbox controller", () => {
           PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE: workspaceVolumeGatewayTokenPath,
         }),
       ).resolves.toMatchObject({
-        databaseUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
-        maximumActiveCommands: 32,
-        kafkaBrokers: ["kafka:9092"],
+        databaseNotificationUrl: "postgresql://pi-cloud:secret@postgres:5432/pi-cloud",
         sandboxDomainId: "sandbox-domain-0001",
         advertisedBaseUrl: "http://sandbox-control-0:4300/",
         maximumActiveSandboxes: null,

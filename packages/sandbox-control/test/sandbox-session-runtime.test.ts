@@ -13,7 +13,7 @@ const calls = vi.hoisted(() => ({
   providerClose: vi.fn(async () => {}),
 }));
 vi.mock("../src/sandbox-control-config.ts", () => ({
-  loadSandboxControlConfig: async () => ({
+  loadSandboxExecutionConfig: async () => ({
     host: "127.0.0.1",
     port: 0,
     advertisedBaseUrl: "http://127.0.0.1:4300",

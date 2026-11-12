@@ -83,8 +83,6 @@ spec:
               value: {{ printf "http://$(POD_IP):4300" | quote }}
             - { name: PI_CLOUD_SANDBOX_CONTROL_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_SANDBOX_CONTROL_PORT, value: "4300" }
-            - { name: PI_CLOUD_ELASTIC_RETENTION_MS, value: {{ .Values.sandboxPlane.elasticRetentionMs | quote }} }
-            - { name: PI_CLOUD_MAXIMUM_ACTIVE_TOOL_SANDBOXES, value: {{ .Values.sandboxPlane.maximumActivePerReplica | default "unlimited" | quote }} }
             - { name: PI_CLOUD_TOOL_MAXIMUM_ACTIVE_COMMANDS, value: {{ .Values.sandboxPlane.maximumActiveCommands | quote }} }
             - { name: PI_CLOUD_SANDBOX_CONTROL_TOKEN_FILE, value: /run/pi-cloud-secrets/sandbox-control-token }
             - { name: PI_CLOUD_CONTROL_PLANE_URL, value: {{ index .Values "pi-workers" "services" "controlPlaneUrl" | quote }} }
@@ -93,8 +91,6 @@ spec:
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_URL, value: {{ .Values.sandboxPlane.volumeGatewayUrl | quote }} }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-volume-gateway-token }
             - { name: PI_CLOUD_WORKSPACE_VOLUME_GATEWAY_REQUEST_TIMEOUT_MS, value: {{ .Values.sandboxPlane.volumeGatewayRequestTimeoutMs | quote }} }
-            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_INTERVAL_MS, value: {{ .Values.sandboxPlane.workspaceDeletionReaperIntervalMs | quote }} }
-            - { name: PI_CLOUD_WORKSPACE_DELETION_REAPER_BATCH_SIZE, value: {{ .Values.sandboxPlane.workspaceDeletionReaperBatchSize | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_API_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
             - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
             - { name: PI_CLOUD_CUBESANDBOX_TEMPLATE_ID, value: {{ .Values.sandboxPlane.cube.templateId | quote }} }
@@ -119,39 +115,15 @@ spec:
             - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_BYTES, value: {{ .Values.global.kafka.producerPendingBytes | quote }} }
             - { name: PI_CLOUD_KAFKA_PRODUCER_PENDING_FACTS, value: {{ .Values.global.kafka.producerPendingFacts | quote }} }
             - { name: PI_CLOUD_ACCEPTED_FACT_RETENTION_MS, value: {{ .Values.global.kafka.acceptedFactRetentionMs | quote }} }
-            - { name: PI_CLOUD_PREVIEW_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.previewOriginBaseUrl | default (printf "https://preview.%s" .Values.web.ingress.host) | quote }} }
-            - { name: PI_CLOUD_PUBLIC_ORIGIN_BASE_URL, value: {{ .Values.controlPlane.publicOriginBaseUrl | quote }} }
             - { name: NODE_USE_ENV_PROXY, value: "1" }
             - { name: NO_PROXY, value: {{ .Values.controlPlane.noProxy | quote }} }
             - { name: HTTPS_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
             - { name: HTTP_PROXY, value: {{ .Values.external.providerProxyUrl | quote }} }
-            {{- if .Values.controlPlane.sourceControl.github.enabled }}
-            - { name: PI_CLOUD_GITHUB_APP_ID, value: {{ .Values.controlPlane.sourceControl.github.appId | quote }} }
-            - { name: PI_CLOUD_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/pi-cloud-secrets/github-app-private-key.pem }
-            - { name: PI_CLOUD_GITHUB_WEBHOOK_SECRET_FILE, value: /run/pi-cloud-secrets/github-webhook-secret }
-            - { name: PI_CLOUD_GITHUB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.github.issueLabel | quote }} }
-            {{- end }}
-            {{- if .Values.controlPlane.sourceControl.gitlab.enabled }}
-            - { name: PI_CLOUD_GITLAB_ENABLED, value: "true" }
-            - { name: PI_CLOUD_GITLAB_WEBHOOK_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.webhookUrl | quote }} }
-            {{- if .Values.controlPlane.sourceControl.gitlab.internalBaseUrl }}
-            - { name: PI_CLOUD_GITLAB_INTERNAL_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.internalBaseUrl | quote }} }
-            {{- end }}
-            {{- if .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl }}
-            - { name: PI_CLOUD_GITLAB_WORKSPACE_BASE_URL, value: {{ .Values.controlPlane.sourceControl.gitlab.workspaceBaseUrl | quote }} }
-            {{- end }}
-            - { name: PI_CLOUD_GITLAB_ISSUE_LABEL, value: {{ .Values.controlPlane.sourceControl.gitlab.issueLabel | quote }} }
-            - { name: PI_CLOUD_SOURCE_CONTROL_CREDENTIAL_MASTER_KEY_FILE, value: /run/pi-cloud-secrets/source-control-credential-master-key }
-            {{- end }}
             - { name: PI_CLOUD_SUPERVISOR_ENROLLMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-enrollment-token }
             - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pi-cloud-secrets/supervisor-management-token }
             - { name: PI_CLOUD_CUBE_EGRESS_CONFIG_TOKEN_FILE, value: /run/pi-cloud-secrets/cube-egress-config-token }
             - { name: PI_CLOUD_WORKSPACE_SERVICE_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-service-token }
             - { name: PI_CLOUD_WORKSPACE_TERMINAL_TOKEN_FILE, value: /run/pi-cloud-secrets/workspace-terminal-token }
-            - { name: PI_CLOUD_SSH_GATEWAY_ENABLED, value: {{ .Values.sshGateway.enabled | quote }} }
-            - { name: PI_CLOUD_SSH_ADVERTISED_HOST, value: {{ .Values.sshGateway.advertisedHost | quote }} }
-            - { name: PI_CLOUD_SSH_ADVERTISED_PORT, value: {{ .Values.sshGateway.port | quote }} }
-            - { name: PI_CLOUD_SSH_TICKET_TTL_MS, value: {{ .Values.sshGateway.ticketTtlMs | quote }} }
             - name: PI_CLOUD_SANDBOX_CONTROL_URLS
               value: {{ join "," $sandboxControlUrls | quote }}
             - { name: PI_CLOUD_IMAGE_REVISION, value: {{ .Values.global.imageRevision | quote }} }
@@ -164,11 +136,6 @@ spec:
               value: {{ printf "http://{supervisorId}.pi-cloud-pi-worker-%s.%s.svc.%s:4100" (index .Values "pi-workers").workerPool.name .Release.Namespace .Values.global.clusterDomain | quote }}
             - { name: PI_CLOUD_PLATFORM_MODEL_SOURCE_TENANT_ID, value: {{ .Values.controlPlane.platformModelSourceTenantId | quote }} }
             - { name: PI_CLOUD_PLATFORM_OPERATOR_TENANT_ID, value: {{ .Values.controlPlane.platformOperatorTenantId | quote }} }
-            - { name: PI_CLOUD_PUBLIC_REGISTRATION_ENABLED, value: {{ .Values.controlPlane.publicRegistration.enabled | quote }} }
-            - { name: PI_CLOUD_PUBLIC_REGISTRATION_MAXIMUM_TENANTS, value: {{ .Values.controlPlane.publicRegistration.maximumTenants | default "unlimited" | quote }} }
-            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_PROJECTS, value: {{ .Values.controlPlane.publicRegistration.maximumProjects | default "unlimited" | quote }} }
-            - { name: PI_CLOUD_PUBLIC_TENANT_MAXIMUM_SESSIONS, value: {{ .Values.controlPlane.publicRegistration.maximumSessions | default "unlimited" | quote }} }
-            - { name: PI_CLOUD_WEB_SESSION_COOKIE_SECURE, value: {{ .Values.controlPlane.cookieSecure | quote }} }
             - { name: PI_CLOUD_METRICS_HOST, value: 0.0.0.0 }
             - { name: PI_CLOUD_METRICS_PORT, value: "9464" }
             - { name: PI_CLOUD_METRICS_TOKEN_FILE, value: /run/pi-cloud-secrets/metrics-token }
@@ -188,7 +155,7 @@ spec:
             {{- if .Values.imageAttachments.endpoint }}
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/session-image-s3-credentials.json, subPath: {{ .Values.imageAttachments.credentialsSecretKey }}, readOnly: true }
             {{- end }}
-            {{- include "pi-cloud-platform.secretMounts" . | nindent 12 }}
+            {{- include "pi-cloud-platform.secretMounts" (dict "root" . "role" "session-runtime") | nindent 12 }}
             {{- if .Values.sandboxPlane.cube.executionEndpoints }}
             - { name: cube-execution-endpoints, mountPath: /run/pi-cloud-config, readOnly: true }
             {{- range .Values.sandboxPlane.cube.executionEndpoints }}

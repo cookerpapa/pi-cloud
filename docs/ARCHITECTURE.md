@@ -70,6 +70,13 @@ recovery and lifecycle policy; it has no Session consumer or ordinary dispatcher
 `tool-completion` receives bounded HTTPS callbacks and publishes replies; it
 cannot start commands or authorize physical cleanup. See [ADR-0306](adr/0306-runtime-decoupling-and-continuation.md).
 
+[ADR-0316](adr/0316-role-configuration-and-artifact-boundaries.md) gives API,
+Session runtime and management separate configuration loaders. The API has no
+Worker enrollment settings; execution has no public registration/SCM settings;
+management has no Kafka dispatch settings. The sandbox module separately loads
+execution transport or resource lifetime settings. Helm environment and secret
+mounts follow these consumers, retaining existing credential identities.
+
 With PG, Kafka, the Worker and its existing Cube binding available, stopping
 management leaves commits, projection, bound Tools and reads running. Workflow
 host calls and image/Skill/preview data access use recorded physical data channels

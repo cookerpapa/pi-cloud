@@ -190,10 +190,14 @@ export {
 export {
   loadProductionApiToken,
   loadProductionBootstrapConfig,
-  loadProductionControlPlaneConfig,
+  loadSessionApiConfig,
+  loadSessionRuntimeConfig,
+  loadResourceManagementConfig,
   loadProductionDatabaseUrl,
   type ProductionBootstrapConfig,
-  type ProductionControlPlaneConfig,
+  type SessionApiConfig,
+  type SessionRuntimeConfig,
+  type ResourceManagementConfig,
   type ProductionControlPlaneEnvironment,
 } from "./production-config.ts";
 export {
