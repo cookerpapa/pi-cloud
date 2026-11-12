@@ -29,6 +29,11 @@ Public terminal/preview now pass. Pause/resume exposed an inherited image WORKDI
 dedicated preparation removes `/workspace`, so the next native init failed its
 chdir. The Box init cwd is now `/`; the node gate reproduces removal of the old
 directory before pause/resume. Live revalidation is pending.
+The BoxLite node, lifecycle, Worker handoff, cancellation, browser/image and VM-loss
+checks now pass. Android's first Run stayed queued under the host-memory admission
+guard. Its timed-out fixture was cleaned, and queued cancellation now uses the
+shared acceptance helper. The device retry uses a recorded temporary memory
+window; original machine intents and workload replica counts must be restored.
 
 [ADR-0313](adr/0313-alternate-runtime-production-integration.md) records the new
 owner authorization beyond the earlier operator-only experiment.

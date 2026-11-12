@@ -27,6 +27,7 @@ import {
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { checkSubagentWorkspace } from "./lib/live-subagent-workspace.mjs";
 import { androidRecoveryAcceptance } from "./lib/android-recovery-acceptance.mjs";
+import { settleOwnedAcceptanceRuns } from "./lib/owned-acceptance-cleanup.mjs";
 if (process.env.PI_CLOUD_LIVE_ANDROID_CHECK !== "1")
   throw Error("Set PI_CLOUD_LIVE_ANDROID_CHECK=1 for the owned Android device and Luna acceptance");
 const [targetId, outputPath] = process.argv.slice(2);
@@ -271,10 +272,13 @@ try {
 } finally {
   const errors = [];
   try {
-    if (active && !terminal(await api.getRun(active.runId))) {
-      await api.cancelTurn(session.sessionId, active.turnId, newIdempotencyKey("android-clean"));
-      await until(async () => terminal(await api.getRun(active.runId)), "owned Run cancellation");
-    }
+    if (active)
+      await settleOwnedAcceptanceRuns(
+        api,
+        session.sessionId,
+        [{ id: active.runId, turn_id: active.turnId }],
+        (id) => until(async () => terminal(await api.getRun(id)), "owned Run cancellation"),
+      );
     if (session) {
       await until(async () => {
         const { rows } =
