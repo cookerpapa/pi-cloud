@@ -396,13 +396,7 @@ try {
       return !r || r.storage_purged_at;
     }, "machine Workspace cleanup");
   }
-  if (tenant)
-    await purgeOwnedAcceptanceTenant(db, tenant, {
-      delete: async () => {
-        throw Error("Unexpected blob");
-      },
-    });
-  report.cleanupConfirmed = true;
+  report.physicalCleanupConfirmed = true;
 } catch (e) {
   report.cleanupError = { name: e.name, message: e.message };
   failure ??= e;
@@ -420,7 +414,8 @@ if (cubeOutage) {
       JSON.parse(kubectl(["get", "pods", "-l", cubeOutage.selector, "-o", "json"])).items.length,
       0,
     );
-    report.cubeUnavailable.entireLifecycleAndCleanup = report.accepted && report.cleanupConfirmed;
+    report.cubeUnavailable.entireProductLifecycleAndPhysicalCleanup =
+      report.accepted && report.physicalCleanupConfirmed;
   } catch (error) {
     failure ??= error;
     report.accepted = false;
@@ -432,6 +427,23 @@ if (cubeOutage) {
     await save();
   }
 }
+// Disposable ledger deletion waits for every known source to confirm delivery.
+// This administrative barrier runs after the outage; it does not gate the
+// product's independently completed VM/Workspace release above.
+try {
+  if (tenant && report.physicalCleanupConfirmed) {
+    await purgeOwnedAcceptanceTenant(db, tenant, {
+      delete: async () => {
+        throw Error("Unexpected blob");
+      },
+    });
+    report.cleanupConfirmed = true;
+  }
+} catch (error) {
+  report.cleanupError = { name: error.name, message: error.message };
+  failure ??= error;
+}
+await save();
 await client.close();
 await db.destroy();
 console.log(JSON.stringify(report));
