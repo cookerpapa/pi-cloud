@@ -214,7 +214,7 @@ window.originalUploads = new Map();
 window.copyFixtureText=copyMessageText;
 window.renderAdmin=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},React.createElement(AdminPage,{
   managementUrls:configuration.managementUrls,
-  api:{getCubeProxyConfiguration:async()=>({enabled:false,configured:false,revision:1}),getModelConfiguration:async()=>({mode:"deterministic",provider:"pi-cloud-fake",modelId:"pi-cloud-fake",configured:false,routeVersion:1,updatedAt:"2026-10-21T00:00:00Z"}),getModelCatalog:async()=>({revision:"a".repeat(64),reloadFailed:false,defaultModel:{provider:"openai-codex",modelId:"fixture-future"},models:[{provider:"openai-codex",modelId:"fixture-future",displayName:"Future model",default:true,thinkingLevels:["medium"],defaultThinkingLevel:"medium",fastModeAvailable:false}]})},
+  api:{resourceBackends:async()=>({backends:[]}),getCubeProxyConfiguration:async()=>({enabled:false,configured:false,revision:1}),getModelConfiguration:async()=>({mode:"deterministic",provider:"pi-cloud-fake",modelId:"pi-cloud-fake",configured:false,routeVersion:1,updatedAt:"2026-10-21T00:00:00Z"}),getModelCatalog:async()=>({revision:"a".repeat(64),reloadFailed:false,defaultModel:{provider:"openai-codex",modelId:"fixture-future"},models:[{provider:"openai-codex",modelId:"fixture-future",displayName:"Future model",default:true,thinkingLevels:["medium"],defaultThinkingLevel:"medium",fastModeAvailable:false}]})},
   identity:{displayName:'Fixture administrator',platformAdministrator:true},onLogout:()=>{}
 })));
 window.renderMarkdownLanguage=()=>root.render(React.createElement(I18nProvider,{initialLanguage:'en-US'},
@@ -365,6 +365,8 @@ window.renderChat = (sessionState='idle', history=false, childViews=false, peerF
       return {workspaces:[{...project,sessionCount:0,lastActiveAt:new Date().toISOString()}],truncated:false};
     },
     listDevelopmentEnvironments:async()=>({environments:fixtureMachines,profiles:DEVELOPMENT_ENVIRONMENT_PROFILES,truncated:false}),
+    resourceBackends:async()=>({backends:[]}),
+    listExecutionTargets:async()=>({targets:[]}),
     getModelCatalog:async()=>({models,revision:"a".repeat(64),reloadFailed:false,defaultModel:DEFAULT_NEW_CONVERSATION_MODEL}),
     getConversationTree:async(sessionId,view)=>{
       if(peerForks){
