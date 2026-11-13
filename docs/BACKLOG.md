@@ -1,5 +1,12 @@
 # Maintained backlog
 
+## Managed Agents project positioning — documented
+
+- [x] Explain the implemented separation of conversation clients, cloud Agent
+  loops and execution environments, and its use as infrastructure for Coding Agent
+  and Personal Agent products. Keep future personal-memory/product UI work explicit.
+- [x] Add a brief maintainer job-interest note without personal contact details.
+
 ## Shared clients, local execution and service accounting — delivered
 
 - [x] #38 / ADR-0321–0322: shared web/Node Session client and explicit outbound

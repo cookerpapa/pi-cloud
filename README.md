@@ -1,9 +1,11 @@
 # Pi Managed Agents
 
-Self-hosted infrastructure for managed agents, powered by Pi.
+Self-hosted Managed Agents infrastructure for Coding Agent and Personal Agent products, powered by Pi.
 
-Built around Pi Durable 1.0's public embedded SDK. Coding-agent loops run in trusted Workers; cloud file and shell tools
-run in separate KVM guests, with CubeSandbox as the default provider. Conversations and retained attachments survive
+Host agent loops in the cloud, retain their conversations, and connect them to the
+execution environments they need. Built around Pi Durable 1.0's public embedded
+SDK, the runtime separates conversation clients, trusted Agent Workers, tool
+execution and resource management. Conversations and retained attachments survive
 Worker replacement and Workspace changes.
 
 Pi Managed Agents is a personal infrastructure project with integration and failure-recovery
@@ -19,6 +21,41 @@ Android devices can be registered for an organization and bound to idle Sessions
 There is no automatic provider fallback or emulator-provisioning UI. See the
 [backend contract](docs/RESOURCE_BACKENDS.md) and
 [current delivery evidence](docs/reports/client-service-delivery-20261114.md).
+
+> **Open to opportunities:** The maintainer is looking for engineering roles in
+> Agent Runtime, Harness or Managed Agents infrastructure. For relevant opportunities,
+> [open an issue](https://github.com/cookerpapa/pi-managed-agents/issues/new) with a public job link.
+
+## A runtime for Coding Agents and Personal Agents
+
+The current product is a cloud coding interface. Its architecture also supports
+building a Personal Agent product around the same cloud runtime:
+
+- **Clients and execution have independent lifetimes.** Web and other clients use
+  the same Session API; closing a chat window does not stop its Agent loop. A
+  desktop application can combine a conversation client and a local executor,
+  while an embedded chat interface can provide conversation access on its own.
+- **Execution environments are explicit adapters.** The cloud Worker runs Pi;
+  tools act through a selected sandbox or device receiver. Verified integrations
+  cover CubeSandbox KVM, BoxLite, operator-managed Android emulators and connected
+  local Linux projects. A product can offer cloud compute or a user's own device
+  without moving the Agent loop into its UI or changing Pi's core.
+- **Conversation state belongs to the platform.** Durable history, retained
+  attachments and execution progress outlive individual Workers and sandboxes.
+  Replacement Workers can continue accepted work and wait for original tool
+  results; uncertain external effects are not automatically repeated.
+- **Platform services have separate responsibilities.** Conversation access,
+  execution, tools, resource lifecycle and metering have explicit boundaries.
+  Supported tools and backend registrations can evolve independently, and
+  verified component releases avoid replacing unrelated services. User-owned
+  devices remain outside managed compute billing and idle reclamation.
+
+The reusable Session client and local Linux executor are implemented and
+[live-verified](docs/reports/client-service-delivery-20261114.md). Personal memory,
+personas and a complete desktop/mobile application remain product work. Local
+execution requires the connected device to stay available; changing execution
+targets does not synchronize their files. See the [client](docs/SESSION_CLIENT.md),
+[execution](docs/LOCAL_EXECUTION.md) and [architecture](docs/ARCHITECTURE.md) guides.
 
 ## What it does
 
@@ -79,17 +116,17 @@ and execution files are prepared in the current Tool Sandbox only when used.
 ## Architecture
 
 ```text
-Browser -> Session API -> PostgreSQL (Run queue/control) -> Pi Worker
+Web / other clients -> Session API -> PostgreSQL (Run queue/control) -> Pi Worker
 Pi Worker <-> Worker-local Model Gateway <-> CLIProxyAPI <-> Model
 
 Pi Worker -> Session Kafka producer -> Kafka -> Session Projector
                                                +-> PostgreSQL (native state/history)
-                                               +-> Browser (SSE)
+                                               +-> Session API -> clients (SSE)
                                                +-> Ordinary Tool host (HTTP)
-                                               `-> Provider process API -> fixed Guest
+                                               `-> Sandbox / device adapter -> Guest / receiver
 
 Control changes -> PostgreSQL + Outbox -> same Session Kafka partition
-Guest -> HTTPS completion -> Kafka replies -> authorized Pi Worker
+Guest / device receiver -> HTTPS completion -> Kafka replies -> authorized Pi Worker
 Control Tool completion -> Kafka replies -> authorized Pi Worker
 
 Workspace files -> independent Workspace storage (local XFS)
