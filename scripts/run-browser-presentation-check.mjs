@@ -103,7 +103,7 @@ import { WorkspaceRebindDialog } from "/src/WorkspaceRebindDialog.tsx";
 import { ConversationTreeNavigator } from "/src/ConversationTreeNavigator.tsx";
 import { PiCloudApi, PiCloudApiError } from "/src/api.ts";
 import { I18nProvider } from "/src/i18n.tsx";
-import { createInitialSessionView, sessionViewReducer } from "/src/session-view.ts";
+import { createInitialSessionView, sessionViewReducer } from "@pi-cloud/session-client";
 import { copyMessageText } from "/src/MessageCopyButton.tsx";
 import { DEVELOPMENT_ENVIRONMENT_PROFILES,
   DEFAULT_PROJECT_ENVIRONMENT_RECIPE, DEFAULT_PROJECT_ENVIRONMENT_RECIPE_SHA256,
