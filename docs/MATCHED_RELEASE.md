@@ -74,6 +74,14 @@ intent, original cleanup targets, exact attachment holds and quota reservations
 until positive absence is confirmed. Missing heartbeat, route or inventory rows
 are not that proof. Never retry an uncertain native create or arbitrary shell.
 
+Under [ADR-0324](adr/0324-registered-templates-and-matched-publication.md), publish
+the deployment-owned primary backend's registered template IDs/revision after
+native template registration and before resource controllers restart. Updating
+only `cubesandbox/template.json` is insufficient. Preserve registry metadata and
+credentials; foreign endpoints and custom template sets require explicit coordination.
+An early Cube creation receipt is usable for cold cleanup only after creation
+completion or positive deletion is confirmed. Unknown creation stays pending.
+
 `apply-started.json` binds an interrupted publication to the exact baseline and
 plan. Forward repair accepts only that candidate's baseline/planned image
 references. It must still satisfy the drain and physical guards. An unrelated

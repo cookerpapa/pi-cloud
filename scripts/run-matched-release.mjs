@@ -1,5 +1,6 @@
 import { writeRuntimeFileAtomically } from "./lib/runtime-file-policy.mjs";
 import { metadataRelease } from "./lib/metadata-release.mjs";
+import { reconcileDeploymentBackendTemplates } from "./lib/deployment-backend-templates.mjs";
 import { retireWorkspaceRegistrations } from "./lib/retire-workspace-registrations.mjs";
 import { prepareReleasePlan } from "./lib/release-plan.mjs";
 import { nativeComputeRetirement } from "./lib/native-compute-retirement.mjs";
@@ -735,6 +736,50 @@ try {
         ["--prepared-image-id", candidate.guestImageId],
         env,
       );
+      phase("advance the registered deployment template before resource recovery");
+      const registeredTemplate = JSON.parse(
+        await readFile(resolve(runtimeDirectory, "cubesandbox/template.json"), "utf8"),
+      );
+      assert.equal(registeredTemplate.imageRevision, candidate.plan.guestIdentity);
+      const native = new OfficialCubeSandboxRuntimeClient({
+        ...nativeCubeLifecycleOptions(),
+        apiUrl: `http://${cluster.api.host}:${cluster.api.port}`,
+        apiKey: (
+          await readFile(resolve(runtimeDirectory, "secrets/cubesandbox-api-key"), "utf8")
+        ).trim(),
+        proxyNodeIp: cluster.proxy.host,
+        proxyPort: cluster.proxy.port,
+        proxyScheme: "http",
+        sandboxDomain: cluster.sandboxDomain,
+        egressProxyIp: "10.255.255.254",
+      });
+      try {
+        const result = await reconcileDeploymentBackendTemplates({
+          database,
+          key: Buffer.from(
+            (
+              await readFile(resolve(runtimeDirectory, "secrets/cube-persistent-state-key"), "utf8")
+            ).trim(),
+            "base64url",
+          ),
+          domainId: runtimeEnvironment().PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001",
+          template: registeredTemplate,
+          native,
+          allowedApiOrigins: [
+            cluster.api.host,
+            "cube-api",
+            "cube-api.cube-system.svc",
+            "cube-api.cube-system.svc.cluster.local",
+          ].map((host) => `http://${host}:${cluster.api.port}`),
+        });
+        await writeFile(
+          resolve(directory, "backend-template-reconciliation.json"),
+          JSON.stringify(result) + "\n",
+          { mode: 0o600 },
+        );
+      } finally {
+        await native.close();
+      }
     }
   }
   const { deployPlatform } = await import("./production-kubernetes.mjs");

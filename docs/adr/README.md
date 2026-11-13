@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0324](0324-registered-templates-and-matched-publication.md) advances registered
+deployment templates before recovery and preserves known native creation receipts.
+
 [ADR-0323](0323-platform-service-minutes.md) defines platform-provided compute
 service minutes, BYO exemption and separate reclamation evidence (#39).
 

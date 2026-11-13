@@ -39,6 +39,8 @@ function target(row, kind) {
     runtimeId: row.runtime_id,
     runtimeName: row.runtime_name,
     capsule: row.runtime_capsule,
+    providerReceipt: row.provider_receipt,
+    providerCreateStartedAt: row.provider_create_started_at,
     state: row.state,
     allocationClosed: row.allocation_closed,
     ...(kind === "machine"
@@ -72,6 +74,7 @@ function matching(query, value) {
     runtime_id: value.runtimeId,
     runtime_name: value.runtimeName,
     runtime_capsule: value.capsule,
+    provider_receipt: value.providerReceipt,
     ...(value.kind === "machine"
       ? {
           allocation_id: value.allocationId,
@@ -168,6 +171,7 @@ export function createComputeRetirementRepository(database) {
             runtime_id: null,
             runtime_name: null,
             runtime_capsule: null,
+            provider_receipt: null,
             failure_code: null,
             updated_at: sql`clock_timestamp()`,
             ...(value.kind === "machine"

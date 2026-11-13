@@ -124,6 +124,7 @@ export function physicalMaintenance(files) {
       file.startsWith("deploy/boxlite/") ||
       /^scripts\/(?:render-cube-release|reconcile-cubesandbox-release)\.mjs$/.test(file) ||
       /^scripts\/lib\/cube-release-(?:inputs|policy|render)\.mjs$/.test(file) ||
+      file === "scripts/lib/deployment-backend-templates.mjs" ||
       /^packages\/sandbox-control\/src\/(?:fixed-guest-sandbox-provider|cubesandbox-sandbox-provider|cube-persistent-capsule|sandbox-execution|guest-runtime-client)\.ts$/.test(
         file,
       ),

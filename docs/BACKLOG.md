@@ -17,6 +17,10 @@
   Targeted SQL/receiver tests pass; full verification and publication remain pending.
 - Heavy verification and provider acceptance run serially. WSL memory and
   BoxLite's documented host-isolation configuration are outside this work.
+- [ ] Live publication repair / ADR-0324: synchronize deployment-owned registered
+  templates before recovery; retire confirmed early Cube creations without
+  discarding ownership or Workspace bytes. Validate the original machines and
+  the explicit BoxLite publication.
 
 ## Decoupling and resource integration — delivered
 

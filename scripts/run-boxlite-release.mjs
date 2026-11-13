@@ -129,7 +129,7 @@ if (action === "prepare") {
     process.exit(0);
   }
   await withBoxLiteBackendMaintenance(
-    { runtimeDirectory, directory, nodeId, serviceAddress },
+    { runtimeDirectory, directory, nodeId, serviceAddress, kubectl },
     async () => {
       await assertBoxLiteEmpty({ kubectl });
       const registryHost = JSON.parse(

@@ -105,6 +105,41 @@ export function validateRetirementTarget(target, openCapsule) {
     typeof sandboxId === "string" && /^[A-Za-z0-9-]{1,128}$/.test(sandboxId),
     "Original native creation remains unresolved",
   );
+  if (target.capsule === null && target.providerReceipt) {
+    assert(target.providerCreateStartedAt, "Creation receipt lacks its original send permit");
+    const receipt = openCapsule(target.providerReceipt),
+      instance = receipt.instance;
+    assert.equal(receipt.version, 4, "Unsupported native creation receipt");
+    assert.equal(receipt.kind, "created", "Native creation was not confirmed");
+    assert.equal(receipt.activationId, target.allocationId, "Receipt allocation changed");
+    assert.equal(instance?.sandboxId, sandboxId, "Receipt physical identity changed");
+    const metadata = instance?.metadata;
+    assert.equal(metadata?.["picloud.managed"], "true");
+    assert.equal(
+      metadata?.["picloud.provider"],
+      "cubesandbox",
+      "Early maintenance requires a complete Cube creation receipt",
+    );
+    assert.equal(metadata?.["picloud.workspace_runtime_id"], target.allocationId);
+    for (const name of ["tenantId", "projectId", "workspaceId"]) {
+      assert.equal(receipt.assignment?.[name], target[name], "Receipt assignment changed");
+      const key = {
+        tenantId: "picloud.tenant_id",
+        projectId: "picloud.project_id",
+        workspaceId: "picloud.workspace_id",
+      }[name];
+      assert.equal(metadata[key], target[name], "Receipt metadata changed");
+    }
+    return {
+      ...target,
+      neverIssued: false,
+      earlyReceipt: true,
+      providerId: "cubesandbox",
+      instance,
+      nodeId: instance.nodeId ?? null,
+      endpoint: null,
+    };
+  }
   assert(target.capsule !== null, "Settle pending creation before compute maintenance");
   let nodeId = null;
   let providerId = null,
@@ -209,6 +244,11 @@ export async function retireComputeForMaintenance({
   const completed = [];
   for (const target of targets) {
     await cold();
+    if (target.earlyReceipt) {
+      assert(native.assertCreated, "Confirm native creation completion before maintenance");
+      await native.assertCreated(target);
+      await cold();
+    }
     await repository.beginClose(target);
     // The durable row retains this exact target if any subsequent call fails.
     progress({

@@ -7,9 +7,42 @@ import { BoxLiteRuntimeClient } from "../../packages/sandbox-control/src/boxlite
  * next release. This port cannot create compute or delete Workspace bytes. */
 export function nativeComputeRetirement({ cube, runtimeDirectory, kubectl }) {
   const boxes = new Map();
+  const earlyProof = new WeakMap();
   return {
+    async assertCreated(target) {
+      assert.equal(target.providerId, "cubesandbox");
+      const current = await cube.read(target.runtimeName);
+      if (!current) {
+        const observed = await cube.observe(target.runtimeName, target.nodeId ?? undefined);
+        assert.equal(observed.presence, "absent", "Native creation outcome remains unresolved");
+        earlyProof.set(target, "absent");
+        return;
+      }
+      assert.equal(current.sandboxId, target.runtimeName);
+      assert(["running", "paused"].includes(current.state), "Native creation has not settled");
+      for (const field of [
+        "picloud.managed",
+        "picloud.provider",
+        "picloud.workspace_runtime_id",
+        "picloud.tenant_id",
+        "picloud.project_id",
+        "picloud.workspace_id",
+      ])
+        assert.equal(
+          current.metadata?.[field],
+          target.instance.metadata[field],
+          "Native creation ownership changed before maintenance",
+        );
+      earlyProof.set(target, "present");
+    },
     async destroy(target) {
-      if (target.providerId === "cubesandbox") return cube.destroy(target.runtimeName);
+      if (target.providerId === "cubesandbox") {
+        if (target.earlyReceipt) {
+          assert(earlyProof.has(target), "Native creation completion was not checked");
+          if (earlyProof.get(target) === "absent") return;
+        }
+        return cube.destroy(target.runtimeName);
+      }
       assert.equal(target.providerId, "boxlite");
       const key = target.endpoint + "|" + target.nodeId;
       let client = boxes.get(key);

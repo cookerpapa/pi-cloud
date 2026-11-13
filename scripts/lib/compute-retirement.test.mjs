@@ -87,6 +87,7 @@ function fixture(desiredState = "running", kind = "machine") {
     }),
   };
   const native = {
+    assertCreated: vi.fn(async () => {}),
     destroy: vi.fn(async (target) => {
       assert.equal(target.runtimeName, original.runtimeName);
       assert(row.allocationClosed);
@@ -196,6 +197,80 @@ it("refuses an unresolved creation before closing any target", async () => {
   f.row.capsule = null;
   await expect(f.run()).rejects.toThrow("Settle pending creation");
   expect(f.native.destroy).not.toHaveBeenCalled();
+  expect(f.repository.beginClose).not.toHaveBeenCalled();
+});
+
+function earlyReceipt(f) {
+  f.row.capsule = null;
+  f.row.providerReceipt = "owned-early-receipt";
+  f.row.providerCreateStartedAt = new Date();
+  const receipt = {
+    version: 4,
+    kind: "created",
+    activationId: f.row.allocationId,
+    assignment: f.row.creationSpec.assignment,
+    instance: {
+      sandboxId: f.row.runtimeName,
+      nodeId: "owned-node",
+      metadata: {
+        "picloud.managed": "true",
+        "picloud.provider": "cubesandbox",
+        "picloud.workspace_runtime_id": f.row.allocationId,
+        "picloud.tenant_id": f.row.tenantId,
+        "picloud.project_id": f.row.projectId,
+        "picloud.workspace_id": f.row.workspaceId,
+      },
+    },
+  };
+  f.options.openCapsule = (value) => {
+    assert.equal(value, f.row.providerReceipt);
+    return receipt;
+  };
+  return receipt;
+}
+
+it("retires a confirmed early Cube creation without fabricating an activation capsule", async () => {
+  const f = fixture();
+  earlyReceipt(f);
+  await f.run();
+  expect(f.events).toEqual(["pg-close", "native-close", "pg-absent"]);
+  expect(f.native.destroy.mock.calls[0][0]).toMatchObject({
+    earlyReceipt: true,
+    providerId: "cubesandbox",
+    capsule: null,
+  });
+});
+
+it.each(["allocation", "assignment", "native-id", "metadata", "provider"])(
+  "refuses changed early creation %s before closing",
+  async (field) => {
+    const f = fixture(),
+      r = earlyReceipt(f);
+    if (field === "allocation") r.activationId = randomUUID();
+    if (field === "assignment") r.assignment = { ...r.assignment, tenantId: randomUUID() };
+    if (field === "native-id") r.instance.sandboxId = "other";
+    if (field === "metadata") r.instance.metadata["picloud.workspace_id"] = randomUUID();
+    if (field === "provider") r.instance.metadata["picloud.provider"] = "boxlite";
+    await expect(f.run()).rejects.toThrow();
+    expect(f.repository.beginClose).not.toHaveBeenCalled();
+    expect(f.native.destroy).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps an early receipt when native deletion is uncertain", async () => {
+  const f = fixture();
+  earlyReceipt(f);
+  f.native.destroy.mockRejectedValue(Error("unknown delete"));
+  await expect(f.run()).rejects.toThrow("unknown delete");
+  expect(f.row.providerReceipt).toBe("owned-early-receipt");
+  expect(f.repository.finishClose).not.toHaveBeenCalled();
+});
+
+it("does not close a receipt whose native creation is still unresolved", async () => {
+  const f = fixture();
+  earlyReceipt(f);
+  f.native.assertCreated.mockRejectedValue(Error("still creating"));
+  await expect(f.run()).rejects.toThrow("still creating");
   expect(f.repository.beginClose).not.toHaveBeenCalled();
 });
 

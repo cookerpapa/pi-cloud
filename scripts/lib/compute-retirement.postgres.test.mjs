@@ -14,7 +14,7 @@ import { maintenanceMachineRetired, retireComputeForMaintenance } from "./comput
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
 
 it.skipIf(!postgres)(
-  "uses actual PG fences, preserves two Workspaces, and resumes a retired paused machine through normal recovery",
+  "uses actual PG fences, preserves ready and early-created Workspaces, and resumes a retired paused machine through normal recovery",
   async () => {
     const name = `maintenance_${randomUUID().replaceAll("-", "")}`;
     const admin = createDatabase({ connectionString: postgres, maxConnections: 1 });
@@ -45,9 +45,10 @@ it.skipIf(!postgres)(
           last_heartbeat_at: new Date(),
         })
         .execute();
-      for (const desired of ["running", "paused"]) {
+      for (const desired of ["running", "paused", "running"]) {
+        const early = machines.length === 2;
         const project = await store.createProject({
-          name: `Retained ${desired}`,
+          name: `Retained ${desired} ${machines.length}`,
           source: { kind: "empty" },
         });
         await database
@@ -89,7 +90,7 @@ it.skipIf(!postgres)(
             system_disk_gib: 20,
             runtime_id: runtime,
             runtime_name: allocation.replaceAll("-", ""),
-            state: "ready",
+            state: early ? "reconciling" : "ready",
             desired_state: desired,
             idempotency_key: randomUUID(),
             request_sha256: "a".repeat(64),
@@ -99,24 +100,48 @@ it.skipIf(!postgres)(
           })
           .returningAll()
           .executeTakeFirstOrThrow();
-        const capsule = codec.seal({
-          version: 3,
-          handle: {
-            activationId: allocation,
-            providerApiVersion: 1,
-            providerId: "cubesandbox",
-            runtimeId: runtime,
-            runtimeName: row.runtime_name,
-            assignment,
-          },
-          executionTarget: { sandboxId: row.runtime_name, nodeId: "owned-node" },
-        });
+        const capsule = codec.seal(
+          early
+            ? {
+                version: 4,
+                kind: "created",
+                activationId: allocation,
+                assignment,
+                instance: {
+                  sandboxId: row.runtime_name,
+                  nodeId: "owned-node",
+                  metadata: {
+                    "picloud.managed": "true",
+                    "picloud.provider": "cubesandbox",
+                    "picloud.workspace_runtime_id": allocation,
+                    "picloud.tenant_id": assignment.tenantId,
+                    "picloud.project_id": assignment.projectId,
+                    "picloud.workspace_id": assignment.workspaceId,
+                  },
+                },
+              }
+            : {
+                version: 3,
+                handle: {
+                  activationId: allocation,
+                  providerApiVersion: 1,
+                  providerId: "cubesandbox",
+                  runtimeId: runtime,
+                  runtimeName: row.runtime_name,
+                  assignment,
+                },
+                executionTarget: { sandboxId: row.runtime_name, nodeId: "owned-node" },
+              },
+        );
         await database
           .updateTable("development_environments")
-          .set({ runtime_capsule: capsule })
+          .set(early ? { provider_receipt: capsule } : { runtime_capsule: capsule })
           .where("id", "=", id)
           .execute();
-        machines.push({ ...row, runtime_capsule: capsule });
+        machines.push({
+          ...row,
+          ...(early ? { provider_receipt: capsule } : { runtime_capsule: capsule }),
+        });
       }
       const workspaceBefore = await database
         .selectFrom("workspaces")
@@ -147,7 +172,7 @@ it.skipIf(!postgres)(
             .executeTakeFirstOrThrow()
         ).runtime_capsule,
       ).toBe(stale.capsule);
-      const native = { async destroy() {} };
+      const native = { async assertCreated() {}, async destroy() {} };
       await retireComputeForMaintenance({
         repository,
         native,
@@ -160,6 +185,7 @@ it.skipIf(!postgres)(
         .orderBy("id")
         .execute();
       expect(retired.every(maintenanceMachineRetired)).toBe(true);
+      expect(retired.every((row) => row.provider_receipt === null)).toBe(true);
       expect(await database.selectFrom("workspaces").selectAll().orderBy("id").execute()).toEqual(
         workspaceBefore,
       );

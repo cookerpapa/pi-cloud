@@ -659,6 +659,12 @@ scan immutable artifacts, drain writers, confirm physical cleanup where required
 then verify native recovery and relevant real Luna/Cube behavior. Accounts,
 configuration, credentials and retained Workspace assets are preserved.
 
+[ADR-0324](adr/0324-registered-templates-and-matched-publication.md) keeps the
+registered backend directory authoritative across Guest publication. The cold
+operator advances its owned template mapping before controllers recover machines.
+Confirmed early Cube creation receipts remain usable for exact cleanup after
+native creation completion; missing/unfinished creation does not authorize deletion.
+
 ## Independent usage accounting
 
 Provider model receipts and enforced Workspace capacity intervals reach the

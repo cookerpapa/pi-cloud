@@ -1,5 +1,6 @@
 import { writeRuntimeFileAtomically } from "./runtime-file-policy.mjs";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createDatabase } from "../../packages/database/src/index.ts";
@@ -7,10 +8,75 @@ import { ResourceBackendRegistry } from "../../packages/sandbox-control/src/reso
 import { verifyResourceBackend } from "../../packages/sandbox-control/src/resource-backend-transport.ts";
 import { sql } from "kysely";
 
+export const configurationIdentity = (configuration) =>
+  createHash("sha256")
+    .update(
+      JSON.stringify({
+        ...configuration,
+        templates: configuration.templates.map(({ imageRevision, ...value }) => value),
+      }),
+    )
+    .digest("hex");
+
+export function boxliteTemplatePublication(entry, current, imageRevision, nodeId) {
+  assert(
+    current &&
+      current.configuration.compute.provider === "boxlite" &&
+      current.configuration.compute.nodeId === nodeId,
+    "Backend changed during native publication",
+  );
+  assert.equal(
+    configurationIdentity(current.configuration),
+    entry.configurationIdentity,
+    "Backend configuration changed during native publication",
+  );
+  assert.equal(
+    current.configuration.templates.length,
+    1,
+    "Coordinate custom BoxLite templates explicitly",
+  );
+  assert.equal(current.configuration.templates[0].id, "linux");
+  const { id, name, location, state, computeBilling } = entry.resource;
+  return {
+    id,
+    name,
+    location,
+    state,
+    computeBilling,
+    expectedRevision: entry.drainedRevision,
+    configuration: {
+      ...current.configuration,
+      templates: current.configuration.templates.map((t) => ({ ...t, imageRevision })),
+    },
+  };
+}
+
+/** Operator verification resolves known local service names; stored URLs stay unchanged. */
+export function boxliteVerificationConfiguration(configuration, resolveService) {
+  const url = (value, name) => {
+    const parsed = new URL(value);
+    if (
+      [name, `${name}.cube-system.svc`, `${name}.cube-system.svc.cluster.local`].includes(
+        parsed.hostname,
+      )
+    )
+      parsed.hostname = resolveService(name);
+    return parsed.toString();
+  };
+  return {
+    ...configuration,
+    compute: { ...configuration.compute, url: url(configuration.compute.url, "pi-cloud-boxlite") },
+    storage: {
+      ...configuration.storage,
+      url: url(configuration.storage.url, "workspace-volume-gateway"),
+    },
+  };
+}
+
 /** Stop new resource admission in PG before the native node can be replaced.
  * No VM is destroyed here and no unrelated backend is drained. */
 export async function withBoxLiteBackendMaintenance(
-  { runtimeDirectory, directory, nodeId, serviceAddress },
+  { runtimeDirectory, directory, nodeId, serviceAddress, kubectl },
   work,
 ) {
   const secret = async (name) =>
@@ -30,7 +96,16 @@ export async function withBoxLiteBackendMaintenance(
     database,
     key: base.persistentStateKey,
     managementBaseUrl: "http://control-plane:4300",
-    verify: (value) => verifyResourceBackend(database, base, value),
+    verify: (value) =>
+      verifyResourceBackend(
+        database,
+        base,
+        boxliteVerificationConfiguration(value, (name) =>
+          name === "pi-cloud-boxlite"
+            ? JSON.parse(kubectl(["get", "service", name, "-o", "json"])).spec.clusterIP
+            : serviceAddress(name),
+        ),
+      ),
   });
   const path = resolve(directory, "backend-maintenance.json");
   const save = (state) => writeRuntimeFileAtomically(path, JSON.stringify(state, null, 2) + "\n");
@@ -50,24 +125,23 @@ export async function withBoxLiteBackendMaintenance(
       state = {
         nodeId,
         phase: "draining",
-        backends: matching.map((b) => ({ resource: b.resource, drainedRevision: null })),
+        backends: matching.map((b) => ({
+          resource: b.resource,
+          configurationIdentity: configurationIdentity(b.configuration),
+          drainedRevision: null,
+        })),
       };
       await save(state);
     }
     assert.equal(state.nodeId, nodeId, "Backend maintenance changed native identity");
     if (state.phase === "complete") return { alreadyApplied: true };
     const finish = async () => {
-      for (const entry of state.backends)
-        if (entry.resource.state === "active") {
-          const { id, name, location } = entry.resource;
-          await registry.put({
-            id,
-            name,
-            location,
-            expectedRevision: entry.drainedRevision,
-            state: "active",
-          });
-        }
+      for (const entry of state.backends) {
+        const current = (await registry.list()).find((b) => b.resource.id === entry.resource.id);
+        await registry.put(
+          boxliteTemplatePublication(entry, current, template.imageRevision, nodeId),
+        );
+      }
       state.phase = "complete";
       await save(state);
     };
