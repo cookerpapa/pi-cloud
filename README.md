@@ -2,6 +2,12 @@
 
 Self-hosted Managed Agents infrastructure for Coding Agent and Personal Agent products, powered by Pi.
 
+⭐ If you find this project useful or like its direction, please give it a star—it helps more people discover it.
+
+Let's build Pi Managed Agents together. Code, documentation, design discussions and
+feedback are all welcome—start with an [issue](https://github.com/cookerpapa/pi-managed-agents/issues)
+or a [pull request](https://github.com/cookerpapa/pi-managed-agents/pulls).
+
 Host agent loops in the cloud, retain their conversations, and connect them to the
 execution environments they need. Built around Pi Durable 1.0's public embedded
 SDK, the runtime separates conversation clients, trusted Agent Workers, tool
