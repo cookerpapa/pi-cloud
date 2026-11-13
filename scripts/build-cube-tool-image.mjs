@@ -19,7 +19,7 @@ const sourceRevision = capture(["rev-parse", "HEAD"]);
 const identity = await guestBuildIdentity(root);
 const image = `localhost:5000/pi-cloud/cubesandbox-tool:${identity}`;
 const proxyArgs = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"]
-  .filter((name) => process.env[name])
+  .filter((name) => process.env[name] !== undefined)
   .flatMap((name) => ["--build-arg", name]);
 const catalog = await readFile(join(runtimeDirectory, "cubesandbox/template.json"), "utf8")
   .then(JSON.parse)
