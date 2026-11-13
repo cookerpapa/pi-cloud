@@ -1,4 +1,5 @@
 import { registeredBackend } from "./lib/registered-backend-fixture.mjs";
+import { observeLiveServiceMinutes } from "./lib/live-service-minutes.mjs";
 import { armRuntimeRestore } from "./lib/owned-runtime-outage.mjs";
 /** Product/API lifecycle checks for the explicit BoxLite backend.
  * Advances only one owned, retired Session's idle deadline as a clock fixture.
@@ -266,6 +267,10 @@ try {
   assert.equal(page.status, 200, `Preview response: ${page.body.toString().slice(0, 512)}`);
   assert.match(page.body.toString(), /BOX_PREVIEW_OK/);
   report.checks.push("public-terminal-and-native-tcp-preview");
+  if (process.env.PI_CLOUD_LIVE_SERVICE_MINUTES === "1") {
+    report.computeService = await observeLiveServiceMinutes(db, original.allocation_id, until);
+    report.checks.push("real-platform-service-minute-receipts");
+  }
   await save();
   await api.developmentEnvironmentAction(
     machine.environmentId,

@@ -29,6 +29,7 @@ import { withChromePage } from "./lib/chrome-cdp.mjs";
 import { checkSubagentWorkspace } from "./lib/live-subagent-workspace.mjs";
 import { androidRecoveryAcceptance } from "./lib/android-recovery-acceptance.mjs";
 import { settleOwnedAcceptanceRuns } from "./lib/owned-acceptance-cleanup.mjs";
+import { observeLiveServiceMinutes } from "./lib/live-service-minutes.mjs";
 if (process.env.PI_CLOUD_LIVE_ANDROID_CHECK !== "1")
   throw Error("Set PI_CLOUD_LIVE_ANDROID_CHECK=1 for the owned Android device and Luna acceptance");
 const [targetId, outputPath] = process.argv.slice(2);
@@ -71,7 +72,7 @@ async function until(read, label, ms = 120000) {
   }
   throw Error(label + " timed out");
 }
-let credential, target, project, session, active, api, failure;
+let credential, target, project, session, active, api, failure, admin, managedAllocation;
 try {
   target = await db
     .selectFrom("execution_targets")
@@ -79,7 +80,7 @@ try {
     .where("id", "=", targetId)
     .executeTakeFirstOrThrow();
   assert.equal(target.bound_session_id, null, "Never take over a user's bound device");
-  const admin = new PiCloudApi(
+  admin = new PiCloudApi(
     (path, init) => fetch(new URL(String(path), baseUrl), init),
     (await readFile(runtimeDirectory + "/secrets/api-token", "utf8")).trim(),
   );
@@ -87,6 +88,24 @@ try {
     tenantId: target.tenant_id,
     device: { targetId, name: target.name, endpoint: target.endpoint },
   });
+  if (process.env.PI_CLOUD_LIVE_SERVICE_MINUTES === "1") {
+    assert.equal(target.compute_service, null, "Preserve an existing managed service contract");
+    await admin.registerResourceDevice({
+      tenantId: target.tenant_id,
+      device: {
+        targetId,
+        name: target.name,
+        endpoint: target.endpoint,
+        computeService: { billing: "platform" },
+      },
+    });
+    const enrolled = await db
+      .selectFrom("execution_targets")
+      .select("compute_service")
+      .where("id", "=", targetId)
+      .executeTakeFirstOrThrow();
+    managedAllocation = enrolled.compute_service.allocationId;
+  }
   report.existingDeviceRegistrationConfirmed = true;
   const user = await db
     .selectFrom("users")
@@ -311,6 +330,8 @@ try {
       },
     });
   }
+  if (managedAllocation)
+    report.computeService = await observeLiveServiceMinutes(db, managedAllocation, until);
   report.accepted = true;
 } catch (error) {
   failure = error;
@@ -346,6 +367,18 @@ try {
           .executeTakeFirst();
         return !row || row.storage_purged_at;
       }, "owned Workspace cleanup");
+    }
+    if (managedAllocation) {
+      await admin.registerResourceDevice({
+        tenantId: target.tenant_id,
+        device: { targetId, name: target.name, endpoint: target.endpoint, computeService: null },
+      });
+      const { rows } =
+        await sql`select 1 from compute_service_periods where resource_key=${"compute:" + managedAllocation} and ended_at is null`.execute(
+          db,
+        );
+      assert.equal(rows.length, 0, "Withdrawing managed service must close its period");
+      report.managedServiceWithdrawn = true;
     }
     report.cleanupConfirmed = true;
   } catch (error) {
