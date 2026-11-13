@@ -122,164 +122,167 @@ try {
   await api.bindExecutionTarget(session.sessionId, targetId, selection.revision);
   assert.equal((await api.getSessionExecutionTarget(session.sessionId)).target?.targetId, targetId);
   report.apiBinding = true;
-  console.log(
-    JSON.stringify({ phase: "native Android model round", sessionId: session.sessionId }),
-  );
-  const inputMarker = `PiCloud你好_${randomUUID().slice(0, 8)}`;
-  report.inputMarker = inputMarker;
-  active = await api.acceptTurn(
-    session.sessionId,
-    `只使用 Android 工具验收这台测试设备。本轮必须实际调用 android_key、android_open_app、android_observe、android_swipe、android_tap、android_input_text 各至少一次。先按 Home，然后打开 com.android.settings，观察屏幕；在设置页滑动一次并再次观察；找到设置搜索框，点击它，输入本轮的新标记“${inputMarker}”，再观察并确认新标记出现在屏幕上。手机会保留上次的搜索页，即使搜索框已获得焦点或已有旧文本，也必须重新点击并输入新标记；可以追加，不要求清空旧文本。不要使用 Bash、子 Agent 或修改账号、系统设置。最后简短回答 ANDROID_OK 和实际看见的新标记。`,
-    newIdempotencyKey("android-check"),
-    "low",
-  );
-  const run = await until(
-    async () => {
-      const r = await api.getRun(active.runId);
-      return terminal(r) ? r : false;
-    },
-    "Android model Run",
-    900000,
-  );
-  report.runs.push({ runId: run.runId, state: run.state, failure: run.failure });
-  assert.equal(run.state, "completed", JSON.stringify(run.failure));
-  await until(
-    async () =>
-      !(await db
-        .selectFrom("session_leases")
-        .select("lease_id")
-        .where("tenant_id", "=", target.tenant_id)
-        .where(
-          "pi_session_id",
-          "=",
-          (
-            await db
-              .selectFrom("sessions")
-              .select("pi_session_id")
-              .where("id", "=", session.sessionId)
-              .executeTakeFirstOrThrow()
-          ).pi_session_id,
-        )
-        .where("released_at", "is", null)
-        .executeTakeFirst()),
-    "writer retirement",
-  );
-  const history = await nativeHistory(db, { runId: run.runId });
-  const messages = nativeMessages(history),
-    results = messages.filter((m) => m.role === "toolResult");
-  const names = [...new Set(results.map((m) => m.toolName))];
-  // Preserve owned diagnostic evidence even when the model omits a required step.
-  report.tools = names;
-  report.toolOutcomes = results.map((m) => ({
-    name: m.toolName,
-    isError: m.isError === true,
-    text: (m.content ?? [])
+  report.retainedImages = [];
+  if (process.env.PI_CLOUD_LIVE_ANDROID_RECOVERY_ONLY !== "1") {
+    console.log(
+      JSON.stringify({ phase: "native Android model round", sessionId: session.sessionId }),
+    );
+    const inputMarker = `PiCloud你好_${randomUUID().slice(0, 8)}`;
+    report.inputMarker = inputMarker;
+    active = await api.acceptTurn(
+      session.sessionId,
+      `只使用 Android 工具验收这台测试设备。本轮必须实际调用 android_key、android_open_app、android_observe、android_swipe、android_tap、android_input_text 各至少一次。先按 Home，然后打开 com.android.settings，观察屏幕；在设置页滑动一次并再次观察；找到设置搜索框，点击它，输入本轮的新标记“${inputMarker}”，再观察并确认新标记出现在屏幕上。手机会保留上次的搜索页，即使搜索框已获得焦点或已有旧文本，也必须重新点击并输入新标记；可以追加，不要求清空旧文本。不要使用 Bash、子 Agent 或修改账号、系统设置。最后简短回答 ANDROID_OK 和实际看见的新标记。`,
+      newIdempotencyKey("android-check"),
+      "low",
+    );
+    const run = await until(
+      async () => {
+        const r = await api.getRun(active.runId);
+        return terminal(r) ? r : false;
+      },
+      "Android model Run",
+      900000,
+    );
+    report.runs.push({ runId: run.runId, state: run.state, failure: run.failure });
+    assert.equal(run.state, "completed", JSON.stringify(run.failure));
+    await until(
+      async () =>
+        !(await db
+          .selectFrom("session_leases")
+          .select("lease_id")
+          .where("tenant_id", "=", target.tenant_id)
+          .where(
+            "pi_session_id",
+            "=",
+            (
+              await db
+                .selectFrom("sessions")
+                .select("pi_session_id")
+                .where("id", "=", session.sessionId)
+                .executeTakeFirstOrThrow()
+            ).pi_session_id,
+          )
+          .where("released_at", "is", null)
+          .executeTakeFirst()),
+      "writer retirement",
+    );
+    const history = await nativeHistory(db, { runId: run.runId });
+    const messages = nativeMessages(history),
+      results = messages.filter((m) => m.role === "toolResult");
+    const names = [...new Set(results.map((m) => m.toolName))];
+    // Preserve owned diagnostic evidence even when the model omits a required step.
+    report.tools = names;
+    report.toolOutcomes = results.map((m) => ({
+      name: m.toolName,
+      isError: m.isError === true,
+      text: (m.content ?? [])
+        .filter((c) => c.type === "text")
+        .map((c) => c.text)
+        .join("\n")
+        .slice(0, 2048),
+    }));
+    report.answer = messages
+      .filter((m) => m.role === "assistant")
+      .flatMap((m) => m.content ?? [])
       .filter((c) => c.type === "text")
       .map((c) => c.text)
       .join("\n")
-      .slice(0, 2048),
-  }));
-  report.answer = messages
-    .filter((m) => m.role === "assistant")
-    .flatMap((m) => m.content ?? [])
-    .filter((c) => c.type === "text")
-    .map((c) => c.text)
-    .join("\n")
-    .slice(-4096);
-  for (const name of [
-    "android_observe",
-    "android_tap",
-    "android_swipe",
-    "android_input_text",
-    "android_key",
-    "android_open_app",
-  ])
-    assert(names.includes(name), "Missing real Tool result: " + name);
-  assert(
-    results.every((m) => m.isError !== true),
-    "Device tool error in acceptance",
-  );
-  const refs = imageReferences(history.map((r) => r.entry));
-  assert(refs.length >= 2, "Need retained device screenshots");
-  for (const ref of refs) {
-    const bytes = await images.get(target.tenant_id, ref);
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), ref.sha256);
-  }
-  const answer = messages
-    .filter((m) => m.role === "assistant")
-    .flatMap((m) => m.content ?? [])
-    .filter((c) => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
-  assert(
-    answer.includes("ANDROID_OK") && answer.includes(inputMarker),
-    "Model did not confirm the visible Chinese input",
-  );
-  report.runs[0].usage = runUsage(history);
-  report.tools = names;
-  report.retainedImages = refs.map((r) => ({ id: r.id, bytes: r.byteLength }));
-  const allocation = await db
-    .selectFrom("workspace_runtimes")
-    .select("workspace_runtime_id")
-    .where("tenant_id", "=", target.tenant_id)
-    .where("workspace_id", "=", project.workspaceId)
-    .execute();
-  assert.equal(allocation.length, 0, "Phone tools must not allocate a Cube VM");
-  report.noCubeAllocation = true;
-  await withChromePage({}, async (page) => {
-    await page.send("Network.setExtraHTTPHeaders", {
-      headers: { Authorization: "Bearer " + credential.token },
-    });
-    await page.send("Page.addScriptToEvaluateOnNewDocument", {
-      source: "localStorage.setItem('pi-cloud:ui-language','zh-CN')",
-    });
-    await page.navigate(baseUrl + "/?session=" + session.sessionId);
-    await page.waitFor(
-      "[...document.querySelectorAll('img')].some(i=>i.complete&&i.naturalWidth>100)",
+      .slice(-4096);
+    for (const name of [
+      "android_observe",
+      "android_tap",
+      "android_swipe",
+      "android_input_text",
+      "android_key",
+      "android_open_app",
+    ])
+      assert(names.includes(name), "Missing real Tool result: " + name);
+    assert(
+      results.every((m) => m.isError !== true),
+      "Device tool error in acceptance",
     );
-    report.browserImages = await page.evaluate(
-      "[...document.querySelectorAll('img')].filter(i=>i.complete&&i.naturalWidth>100).length",
+    const refs = imageReferences(history.map((r) => r.entry));
+    assert(refs.length >= 2, "Need retained device screenshots");
+    for (const ref of refs) {
+      const bytes = await images.get(target.tenant_id, ref);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), ref.sha256);
+    }
+    const answer = messages
+      .filter((m) => m.role === "assistant")
+      .flatMap((m) => m.content ?? [])
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("\n");
+    assert(
+      answer.includes("ANDROID_OK") && answer.includes(inputMarker),
+      "Model did not confirm the visible Chinese input",
     );
-    assert.equal(
+    report.runs[0].usage = runUsage(history);
+    report.tools = names;
+    report.retainedImages = refs.map((r) => ({ id: r.id, bytes: r.byteLength }));
+    const allocation = await db
+      .selectFrom("workspace_runtimes")
+      .select("workspace_runtime_id")
+      .where("tenant_id", "=", target.tenant_id)
+      .where("workspace_id", "=", project.workspaceId)
+      .execute();
+    assert.equal(allocation.length, 0, "Phone tools must not allocate a Cube VM");
+    report.noCubeAllocation = true;
+    await withChromePage({}, async (page) => {
+      await page.send("Network.setExtraHTTPHeaders", {
+        headers: { Authorization: "Bearer " + credential.token },
+      });
+      await page.send("Page.addScriptToEvaluateOnNewDocument", {
+        source: "localStorage.setItem('pi-cloud:ui-language','zh-CN')",
+      });
+      await page.navigate(baseUrl + "/?session=" + session.sessionId);
+      await page.waitFor(
+        "[...document.querySelectorAll('img')].some(i=>i.complete&&i.naturalWidth>100)",
+      );
+      report.browserImages = await page.evaluate(
+        "[...document.querySelectorAll('img')].filter(i=>i.complete&&i.naturalWidth>100).length",
+      );
+      assert.equal(
+        await page.evaluate(
+          "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
+        ),
+        false,
+      );
+      report.phoneEntryRemoved = true;
       await page.evaluate(
-        "[...document.querySelectorAll('button')].some(b=>['云手机','Cloud phone'].includes(b.textContent.trim()))",
-      ),
-      false,
-    );
-    report.phoneEntryRemoved = true;
-    await page.evaluate(
-      "[...document.querySelectorAll('button')].find(b=>/资源管理|Resources/.test(b.textContent)).click()",
-    );
-    await page.waitFor("document.querySelector('.product-resource-tabs')");
-    await page.evaluate(
-      "[...document.querySelector('.product-resource-tabs').querySelectorAll('button')].find(b=>b.textContent.includes('云端开发机')).click()",
-    );
-    await page.waitFor("document.querySelector('.resource-devices')");
-    const row = `[...document.querySelectorAll('.resource-devices .admin-settings-row')].find(r=>r.querySelector('span').textContent.includes(${JSON.stringify(target.name)}))`;
-    await page.waitFor(
-      `${row}?.querySelector('button') && !${row}.querySelector('button').disabled`,
-    );
-    await page.evaluate(`${row}.querySelector('button').click()`);
-    await until(
-      async () => !(await api.getSessionExecutionTarget(session.sessionId)).target,
-      "Resource-page device disconnection",
-    );
-    await page.waitFor(`${row}?.querySelector('select')`);
-    await page.evaluate(
-      `(() => { const select=${row}.querySelector('select'); select.value=${JSON.stringify(session.sessionId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
-    );
-    await page.waitFor(`!${row}.querySelector('button').disabled`);
-    await page.evaluate(`${row}.querySelector('button').click()`);
-    await until(
-      async () =>
-        (await api.getSessionExecutionTarget(session.sessionId)).target?.targetId === targetId,
-      "Resource-page device connection",
-    );
-    report.resourcePageDeviceBinding = true;
-  });
-  const screen = await api.readExecutionTargetScreen(targetId);
-  assert(screen.bytes.byteLength > 0 && screen.contentType.startsWith("image/"));
-  report.apiScreen = true;
+        "[...document.querySelectorAll('button')].find(b=>/资源管理|Resources/.test(b.textContent)).click()",
+      );
+      await page.waitFor("document.querySelector('.product-resource-tabs')");
+      await page.evaluate(
+        "[...document.querySelector('.product-resource-tabs').querySelectorAll('button')].find(b=>b.textContent.includes('云端开发机')).click()",
+      );
+      await page.waitFor("document.querySelector('.resource-devices')");
+      const row = `[...document.querySelectorAll('.resource-devices .admin-settings-row')].find(r=>r.querySelector('span').textContent.includes(${JSON.stringify(target.name)}))`;
+      await page.waitFor(
+        `${row}?.querySelector('button') && !${row}.querySelector('button').disabled`,
+      );
+      await page.evaluate(`${row}.querySelector('button').click()`);
+      await until(
+        async () => !(await api.getSessionExecutionTarget(session.sessionId)).target,
+        "Resource-page device disconnection",
+      );
+      await page.waitFor(`${row}?.querySelector('select')`);
+      await page.evaluate(
+        `(() => { const select=${row}.querySelector('select'); select.value=${JSON.stringify(session.sessionId)}; select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
+      );
+      await page.waitFor(`!${row}.querySelector('button').disabled`);
+      await page.evaluate(`${row}.querySelector('button').click()`);
+      await until(
+        async () =>
+          (await api.getSessionExecutionTarget(session.sessionId)).target?.targetId === targetId,
+        "Resource-page device connection",
+      );
+      report.resourcePageDeviceBinding = true;
+    });
+    const screen = await api.readExecutionTargetScreen(targetId);
+    assert(screen.bytes.byteLength > 0 && screen.contentType.startsWith("image/"));
+    report.apiScreen = true;
+  }
   if (process.env.PI_CLOUD_LIVE_ANDROID_RECOVERY === "1") {
     report.recovery = await androidRecoveryAcceptance({
       db,
@@ -311,6 +314,7 @@ try {
 } catch (error) {
   failure = error;
   report.failure = String(error);
+  if (error.androidRecoveryDiagnostic) report.recoveryDiagnostic = error.androidRecoveryDiagnostic;
 } finally {
   const errors = [];
   try {

@@ -112,7 +112,34 @@ export async function androidRecoveryAcceptance({ db, api, session, target, unti
       const arrived = await until(
         async () => {
           const state = readOwnedReplyFault(receipt);
-          return state?.nonce === nonce && state.results?.length ? state : false;
+          if (state?.nonce === nonce && state.results?.length) return state;
+          const run = await api.getRun(active.runId);
+          if (terminal(run)) {
+            const messages = nativeMessages(await nativeHistory(db, { runId: active.runId }));
+            const diagnostic = {
+              mode,
+              runId: active.runId,
+              state: run.state,
+              failure: run.failure,
+              messages: messages
+                .filter((m) => m.role === "assistant" || m.role === "toolResult")
+                .slice(-6)
+                .map((m) => ({
+                  role: m.role,
+                  tool: m.toolName,
+                  isError: m.isError,
+                  stopReason: m.stopReason,
+                  error: m.errorMessage,
+                  text: JSON.stringify(m.content).slice(0, 1500),
+                })),
+            };
+            const error = new Error(
+              "Android Run ended before its completion reached the owned interceptor",
+            );
+            error.androidRecoveryDiagnostic = diagnostic;
+            throw error;
+          }
+          return false;
         },
         "owned Android completion reached HTTPS",
         600000,
