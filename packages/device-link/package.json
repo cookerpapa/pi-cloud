@@ -1,0 +1,23 @@
+{
+  "name": "@pi-cloud/device-link",
+  "license": "MIT",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --maxWorkers=1"
+  },
+  "dependencies": {
+    "fastify": "5.12.5",
+    "@fastify/websocket": "11.3.0",
+    "ws": "8.21.1",
+    "tsx": "4.23.1"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1"
+  }
+}

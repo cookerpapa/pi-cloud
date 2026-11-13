@@ -746,3 +746,5 @@ export * from "./guest-executor.ts";
 export * from "./resource-retention.ts";
 
 export * from "./resource-backend.ts";
+
+export * from "./local-tools.ts";

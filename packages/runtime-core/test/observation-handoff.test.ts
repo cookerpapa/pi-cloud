@@ -12,7 +12,7 @@ import { SessionLiveView } from "../src/session-live-view.ts";
 import { SessionEventStream } from "../src/session-event-stream.ts";
 import { RunObservations } from "../src/run-observations.ts";
 import { RunObservationStore } from "../../web-ui/src/run-observation-store.ts";
-import { SseFrameParser } from "../../web-ui/src/sse.ts";
+import { SseFrameParser } from "@pi-cloud/session-client";
 
 const root = {
   tenantId: "tenant",

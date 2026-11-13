@@ -40,6 +40,10 @@
 		respond 404
 	}
 
+	handle /v1/device-links/* {
+		reverse_proxy {$PI_CLOUD_DEVICE_LINK_UPSTREAM:device-link:8090}
+	}
+
 	handle /v1/* {
 		reverse_proxy {$PI_CLOUD_CONTROL_PLANE_UPSTREAM:session-runtime:3000}
 	}

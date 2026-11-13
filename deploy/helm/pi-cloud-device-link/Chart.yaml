@@ -1,0 +1,5 @@
+apiVersion: v2
+name: pi-cloud-device-link
+description: Optional outbound device transport for cloud-owned Agent execution
+type: application
+version: 0.1.0

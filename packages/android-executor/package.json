@@ -15,7 +15,8 @@
     "typebox": "1.1.38",
     "tsx": "4.23.1",
     "undici": "6.29.1",
-    "@pi-cloud/workspace-runtime": "0.1.0"
+    "@pi-cloud/workspace-runtime": "0.1.0",
+    "@pi-cloud/executor-runtime": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "24.12.4",

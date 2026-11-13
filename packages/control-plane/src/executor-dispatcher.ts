@@ -7,7 +7,7 @@ import { type ToolReply } from "@pi-cloud/event-log";
 import { type AcceptedExecutorToolCommand } from "@pi-cloud/protocol";
 import { ExecutionBindingView, executionBinding } from "./execution-target-service.ts";
 import {
-  ANDROID_OPERATION_TIMEOUT_MS,
+  executorToolBudget,
   type ToolCompletionGrant,
   type ToolCompletionDestination,
 } from "@pi-cloud/protocol";
@@ -106,7 +106,9 @@ export class ExecutorDispatcher {
         nativeCallId: fact.nativeCallId,
         arguments: fact.arguments,
         completion,
-        deadlineAt: Date.parse(fact.occurredAt) + ANDROID_OPERATION_TIMEOUT_MS,
+        deadlineAt:
+          Date.parse(fact.occurredAt) +
+          executorToolBudget(fact.toolName, fact.arguments).operationMs,
       });
     } catch (error) {
       await this.#failure(

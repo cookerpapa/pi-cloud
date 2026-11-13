@@ -27,7 +27,7 @@ import {
   type CandidateToolEffect,
   ToolExecutionFailure,
   ToolResultAttachmentError,
-  ANDROID_REPLY_TIMEOUT_MS,
+  executorToolBudget,
 } from "@pi-cloud/protocol";
 import {
   toolInvocationId,
@@ -383,7 +383,9 @@ export class WorkerToolRuntime {
               );
         const waiting = new AbortController();
         const deadline =
-          environment.kind === "target" ? AbortSignal.timeout(ANDROID_REPLY_TIMEOUT_MS) : undefined;
+          environment.kind === "target"
+            ? AbortSignal.timeout(executorToolBudget(definition.name, args).replyMs)
+            : undefined;
         const activeSignal = AbortSignal.any([
           waiting.signal,
           ...(signal ? [signal] : []),

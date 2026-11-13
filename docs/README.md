@@ -12,6 +12,7 @@ Release names and historical measurements belong to reports, not the component m
 | [Run lifecycle](RUN_LIFECYCLE.md) | Admission, claiming, continuation, Stop and closure |
 | [Stream durability](STREAM_DURABILITY.md) | Commit, projection, live coverage and crash contracts |
 | [Session clients](SESSION_CLIENT.md) | Shared HTTP/SSE client, input identities and state; independent of execution targets |
+| [Local execution](LOCAL_EXECUTION.md) | Explicit outbound Linux target, directory boundary and completion behavior |
 | [Cube provider](CUBESANDBOX_PROVIDER.md) | Tool execution, lifecycle and transport boundaries |
 | [Subagents](SUBAGENTS.md) | Native children, shared ownership and Workspace choices |
 | [Attachments](CHAT_ATTACHMENTS.md) | Long paste, uploads, visual input and retained originals |

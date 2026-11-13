@@ -2,15 +2,20 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 import { expect, it, vi } from "vitest";
 import { createDatabase, runMigrations } from "@pi-cloud/database";
-import { ANDROID_CAPABILITIES, parseSessionControlChange } from "@pi-cloud/protocol";
+import {
+  ANDROID_CAPABILITIES,
+  LOCAL_CAPABILITIES,
+  parseSessionControlChange,
+} from "@pi-cloud/protocol";
 import { type ExecutorTransport } from "@pi-cloud/sandbox-control";
 import { ExecutionTargetService, ExecutionBindingView } from "../src/execution-target-service.ts";
 import { ControlPlaneStore, createPrivateTenant } from "../src/index.ts";
 import { createTestWorker } from "./admit-test-execution.ts";
 const postgres = process.env.PI_CLOUD_POSTGRES_INTEGRATION_URL;
-it.skipIf(!postgres)(
-  "freezes device grants at Run acceptance, orders routes and retains unavailable closures",
-  async () => {
+it.skipIf(!postgres).each(["android", "linux"] as const)(
+  "freezes %s grants at Run acceptance, orders routes and retains unavailable closures",
+  async (kind) => {
+    const capabilities = kind === "linux" ? LOCAL_CAPABILITIES : ANDROID_CAPABILITIES;
     const name = "android_" + randomUUID().replaceAll("-", "");
     const admin = createDatabase({ connectionString: postgres!, maxConnections: 1 });
     await sql`create database ${sql.id(name)}`.execute(admin);
@@ -41,16 +46,17 @@ it.skipIf(!postgres)(
       ]);
       const target = randomUUID(),
         bootId = randomUUID();
-      await sql`insert into execution_targets(id,tenant_id,kind,name,endpoint,capabilities) values(${target}::uuid,${tenant.tenantId}::uuid,'android','Android','http://fixture:8090',${JSON.stringify(ANDROID_CAPABILITIES)}::jsonb)`.execute(
+      await sql`insert into execution_targets(id,tenant_id,kind,name,endpoint,capabilities) values(${target}::uuid,${tenant.tenantId}::uuid,${kind},'device','http://fixture:8090',${JSON.stringify(capabilities)}::jsonb)`.execute(
         db,
       );
       const revoke = vi.fn(async () => {});
       const transport: ExecutorTransport = {
         inspect: async () => ({
+          kind,
           targetId: target,
           bootId,
           ready: true,
-          capabilities: [...ANDROID_CAPABILITIES],
+          capabilities: [...capabilities],
         }),
         revoke,
         submit: async () => {},
@@ -87,10 +93,11 @@ it.skipIf(!postgres)(
       });
       const frozen = await db
         .selectFrom("runs")
-        .select("execution_target_snapshot")
+        .select(["execution_target_snapshot", "tool_capability_snapshot"])
         .where("id", "=", accepted.runId)
         .executeTakeFirstOrThrow();
       expect(frozen.execution_target_snapshot).toEqual([selected.target]);
+      if (kind === "linux") expect(frozen.tool_capability_snapshot).toEqual([]);
       const worker = await createTestWorker(db);
       const started =
         Promise.withResolvers<

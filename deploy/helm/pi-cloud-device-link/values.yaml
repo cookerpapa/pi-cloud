@@ -1,0 +1,7 @@
+image: ""
+pullPolicy: IfNotPresent
+credentialsSecretName: pi-cloud-device-link-credentials
+managementSecretName: pi-cloud-platform-secrets
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits: { memory: 256Mi }

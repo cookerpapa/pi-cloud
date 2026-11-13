@@ -9,6 +9,7 @@ import {
 } from "@pi-cloud/protocol";
 
 export type ExecutorStatus = {
+  kind: "android" | "linux";
   targetId: string;
   bootId: string;
   ready: boolean;
@@ -51,7 +52,7 @@ export class HttpExecutorTransport implements ExecutorTransport {
     const timeout = path === "/screen" ? 30000 : 5000;
     let response;
     try {
-      response = await fetch(new URL(path, url), {
+      response = await fetch(new URL(url.pathname.replace(/\/$/, "") + path, url), {
         method,
         dispatcher: this.#http,
         headers: { authorization: "Bearer " + this.token, "content-type": "application/json" },
@@ -101,6 +102,7 @@ export class HttpExecutorTransport implements ExecutorTransport {
     );
     if (
       typeof value.targetId !== "string" ||
+      !["android", "linux"].includes(value.kind) ||
       typeof value.bootId !== "string" ||
       !Array.isArray(value.capabilities) ||
       value.ready !== true

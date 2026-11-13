@@ -1,9 +1,10 @@
+import { androidToolDefinitions } from "@pi-cloud/protocol";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { GuestCompletionClient } from "@pi-cloud/workspace-runtime/tool-completion-client";
 import { AppiumAndroidDriver } from "./appium-driver.ts";
-import { AndroidExecutionManager } from "./execution-manager.ts";
-import { createExecutorServer } from "./server.ts";
+import { DeviceExecutionManager } from "@pi-cloud/executor-runtime";
+import { createExecutorServer } from "@pi-cloud/executor-runtime";
 
 const required = (key: string) => {
   const value = process.env[key];
@@ -20,7 +21,9 @@ async function main() {
     });
     cleanup.push(() => driver.close());
     await driver.open();
-    const manager = new AndroidExecutionManager({
+    const manager = new DeviceExecutionManager({
+      kind: "android",
+      tools: androidToolDefinitions(),
       targetId: required("PI_CLOUD_EXECUTION_TARGET_ID"),
       bootId: randomUUID(),
       ready: () => driver.ready,

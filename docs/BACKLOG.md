@@ -6,7 +6,10 @@
   execution, failure acceptance and publication. No local Harness migration.
 - [x] #38 client extraction: web and Node share HTTP/SSE/state/input identities;
   two readers and disconnect behavior pass alongside 30 client and 219 web checks.
-  The combined feature's publication and local execution remain pending.
+  The combined feature's publication remains pending.
+- [x] #38 source: outbound scoped device link, shared receiver and explicit Linux
+  namespace execution. Native file/image/shell/background/cancellation checks and
+  Android/Linux PG binding recovery pass; deployment acceptance remains pending.
 - [ ] #39: platform service minutes, BYO exemption, managed Android lifecycle
   evidence and lightweight reclamation timestamps; independent accounting.
 - Heavy verification and provider acceptance run serially. WSL memory and

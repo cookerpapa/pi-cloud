@@ -80,7 +80,8 @@ export function ResourceDevices({
         return (
           <div className="admin-settings-row" key={device.targetId}>
             <span>
-              {device.name} · Android{bound ? ` · ${bound.title}` : ""}
+              {device.name} · {device.kind === "linux" ? "Linux" : "Android"}
+              {bound ? ` · ${bound.title}` : ""}
             </span>
             {!device.boundSessionId && (
               <select

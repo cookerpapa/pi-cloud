@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0322](0322-outbound-local-execution.md) keeps local Linux execution behind
+the existing destination contract with an outbound link and explicit isolation.
+
 [ADR-0321](0321-shared-session-client.md) extracts the shared Session client while
 keeping the Harness in cloud Workers and device execution independent (#38).
 

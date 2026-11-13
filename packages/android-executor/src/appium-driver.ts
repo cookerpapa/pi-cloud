@@ -2,7 +2,7 @@ import { Agent, fetch } from "undici";
 import type { ToolResultData } from "@pi-cloud/protocol";
 
 /** A confirmed, ordinary UI error, safe to return to Pi as a Tool error. */
-export class AndroidToolError extends Error {}
+import { ExecutorToolError } from "@pi-cloud/executor-runtime";
 const uiErrors: Record<string, string> = {
   "no such element":
     "No focused editable element was found. Observe the screen and select an input first.",
@@ -50,7 +50,7 @@ export class AppiumAndroidDriver {
     }
     if (!response.ok || envelope.value?.error) {
       const message = uiErrors[envelope.value?.error];
-      if (message) throw new AndroidToolError(message);
+      if (message) throw new ExecutorToolError(message);
       throw new Error("Device operation unavailable");
     }
     return envelope.value;
@@ -144,7 +144,7 @@ export class AppiumAndroidDriver {
     } catch (error) {
       // A transport timeout may have left a UI action in flight. Do not run a
       // second action on this executor until its process/session is replaced.
-      if (!(error instanceof AndroidToolError)) this.#healthy = false;
+      if (!(error instanceof ExecutorToolError)) this.#healthy = false;
       throw error;
     }
   }
@@ -230,7 +230,7 @@ export class AppiumAndroidDriver {
         string
       >;
       const id = element["element-6066-11e4-a52e-4f735466cecf"] ?? element.ELEMENT;
-      if (!id) throw new AndroidToolError(uiErrors["no such element"]!);
+      if (!id) throw new ExecutorToolError(uiErrors["no such element"]!);
       await this.#call(
         "/element/" + encodeURIComponent(id) + "/value",
         "POST",
@@ -246,7 +246,7 @@ export class AppiumAndroidDriver {
       );
     else if (name === "android_open_app")
       await this.#call("/appium/device/activate_app", "POST", { appId: args.packageName }, signal);
-    else throw new AndroidToolError("Unknown Android operation");
+    else throw new ExecutorToolError("Unknown Android operation");
     return {
       content: [
         {

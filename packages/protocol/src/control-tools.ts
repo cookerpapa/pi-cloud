@@ -57,7 +57,9 @@ export type SubagentTask = Static<typeof SubagentToolSchema> & { key: string };
 export function hasConversationWorkspace(scope: {
   sessionKind?: "conversation" | "subagent";
   toolCapabilities?: readonly string[];
+  executionTargets?: readonly { kind: string }[];
 }): boolean {
+  if (scope.executionTargets?.some((target) => target.kind === "linux")) return false;
   return (
     scope.sessionKind !== "subagent" ||
     scope.toolCapabilities === undefined ||

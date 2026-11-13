@@ -7,7 +7,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
   const { language } = useI18n();
   const zh = language === "zh-CN";
   const [items, setItems] = useState<readonly ResourceBackendResource[]>([]);
-  const [kind, setKind] = useState<"cubesandbox" | "boxlite" | "android">("boxlite");
+  const [kind, setKind] = useState<"cubesandbox" | "boxlite" | "device">("boxlite");
   const [id, setId] = useState(() => "sandbox-domain-" + crypto.randomUUID().slice(0, 8));
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
@@ -115,7 +115,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
         onSubmit={(event) => {
           event.preventDefault();
           void change(async () => {
-            if (kind === "android")
+            if (kind === "device")
               await api.registerResourceDevice({
                 tenantId: deviceTenantId,
                 device: { targetId: nodeId, name, endpoint: url },
@@ -172,15 +172,15 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
           <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
             <option value="boxlite">BoxLite</option>
             <option value="cubesandbox">Cube</option>
-            <option value="android">
-              {zh ? "Android · 已有设备" : "Android · existing device"}
+            <option value="device">
+              {zh ? "已有设备 · Android / Linux" : "Existing device · Android / Linux"}
             </option>
           </select>
         </label>
         {field(zh ? "名称" : "Name", name, setName)}
-        {kind === "android" &&
+        {kind === "device" &&
           field(zh ? "所属组织 ID" : "Organization ID", deviceTenantId, setDeviceTenantId)}
-        {kind !== "android" && (
+        {kind !== "device" && (
           <>
             {field(zh ? "集群标识" : "Backend ID", id, setId)}
             {field(zh ? "位置" : "Location", location, setLocation)}
@@ -189,11 +189,11 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
         {field(zh ? "管理地址" : "Management endpoint", url, setUrl, "url", "https://…")}
         {kind !== "cubesandbox" &&
           field(
-            kind === "android" ? (zh ? "设备 UUID" : "Device UUID") : zh ? "节点标识" : "Node ID",
+            kind === "device" ? (zh ? "设备 UUID" : "Device UUID") : zh ? "节点标识" : "Node ID",
             nodeId,
             setNodeId,
           )}
-        {kind !== "android" && (
+        {kind !== "device" && (
           <>
             {field(zh ? "管理凭证" : "Management credential", token, setToken, "password")}
             {field(zh ? "存储地址" : "Storage endpoint", storageUrl, setStorageUrl, "url")}

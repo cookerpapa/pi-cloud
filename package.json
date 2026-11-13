@@ -132,7 +132,9 @@
     "eval:schedules": "PI_CLOUD_SCHEDULE_LOAD_CHECK=1 node scripts/run-with-test-postgres.mjs -- node node_modules/tsx/dist/cli.mjs --tsconfig packages/control-plane/tsconfig.json scripts/run-schedule-load-check.mjs",
     "browser:schedules:check": "node scripts/run-schedule-browser-check.mjs",
     "production:install": "node scripts/run-production-install.mjs",
-    "boxlite:release": "node --import tsx scripts/run-boxlite-release.mjs"
+    "boxlite:release": "node --import tsx scripts/run-boxlite-release.mjs",
+    "local:connect": "tsx packages/local-executor/src/launch.ts",
+    "local:check": "PI_CLOUD_LOCAL_EXECUTION_CHECK=1 npm run test --workspace @pi-cloud/local-executor"
   },
   "devDependencies": {
     "@earendil-works/chord": "1.0.0",

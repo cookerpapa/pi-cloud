@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: pi-cloud-device-link }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: { app.kubernetes.io/component: device-link }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/component: device-link }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: device-link
+          image: {{ required "Supply the reviewed device link image" .Values.image | quote }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          ports: [{ name: http, containerPort: 8090 }]
+          env:
+            - { name: PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE, value: /run/pma-management/token }
+            - { name: PI_CLOUD_DEVICE_LINK_CREDENTIALS_FILE, value: /run/pma-devices/devices.json }
+          readinessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 15 }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - { name: management, mountPath: /run/pma-management, readOnly: true }
+            - { name: devices, mountPath: /run/pma-devices, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: management
+          secret:
+            secretName: {{ .Values.managementSecretName }}
+            defaultMode: 288
+            items: [{ key: supervisor-management-token, path: token }]
+        - name: devices
+          secret: { secretName: {{ .Values.credentialsSecretName }}, defaultMode: 288 }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: device-link }
+spec:
+  selector: { app.kubernetes.io/component: device-link }
+  ports: [{ name: http, port: 8090, targetPort: http }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: pi-cloud-device-link }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: device-link }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [web, session-runtime, control-plane] }
+      ports: [{ protocol: TCP, port: 8090 }]
+  egress: []

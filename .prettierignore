@@ -22,3 +22,4 @@ deploy/helm/pi-cloud-infrastructure/templates/
 
 deploy/helm/pi-cloud-android/templates/
 deploy/helm/pi-cloud-boxlite/templates/
+deploy/helm/pi-cloud-device-link/templates/

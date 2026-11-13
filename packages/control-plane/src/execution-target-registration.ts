@@ -2,6 +2,7 @@ import type { Database } from "@pi-cloud/database";
 import { sql, type Kysely } from "kysely";
 import {
   ANDROID_CAPABILITIES,
+  LOCAL_CAPABILITIES,
   parseRegisterResourceDevice,
   parseUuidPathParameter,
 } from "@pi-cloud/protocol";
@@ -17,9 +18,11 @@ export async function registerResourceDevice(
   const tenantId = parseUuidPathParameter(tenant, "tenantId"),
     request = parseRegisterResourceDevice(input);
   const status = await transport.inspect(request.endpoint);
+  const capabilities = status.kind === "linux" ? LOCAL_CAPABILITIES : ANDROID_CAPABILITIES;
   if (
+    !["android", "linux"].includes(status.kind) ||
     status.targetId !== request.targetId ||
-    !ANDROID_CAPABILITIES.every((c) => status.capabilities.includes(c))
+    !capabilities.every((c) => status.capabilities.includes(c))
   )
     throw new Error("Device identity or capabilities do not match");
   await database.transaction().execute(async (tx) => {
@@ -27,8 +30,8 @@ export async function registerResourceDevice(
       tx,
     );
     const prior = (
-      await sql<{ tenant_id: string; endpoint: string; name: string }>`
-      select tenant_id,endpoint,name from execution_targets where id=${request.targetId}::uuid for update`.execute(
+      await sql<{ tenant_id: string; endpoint: string; name: string; kind: string }>`
+      select tenant_id,endpoint,name,kind from execution_targets where id=${request.targetId}::uuid for update`.execute(
         tx,
       )
     ).rows[0];
@@ -36,7 +39,8 @@ export async function registerResourceDevice(
       if (
         prior.tenant_id !== tenantId ||
         prior.endpoint !== request.endpoint ||
-        prior.name !== request.name
+        prior.name !== request.name ||
+        prior.kind !== status.kind
       )
         throw new Error(
           "Device already registered with different identity; unbind and remove it before replacement",
@@ -44,9 +48,9 @@ export async function registerResourceDevice(
       return;
     }
     await sql`insert into execution_targets(id,tenant_id,kind,name,endpoint,capabilities)
-      values(${request.targetId}::uuid,${tenantId}::uuid,'android',${request.name},${request.endpoint},${JSON.stringify(ANDROID_CAPABILITIES)}::jsonb)`.execute(
+      values(${request.targetId}::uuid,${tenantId}::uuid,${status.kind},${request.name},${request.endpoint},${JSON.stringify(capabilities)}::jsonb)`.execute(
       tx,
     );
   });
-  return { targetId: request.targetId, name: request.name, kind: "android" as const };
+  return { targetId: request.targetId, name: request.name, kind: status.kind };
 }

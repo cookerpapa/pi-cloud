@@ -57,6 +57,11 @@ export function effectiveToolCapabilities(
   const runtimes: Array<"linux" | "android"> = hasConversationWorkspace(scope) ? ["linux"] : [];
   if (
     scope.sessionKind === "conversation" &&
+    scope.executionTargets?.some((target) => target.kind === "linux")
+  )
+    runtimes.push("linux");
+  if (
+    scope.sessionKind === "conversation" &&
     scope.executionTargets?.some((target) => target.kind === "android")
   )
     runtimes.push("android");

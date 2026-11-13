@@ -19,7 +19,7 @@ type TargetRow = {
   tenant_id: string;
   revision: string;
   name: string;
-  kind: "android";
+  kind: "android" | "linux";
   capabilities: string[];
   endpoint: string;
   bound_session_id: string | null;
@@ -226,6 +226,7 @@ export class ExecutionTargetService {
     const status = await this.options.transport.inspect(first.rows[0].endpoint);
     if (
       status.targetId !== grant.targetId ||
+      status.kind !== selected.kind ||
       !selected.capabilities.every((c) => status.capabilities.includes(c))
     )
       throw new Error("Execution target identity or capabilities changed");

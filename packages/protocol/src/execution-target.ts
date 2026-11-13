@@ -8,7 +8,7 @@ export const ExecutionTargetGrantSchema = Type.Object(
   {
     targetId: UuidSchema,
     revision: Type.String({ pattern: "^[1-9][0-9]{0,18}$" }),
-    kind: Type.Literal("android"),
+    kind: Type.Union([Type.Literal("android"), Type.Literal("linux")]),
     name: Type.String({ minLength: 1, maxLength: 128 }),
     capabilities: Type.Array(ExecutionCapabilitySchema, { uniqueItems: true, maxItems: 64 }),
   },
@@ -32,7 +32,7 @@ export const ToolEnvironmentRequirementSchema = Type.Union([
   Type.Object(
     {
       kind: Type.Literal("target"),
-      targetKind: Type.Literal("android"),
+      targetKind: Type.Union([Type.Literal("android"), Type.Literal("linux")]),
       capabilities: Type.Array(ExecutionCapabilitySchema, {
         minItems: 1,
         maxItems: 64,

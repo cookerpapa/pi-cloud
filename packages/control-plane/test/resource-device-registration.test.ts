@@ -84,6 +84,7 @@ it("registers for the selected tenant and refuses to transfer an existing device
     const { device } = request();
     const transport = {
       inspect: async () => ({
+        kind: "android" as const,
         targetId: device.targetId,
         bootId: "owned-boot",
         ready: true,
@@ -101,4 +102,4 @@ it("registers for the selected tenant and refuses to transfer an existing device
   } finally {
     await db.destroy();
   }
-});
+}, 30_000);

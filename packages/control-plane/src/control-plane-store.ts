@@ -1593,7 +1593,14 @@ export class ControlPlaneStore {
           true,
         );
       }
-      if (!compact && session.execution_mode === "development_environment") {
+      const executionTargets = compact
+        ? []
+        : await readExecutionTargetGrants(transaction, this.#tenantId, session.id);
+      if (
+        !compact &&
+        !executionTargets.some((target) => target.kind === "linux") &&
+        session.execution_mode === "development_environment"
+      ) {
         if (session.development_environment_id === null) {
           throw new ControlPlaneStoreError(
             "control_plane_misconfigured",
@@ -1688,7 +1695,7 @@ export class ControlPlaneStore {
         chat?.thinkingLevel ?? (session.desired_thinking_level as ModelThinkingLevel),
         session.desired_service_tier,
       );
-      let toolCapabilities;
+      let toolCapabilities: ReturnType<typeof parseCloudToolCapabilitySnapshot>;
       try {
         toolCapabilities = parseCloudToolCapabilitySnapshot(session.tool_capabilities);
       } catch {
@@ -1697,9 +1704,7 @@ export class ControlPlaneStore {
           "Session Tool grant is invalid",
         );
       }
-      const executionTargets = compact
-        ? []
-        : await readExecutionTargetGrants(transaction, this.#tenantId, session.id);
+      if (executionTargets.some((target) => target.kind === "linux")) toolCapabilities = [];
       const environment = await this.#activeEnvironmentForRun(transaction, session.project_id);
       const uploads = compact
         ? []

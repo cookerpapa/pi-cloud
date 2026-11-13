@@ -1,4 +1,8 @@
-import { androidToolDefinitions, type ControlToolCatalogSource } from "@pi-cloud/protocol";
+import {
+  androidToolDefinitions,
+  localToolDefinitions,
+  type ControlToolCatalogSource,
+} from "@pi-cloud/protocol";
 import { controlToolCatalog } from "./control-tool-registry.ts";
 
 /** Definitions follow code-owned executors. The Worker filters each Conversation
@@ -10,7 +14,11 @@ export function executionToolCatalog(ordinary: ControlToolCatalogSource): Contro
     read() {
       const value = ordinary.read();
       if (value.revision !== revision) {
-        snapshot = controlToolCatalog([...value.tools, ...androidToolDefinitions()]);
+        snapshot = controlToolCatalog([
+          ...value.tools,
+          ...androidToolDefinitions(),
+          ...localToolDefinitions(),
+        ]);
         revision = value.revision;
       }
       return snapshot;

@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { Value } from "typebox/value";
 import type { TSchema } from "typebox";
 import {
-  androidToolDefinitions,
+  type ControlToolCatalogDefinition,
   parseExecutorOperation,
   type ExecutorBinding,
   type ExecutorOperation,
@@ -11,7 +11,14 @@ import {
   type ToolResultData,
   type ExecutorCompletion,
 } from "@pi-cloud/protocol";
-import { AndroidToolError } from "./appium-driver.ts";
+export class ExecutorToolError extends Error {
+  constructor(
+    message: string,
+    readonly result?: ToolResultData,
+  ) {
+    super(message);
+  }
+}
 
 export class ExecutorRefusal extends Error {
   constructor(
@@ -22,18 +29,20 @@ export class ExecutorRefusal extends Error {
   }
 }
 type Active = { command: ExecutorOperation; abort: AbortController; work: Promise<void> };
-/** A single screen's destination admission, not a task queue. Process restart
- * changes boot identity; uncertain UI actions are never recovered/re-executed. */
-export class AndroidExecutionManager {
+/** Destination admission, not a task queue. Android serializes screen actions;
+ * Linux operations keep individual cancellation. Restart changes boot identity. */
+export class DeviceExecutionManager {
   #binding: ExecutorBinding | undefined;
   #closedBinding = false;
   #position: ExecutorPosition | undefined;
-  #active: Active | undefined;
+  readonly #active = new Map<string, Active>();
   #closed = false;
   #operationsStarted = 0;
-  readonly #tools = new Map(androidToolDefinitions().map((t) => [t.name, t]));
+  readonly #tools: Map<string, ControlToolCatalogDefinition>;
   constructor(
     readonly options: {
+      kind: "android" | "linux";
+      tools: readonly ControlToolCatalogDefinition[];
       ready?(): boolean;
       targetId: string;
       bootId: string;
@@ -45,9 +54,20 @@ export class AndroidExecutionManager {
       complete(command: ExecutorOperation, output: ExecutorCompletion): Promise<void>;
       onError?(code: string): void;
     },
-  ) {}
+  ) {
+    this.#tools = new Map(options.tools.map((tool) => [tool.name, tool]));
+  }
+  get capabilities() {
+    return [
+      ...new Set(
+        this.options.tools.flatMap((tool) =>
+          tool.environment?.kind === "target" ? tool.environment.capabilities : [],
+        ),
+      ),
+    ];
+  }
   get busy() {
-    return Boolean(this.#active);
+    return this.#active.size > 0;
   }
   get operationsStarted() {
     return this.#operationsStarted;
@@ -85,8 +105,9 @@ export class AndroidExecutionManager {
     if (this.options.ready && !this.options.ready())
       throw new ExecutorRefusal("executor_unavailable");
     this.#authorize(command.binding);
-    if (this.#active?.command.operationId === command.operationId) {
-      if (!isDeepStrictEqual(command, this.#active.command))
+    const duplicate = this.#active.get(command.operationId);
+    if (duplicate) {
+      if (!isDeepStrictEqual(command, duplicate.command))
         throw new ExecutorRefusal("executor_operation_changed");
       return { accepted: true };
     }
@@ -101,26 +122,29 @@ export class AndroidExecutionManager {
       throw new ExecutorRefusal("executor_tool_unavailable");
     if (!Value.Check(tool.parameters as TSchema, command.arguments))
       throw new ExecutorRefusal("executor_invalid_arguments");
-    if (this.#active) throw new ExecutorRefusal("executor_busy");
+    if (this.options.kind === "android" && this.#active.size)
+      throw new ExecutorRefusal("executor_busy");
     this.#position = { ...command.position };
     const active: Active = {
       command: structuredClone(command),
       abort: new AbortController(),
       work: Promise.resolve(),
     };
-    this.#active = active;
+    this.#active.set(command.operationId, active);
     active.work = Promise.resolve()
       .then(() => this.#run(active))
       .catch(() => this.options.onError?.("executor_reply_unavailable"))
       .finally(() => {
-        if (this.#active === active) this.#active = undefined;
+        if (this.#active.get(command.operationId) === active)
+          this.#active.delete(command.operationId);
       });
     return { accepted: true };
   }
   cancel(value: ExecutorCancellation): void {
     // Recovery keeps the original immutable target. A newer admission generation
     // must not prevent cancelling that exact old action, nor let it cancel a new one.
-    const original = this.#active?.command;
+    const active = this.#active.get(value.operationId);
+    const original = active?.command;
     if (
       original &&
       original.operationId === value.operationId &&
@@ -137,7 +161,7 @@ export class AndroidExecutionManager {
         throw new ExecutorRefusal("executor_cancel_position_stale");
       if (isDeepStrictEqual(this.#binding, value.binding) && this.#positionAfter(q))
         this.#position = { ...q };
-      this.#active!.abort.abort(new Error("Tool cancelled"));
+      active!.abort.abort(new Error("Tool cancelled"));
       return;
     }
     this.#authorize(value.binding);
@@ -172,9 +196,9 @@ export class AndroidExecutionManager {
       const result = await this.options
         .execute(call.toolName, call.arguments, signal)
         .catch((error) => {
-          if (!(error instanceof AndroidToolError)) throw error;
+          if (!(error instanceof ExecutorToolError)) throw error;
           isError = true;
-          return { content: [{ type: "text" as const, text: error.message }] };
+          return error.result ?? { content: [{ type: "text" as const, text: error.message }] };
         });
       signal.throwIfAborted();
       reply = {
@@ -190,7 +214,7 @@ export class AndroidExecutionManager {
   }
   async close(): Promise<void> {
     this.#closed = true;
-    this.#active?.abort.abort(new Error("Executor stopped"));
-    await this.#active?.work;
+    for (const active of this.#active.values()) active.abort.abort(new Error("Executor stopped"));
+    await Promise.allSettled([...this.#active.values()].map((active) => active.work));
   }
 }

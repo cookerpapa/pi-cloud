@@ -5,6 +5,46 @@ import {
 } from "../src/effective-tool-capabilities.ts";
 import { skillAvailability } from "../src/skills.ts";
 import { androidToolDefinitions } from "../src/android-tools.ts";
+import {
+  localToolDefinitions,
+  LOCAL_CAPABILITIES,
+  executorToolBudget,
+} from "../src/local-tools.ts";
+
+it("uses only local file tools on an explicitly selected Linux target and preserves operation budgets", () => {
+  const scope = {
+    sessionKind: "conversation" as const,
+    toolCapabilities: [],
+    depth: 0,
+    maximumDepth: null,
+    executionTargets: [
+      {
+        targetId: "10000000-0000-4000-8000-000000000001",
+        revision: "1",
+        kind: "linux" as const,
+        name: "local",
+        capabilities: [...LOCAL_CAPABILITIES],
+      },
+    ],
+  };
+  const tools = effectiveToolCapabilities(scope, [
+    ...localToolDefinitions(),
+    ...androidToolDefinitions(),
+  ]);
+  expect(tools.runtimes).toEqual(["linux"]);
+  expect(tools.tools).toContain("local_bash");
+  expect(tools.tools).not.toContain("bash");
+  expect(tools.tools).not.toContain("android_tap");
+  expect(isConversationToolOffered({ environment: { kind: "workspace" } }, scope)).toBe(false);
+  expect(
+    effectiveToolCapabilities({ ...scope, sessionKind: "subagent" }, localToolDefinitions()).tools,
+  ).not.toContain("local_bash");
+  expect(executorToolBudget("local_bash", { timeout: 120 })).toEqual({
+    operationMs: 120_000,
+    replyMs: 240_000,
+  });
+  expect(executorToolBudget("android_tap", {})).toEqual({ operationMs: 30_000, replyMs: 90_000 });
+});
 
 it("does not advertise shell workflows to a read-only child", () => {
   const scope = {

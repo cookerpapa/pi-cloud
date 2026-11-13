@@ -1,13 +1,14 @@
+import { androidToolDefinitions } from "@pi-cloud/protocol";
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { ANDROID_CAPABILITIES, type ExecutorOperation } from "@pi-cloud/protocol";
-import { AndroidExecutionManager } from "../src/execution-manager.ts";
-import { AndroidToolError } from "../src/appium-driver.ts";
-import { createExecutorServer } from "../src/server.ts";
+import { DeviceExecutionManager } from "@pi-cloud/executor-runtime";
+import { ExecutorToolError } from "@pi-cloud/executor-runtime";
+import { createExecutorServer } from "@pi-cloud/executor-runtime";
 function fixture() {
   const targetId = randomUUID(),
     bootId = randomUUID();
-  const execute = vi.fn<AndroidExecutionManager["options"]["execute"]>(async () => ({
+  const execute = vi.fn<DeviceExecutionManager["options"]["execute"]>(async () => ({
     content: [{ type: "text" as const, text: "ok" }],
   }));
   const complete = vi.fn(
@@ -16,7 +17,9 @@ function fixture() {
       _output: import("@pi-cloud/protocol").ExecutorCompletion,
     ) => {},
   );
-  const manager = new AndroidExecutionManager({
+  const manager = new DeviceExecutionManager({
+    kind: "android",
+    tools: androidToolDefinitions(),
     targetId,
     bootId,
     execute,
@@ -221,7 +224,7 @@ describe("Android external effect boundary", () => {
   });
   it("ordinary UI errors remain tool results, transport loss remains unknown", async () => {
     const f = fixture();
-    f.execute.mockRejectedValueOnce(new AndroidToolError("Select a field"));
+    f.execute.mockRejectedValueOnce(new ExecutorToolError("Select a field"));
     f.manager.submit(f.command);
     await settled(f);
     expect(f.complete).toHaveBeenCalledWith(

@@ -125,7 +125,7 @@ export function parseRegisterResourceDevice(value: unknown): RegisterResourceDev
     url.password ||
     url.search ||
     url.hash ||
-    url.pathname !== "/"
+    (url.pathname !== "/" && !/^\/targets\/[0-9a-f-]{36}$/.test(url.pathname))
   )
     throw new TypeError("Use a device endpoint origin");
   return { ...value, endpoint: url.origin };

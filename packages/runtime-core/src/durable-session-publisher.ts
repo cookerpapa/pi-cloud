@@ -13,7 +13,7 @@ import {
   parseDurableDisplayDescription,
   parseToolEnvironmentRequest,
   TOOL_REPLY_DELIVERY_MARGIN_MS,
-  ANDROID_REPLY_TIMEOUT_MS,
+  executorToolBudget,
   type DurableCommitPublication,
   type DurableCommitPublisher,
   type AcceptedToolCancellation,
@@ -132,7 +132,9 @@ export class DurableSessionPublisher {
                 occurredAt: command.occurredAt,
                 replyRecovery: {
                   ...replyPosition!,
-                  deadlineAt: Date.parse(command.occurredAt) + ANDROID_REPLY_TIMEOUT_MS,
+                  deadlineAt:
+                    Date.parse(command.occurredAt) +
+                    executorToolBudget(command.toolName, command.arguments).replyMs,
                   toolCallId: intent.callId,
                   toolName: command.toolName,
                 },

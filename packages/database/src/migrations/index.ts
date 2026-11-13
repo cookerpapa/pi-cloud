@@ -1,3 +1,4 @@
+import * as localExecutionTargets from "./223_local_execution_targets.ts";
 import * as resourceBackends from "./222_resource_backends.ts";
 import * as skillInstallationRevisions from "./220_skill_installation_revisions.ts";
 import * as workspacePersistence from "./221_workspace_persistence.ts";
@@ -413,6 +414,7 @@ export const migrationProvider: MigrationProvider = {
       "220_skill_installation_revisions": skillInstallationRevisions,
       "221_workspace_persistence": workspacePersistence,
       "222_resource_backends": resourceBackends,
+      "223_local_execution_targets": localExecutionTargets,
     };
   },
 };
