@@ -154,10 +154,12 @@ export class CubeCompletionAdapter {
     if (event.toolCallId !== context.nativeToolCallId || event.toolName !== context.toolName)
       return fail("tool_reply_protocol_error", "Native completion identity changed");
     const images = event.result.content.filter((p) => p.type === "image");
+    const imageTool =
+      context.kind === "executor_tool"
+        ? ["android_observe", "local_read"].includes(event.toolName)
+        : event.toolName === "read";
     const encoded = await (
-      images.length > 1 ||
-      (images.length &&
-        event.toolName !== (context.kind === "executor_tool" ? "android_observe" : "read"))
+      images.length > 1 || (images.length && !imageTool)
         ? Promise.reject(new Error("The declared observation Tool returns at most one image"))
         : encodeSessionImages(
             this.options.images,
