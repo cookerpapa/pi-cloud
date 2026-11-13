@@ -411,24 +411,28 @@ try {
     assert.equal(value.capacityBytes, GiB);
     return !value.pending && value;
   }, "Initial kernel capacity acknowledgement");
-  const initialRows = await until(async () => {
-    const rows = await receipts();
-    return (
-      rows.some(
-        (row) =>
-          positiveConfirmed(row) &&
-          row.payload.resource.kind === "workspace" &&
-          row.payload.quantity.capacityBytes === GiB,
-      ) &&
-      rows.some(
-        (row) =>
-          row.payload.basis === "platform_service_minute_v1" &&
-          Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
-          row.payload.resource.kind === "compute",
-      ) &&
-      rows
-    );
-  }, "Confirmed service minutes and confirmed 1 GiB retention receipts");
+  const initialRows = await until(
+    async () => {
+      const rows = await receipts();
+      return (
+        rows.some(
+          (row) =>
+            positiveConfirmed(row) &&
+            row.payload.resource.kind === "workspace" &&
+            row.payload.quantity.capacityBytes === GiB,
+        ) &&
+        rows.some(
+          (row) =>
+            row.payload.basis === "platform_service_minute_v1" &&
+            Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
+            row.payload.resource.kind === "compute",
+        ) &&
+        rows
+      );
+    },
+    "Confirmed service minutes and confirmed 1 GiB retention receipts",
+    240_000,
+  );
   const firstCompute = initialRows.find(
     (row) =>
       row.payload.basis === "platform_service_minute_v1" &&
@@ -877,6 +881,24 @@ try {
 } catch (error) {
   failure = error;
   report.failure = { phase: report.phase, ...safeFailure(error) };
+  if (db && tenant && machine) {
+    try {
+      report.pendingReceipts = (await receipts()).map(({ payload }) => ({
+        kind: payload.resource.kind,
+        basis: payload.basis,
+        quality: payload.quality,
+        from: payload.from,
+        to: payload.to,
+      }));
+      report.pendingServicePeriods = (
+        await sql`select resource_key,opened_at,observed_at,ended_at,settled_through,needs_settlement from compute_service_periods where tenant_id=${tenant.tenantId}::uuid`.execute(
+          db,
+        )
+      ).rows;
+    } catch {
+      report.pendingEvidenceUnavailable = true;
+    }
+  }
 } finally {
   cleanupDeadline = Date.now() + 5 * 60_000;
   const errors = [];
