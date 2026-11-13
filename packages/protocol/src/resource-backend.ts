@@ -105,6 +105,17 @@ const RegisterDeviceSchema = Type.Object(
   { additionalProperties: false },
 );
 export type RegisterResourceDevice = Static<typeof RegisterDeviceSchema>;
+const RegisterDeviceRequestSchema = Type.Object(
+  { tenantId: UuidSchema, device: RegisterDeviceSchema },
+  { additionalProperties: false },
+);
+export type RegisterResourceDeviceRequest = Static<typeof RegisterDeviceRequestSchema>;
+export function parseRegisterResourceDeviceRequest(value: unknown): RegisterResourceDeviceRequest {
+  if (!Value.Check(RegisterDeviceRequestSchema, value))
+    throw new TypeError("Invalid device organization or registration");
+  parseRegisterResourceDevice(value.device);
+  return value;
+}
 export function parseRegisterResourceDevice(value: unknown): RegisterResourceDevice {
   if (!Value.Check(RegisterDeviceSchema, value)) throw new TypeError("Invalid device registration");
   const url = new URL(value.endpoint);

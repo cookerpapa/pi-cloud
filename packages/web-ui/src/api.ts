@@ -569,7 +569,7 @@ export class PiCloudApi {
     )) as WorkspaceCapacitySnapshot;
   }
   async registerResourceDevice(
-    input: import("@pi-cloud/protocol").RegisterResourceDevice,
+    input: import("@pi-cloud/protocol").RegisterResourceDeviceRequest,
   ): Promise<void> {
     await request(
       this.#fetch,

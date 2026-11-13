@@ -89,7 +89,10 @@ physical cleanup. Missing health or registration activity is never that proof.
 Android uses the existing device-target authority, not a Linux volume/VM facade.
 The administrator registers an already-running compatible device executor using
 its actual UUID and endpoint. `POST /v1/resource-backends/devices` relays this to
-management under the platform credential; the existing operator CLI uses the same
+management under the platform credential. Its body is
+`{ tenantId, device: { targetId, name, endpoint } }`: the administrator explicitly
+selects the device's organization instead of assigning it to the admin account.
+The existing operator CLI uses the same
 registration code. This creates no emulator, Workspace or device access scheduler.
 The Resources page lists registered devices and can connect/disconnect an idle
 conversation using the existing Session revision checks. A listed registration

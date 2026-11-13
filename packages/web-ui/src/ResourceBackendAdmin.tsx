@@ -14,6 +14,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [nodeId, setNodeId] = useState("");
+  const [deviceTenantId, setDeviceTenantId] = useState("");
   const [storageUrl, setStorageUrl] = useState("");
   const [storageToken, setStorageToken] = useState("");
   const [proxyHost, setProxyHost] = useState("");
@@ -21,7 +22,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
   const [sandboxDomain, setSandboxDomain] = useState("cube.app");
   const [egressHost, setEgressHost] = useState("10.255.255.254");
   const [imageRevision, setImageRevision] = useState("");
-  const [operatingSystem, setOperatingSystem] = useState("Ubuntu 24.04");
+  const [operatingSystem, setOperatingSystem] = useState("Linux");
   const [templates, setTemplates] = useState({
     elastic: "tool",
     starter: "starter",
@@ -115,7 +116,10 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
           event.preventDefault();
           void change(async () => {
             if (kind === "android")
-              await api.registerResourceDevice({ targetId: nodeId, name, endpoint: url });
+              await api.registerResourceDevice({
+                tenantId: deviceTenantId,
+                device: { targetId: nodeId, name, endpoint: url },
+              });
             else {
               const configuration: ResourceBackendConfiguration = {
                 compute:
@@ -174,6 +178,8 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
           </select>
         </label>
         {field(zh ? "名称" : "Name", name, setName)}
+        {kind === "android" &&
+          field(zh ? "所属组织 ID" : "Organization ID", deviceTenantId, setDeviceTenantId)}
         {kind !== "android" && (
           <>
             {field(zh ? "集群标识" : "Backend ID", id, setId)}

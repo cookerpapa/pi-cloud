@@ -83,13 +83,9 @@ try {
     (await readFile(runtimeDirectory + "/secrets/api-token", "utf8")).trim(),
   );
   await admin.registerResourceDevice({
-    targetId,
-    name: target.name,
-    endpoint: target.endpoint,
+    tenantId: target.tenant_id,
+    device: { targetId, name: target.name, endpoint: target.endpoint },
   });
-  assert(
-    (await admin.listExecutionTargets()).targets.some((device) => device.targetId === targetId),
-  );
   report.existingDeviceRegistrationConfirmed = true;
   const user = await db
     .selectFrom("users")
@@ -108,6 +104,7 @@ try {
     (path, init) => fetch(new URL(String(path), baseUrl), init),
     credential.token,
   );
+  assert((await api.listExecutionTargets()).targets.some((device) => device.targetId === targetId));
   project = await api.createProject("Android acceptance " + Date.now(), { kind: "empty" });
   session = await api.createSession(
     project.projectId,

@@ -2,7 +2,7 @@ import type { Kysely } from "kysely";
 import type { Database } from "@pi-cloud/database";
 import {
   parsePutResourceBackend,
-  parseRegisterResourceDevice,
+  parseRegisterResourceDeviceRequest,
   RESOURCE_BACKENDS_INTERNAL_PATH,
   type ResourceBackendResource,
 } from "@pi-cloud/protocol";
@@ -33,11 +33,12 @@ export class ResourceBackendService {
       parsePutResourceBackend(input),
     );
   }
-  registerDevice(tenantId: string, input: unknown) {
-    return this.#send("POST", RESOURCE_BACKENDS_INTERNAL_PATH + "/devices", {
-      tenantId,
-      device: parseRegisterResourceDevice(input),
-    });
+  registerDevice(input: unknown) {
+    return this.#send(
+      "POST",
+      RESOURCE_BACKENDS_INTERNAL_PATH + "/devices",
+      parseRegisterResourceDeviceRequest(input),
+    );
   }
   async #send<T>(method: "PUT" | "POST", path: string, request: unknown): Promise<T> {
     if (!this.management) throw new Error("Resource registration is unavailable");

@@ -54,7 +54,7 @@ export class ResourceBackendController {
   async registerDevice(@Req() request: FastifyRequest, @Body() body: unknown) {
     this.#authorize(request);
     try {
-      return await this.service.registerDevice(this.identity.resolve(request).tenantId, body);
+      return await this.service.registerDevice(body);
     } catch (error) {
       if (error instanceof ResourceBackendChangeError) throw new ConflictException(error.message);
       if (error instanceof TypeError) throw new BadRequestException("Invalid device registration");

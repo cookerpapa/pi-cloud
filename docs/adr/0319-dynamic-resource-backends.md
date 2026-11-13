@@ -56,6 +56,13 @@ registration and device capabilities; no Linux Workspace or self-service emulato
 pool is invented. A genuinely new vendor protocol needs a code-owned adapter and
 its acceptance, independently of registering another installed adapter instance.
 
+Device registration is an administrator operation with an explicit destination
+organization: `{ tenantId, device: { targetId, name, endpoint } }`. The API must
+not substitute the administrator's own tenant. Management verifies the real
+executor and retains its existing tenant ownership on retries; a conflicting
+owner is rejected. Ordinary users still list and bind only their own tenant's
+devices. Registration creates no new emulator or device-sharing scheduler.
+
 ## Evidence and acceptance
 
 Reuse PG rows/notifications, existing native adapters and lifecycle controllers.
