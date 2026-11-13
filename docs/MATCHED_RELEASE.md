@@ -5,12 +5,12 @@ serving roles and physical maintenance separately under
 [ADR-0320](adr/0320-release-plans-and-artifact-reuse.md). Preparation does not change
 the serving catalog. All builds and native/live checks on the WSL host run serially.
 
-The last verified serving baseline is `alternate-runtime-20261112-final`, schema
-219, Session topic v21, reply topic v4, resource capsule 4, provider contract 1,
-Guest executor 1, fixed Tool payload 7, Android executor 2 and public terminal 2.
-The current source candidate adds schemas 220–222, Workspace persistence and the
-backend registry. Its integrated publication/acceptance is tracked in BACKLOG;
-a source check is not deployment evidence.
+The current verified record is `decoupled-metadata-20261113`, schema 222, Session
+topic v21, reply topic v4, resource capsule 4, provider contract 1, Guest executor
+1, fixed Tool payload 7, Android executor 2 and public terminal 2. Core, Tool-host
+and Web artifacts intentionally retain their own source revisions. The
+[delivery report](reports/decoupling-delivery-20261113.md) records the cold storage
+adoption, actual component-only rollouts and zero-restart metadata publication.
 
 ## Prepare and inspect
 
@@ -83,8 +83,9 @@ paused. This is compute maintenance, not user Workspace deletion.
 
 ## Workspace persistence handoff
 
-[ADR-0318](adr/0318-workspace-persistence-and-native-mounts.md) needs one cold
-adoption. Stop API/Workers/management, uploads, file gateways and actual native
+[ADR-0318](adr/0318-workspace-persistence-and-native-mounts.md) required one cold
+adoption, completed in this deployment. A deployment that still needs that
+ownership handoff must stop API/Workers/management, uploads, file gateways and actual native
 storage consumers using the existing recorded guard. Verify the owned XFS mount,
 its identity and original generations; do not format or create an empty substitute
 for known missing data. The existing root storage helper adopts metadata without

@@ -1,18 +1,15 @@
 # Implementation roadmap
 
-## Authorized decoupling implementation
+## Decoupling and dynamic resource backends — delivered
 
-[#32](https://github.com/cookerpapa/pi-managed-agents/issues/32) is reviewed at
-`ae05797e`; [findings and verification](reports/repository-decoupling-review-20261112.md)
-retain the current authorities while identifying startup, control-Tool,
-storage/provider and build/publication coupling. The owner subsequently authorized
-#30, #31 and #33–#37. Implement complete slices, preserve existing assets, run heavy
-checks serially, and broaden publication only after the affected boundary passes.
-ADR-0315's control-Tool source slice passes focused checks; integrated publication
-remains pending. ADR-0318 separates storage initialization/deletion from native
-mount registration; its cold adoption and live provider checks remain pending.
-Dynamic registration source under ADR-0319 is connected through API, management,
-execution and Web; its real no-restart/native acceptance remains pending.
+Issues #30, #31 and #33–#37 are implemented and deployed under ADR-0315–0320.
+The [delivery report](reports/decoupling-delivery-20261113.md) records independent
+Workspace storage, live backend registration and resource-page selection, the
+consolidated Skill surface, role-specific configuration/image inputs and measured
+component/metadata publication. Worker continuation, native cancellation, images,
+schedules, Cube/Box retained files and Android device recovery were exercised
+serially with original assets preserved. Unverified hosted/multi-node guarantees
+and the original staging-locator follow-up remain explicit in BACKLOG.
 
 ## Alternate runtime production integration — deployed
 
@@ -42,8 +39,7 @@ under [ADR-0308](adr/0308-unresolved-resource-admission.md), following the compl
 Cube patch inventory. [#27](https://github.com/cookerpapa/pi-managed-agents/issues/27)
 tracks BoxLite integration and the Android source audit. The owner subsequently
 accepted [ADR-0309](adr/0309-stock-sandbox-contract.md) to implement stock Cube
-APIs with conservative external ownership and explicit accounting gaps. Stock
-The stock Cube R5 milestone used schema 217 with original assets preserved. Capacity,
+APIs with conservative external ownership and explicit accounting gaps. The stock Cube R5 milestone used schema 217 with original assets preserved. Capacity,
 image/browser, VM recovery, forced reachable-inventory Worker recovery and accounting
 acceptance passed, including the real 30-minute idle-expiry and retained-file recovery
 check. Native template/node-metadata cleanup is separate maintenance in
@@ -59,7 +55,8 @@ passed real Guest execution and Android model/image/restart checks with unchange
 upstream engines. It records the BoxLite host-jailer tradeoff and local resource
 API gaps. The subsequent [integrated acceptance](reports/alternate-runtimes-20261112.md)
 now covers the production provider and original device-operation recovery. Cube
-remains the default, and Android has no Web product picker.
+remains the default. That milestone had no Web device picker; ADR-0319 now adds
+existing-device registration and resource-page binding without an emulator pool.
 
 ## Guest execution and Session activity — deployed
 
@@ -90,7 +87,8 @@ Worker public proxies retain atomic intent publication; execution owns logical
 binding preparation and closure coordination, with management retaining physical
 lifecycle. Ordinary Tool handlers publish independently and Kafka broadcasts the
 selected directory. The same live Run continued through a Tool-host-only update.
-BoxLite was evaluated in isolation and remains deferred as a production backend.
+At that milestone BoxLite was evaluated in isolation; ADR-0313 and the current
+delivery above subsequently integrate it as an explicit backend.
 [Serial source, fault, Cube, recovery, image and Subagent acceptance, including
 failed samples](reports/execution-tools-20261108.md), accompanies application Helm
 151 / infrastructure 116 / schema 214. PG HA Issue #11 remains separate.

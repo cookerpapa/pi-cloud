@@ -1,6 +1,6 @@
 # ADR-0320: Release plans separate artifacts, roles and physical maintenance
 
-Date: 2026-11-12. Status: accepted for implementation. Tracking: #33 and #37.
+Date: 2026-11-12. Status: accepted; implemented and live-verified on 2026-11-13. Tracking: #33 and #37.
 
 ## Decision
 
@@ -61,3 +61,5 @@ selection. Serial live checks must demonstrate a Web-only replacement, a permitt
 Tool-host/role replacement with the original Session writer retained, and dynamic
 backend registration without existing Pod restarts. Keep all original assets and
 report measured build/rollout scope, not a theoretical speedup.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

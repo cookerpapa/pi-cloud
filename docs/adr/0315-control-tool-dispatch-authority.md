@@ -1,6 +1,6 @@
 # ADR-0315: Ordered control Tool dispatch without Worker lease polling
 
-Date: 2026-11-12. Status: accepted for implementation by the owner.
+Date: 2026-11-12. Status: accepted by the owner; implemented and live-verified on 2026-11-13.
 Tracking: [#35](https://github.com/cookerpapa/pi-managed-agents/issues/35).
 
 ## Decision
@@ -45,3 +45,5 @@ in the coordinated release of the authorized decoupling work.
 This uses the existing Kafka, PG and Pi contracts rather than a new infrastructure
 component. The current review, ADR-0247, ADR-0305 and ADR-0306 supply the adopted
 ordered-dispatch, immutable-intent and original-reply mechanisms.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

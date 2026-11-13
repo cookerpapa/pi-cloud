@@ -1,6 +1,6 @@
 # ADR-0319: Dynamic resource backends using the existing resource authority
 
-Date: 2026-11-12. Status: accepted for implementation. Tracking: #31, #36.
+Date: 2026-11-12. Status: accepted; implemented and live-verified on 2026-11-13. Tracking: #31, #36.
 
 ## Decision
 
@@ -76,3 +76,5 @@ writer and original resource running while adding BoxLite; the already-open Web
 page must offer it without Pod replacement. Complete a new resource's real Tool
 and cleanup path serially, preserve original files/device data, and report hosted
 and multi-node limits separately from the local acceptance.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

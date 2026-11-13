@@ -1,6 +1,6 @@
 # ADR-0316: Role-owned configuration and production artifacts
 
-Date: 2026-11-12. Status: accepted for implementation.
+Date: 2026-11-12. Status: accepted; implemented and live-verified on 2026-11-13.
 Tracking: #36 and #37; publication policy remains #33.
 
 Each existing process loads only the settings and clients it consumes. Session
@@ -48,3 +48,5 @@ source/digest evidence for unchanged artifacts.
 
 This refactors existing configuration and image construction. It adopts no new
 deployment framework, scheduler or cache and adds no second resource authority.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

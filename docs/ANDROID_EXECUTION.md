@@ -2,17 +2,22 @@
 
 Status: integrated operator target under ADR-0313, with
 [real six-tool, image, Worker/receiver recovery and VM-restart acceptance](reports/alternate-runtimes-20261112.md).
-The matched core `alternate-runtime-20261112-final` uses schema 219, Session
-topic v21 and executor protocol 2.
+The current core uses schema 222, Session topic v21 and executor protocol 2.
+The [November 13 delivery](reports/decoupling-delivery-20261113.md) adds administrator
+registration for an explicit organization and resource-page device binding, and
+revalidates tools, images, Worker/receiver recovery and retained userdata.
 The current device artifact is `android-20261112-r3`; initial October acceptance
 is recorded separately in [the historical delivery report](reports/android-execution-delivery-20261026.md).
-The phone picker remains hidden.
+The dedicated cloud-phone picker remains hidden.
 
 The October 27 owner decision withdraws the cloud-phone picker/screen controls
 from the product page. The execution-target abstraction and operator API remain
-as a verified operator integration; no backend/device data is deleted.
-An operator can bind an existing idle coding conversation to a provisioned
-Android virtual device through the API. The next Run receives the device capabilities. Its root Agent can observe
+as a verified integration; no backend/device data is deleted. Under ADR-0319 an
+administrator registers an already running device with
+`{ tenantId, device: { targetId, name, endpoint } }`. The organization's resource
+page can connect an idle coding conversation to that device. This does not create
+an emulator pool or share the device across organizations. The next Run receives
+the device capabilities. Its root Agent can observe
 the screen, tap, swipe, enter text, press a navigation key and open an installed
 application. Child Agents do not inherit control of that screen. A coding Workspace remains part of the conversation, but the selected target
 controls which execution tools are exposed. Device application storage is separate.

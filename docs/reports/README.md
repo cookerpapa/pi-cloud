@@ -1,9 +1,14 @@
 # Delivery and research evidence
 
+- [Decoupling, resource backends and scoped release delivery](decoupling-delivery-20261113.md):
+  #30/#31/#33–#37, independent local storage, dynamic registry, two Skill tools,
+  role-owned configuration/artifacts, actual single-component and zero-restart
+  publication, serial recovery acceptance, preserved assets and limits.
+
 - [Repository decoupling and release review](repository-decoupling-review-20261112.md):
   current authority boundaries, remaining startup/storage/build coupling, release
   scope decisions, documentation/migration cleanup and test-value assessment.
-  Broader scoped publication awaits discussion of the findings.
+  Its authorized repairs and publication gates are delivered in the report above.
 
 - [Integrated alternate runtimes](alternate-runtimes-20261112.md): stock BoxLite
   resource/Guest integration, Android original-operation recovery, serial live

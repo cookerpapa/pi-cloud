@@ -1,6 +1,6 @@
 # ADR-0318: Workspace persistence independent of native compute
 
-Date: 2026-11-12. Status: accepted for implementation. Tracking: #30.
+Date: 2026-11-12. Status: accepted; implemented and live-verified on 2026-11-13. Tracking: #30.
 
 ## Authority and supported implementations
 
@@ -67,3 +67,5 @@ Reuse the existing storage helper/Gateway and native Volume/SDK mechanisms.
 CSI's create/publish/unpublish/delete and topology vocabulary informs the port;
 no CSI engine, second storage catalog, archive head or new distributed filesystem
 is introduced. The build-versus-adopt evidence remains ADR-0301, ADR-0309 and #30.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

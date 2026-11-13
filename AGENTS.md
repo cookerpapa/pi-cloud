@@ -21,7 +21,7 @@ scope. Drain writers and confirm physical cleanup before discarding ownership
 records; destructive development updates do not weaken runtime fencing.
 
 The owner authorizes routine deployment after changes pass the required checks.
-Complete the maintained matched release and relevant live acceptance without
+Complete the maintained planned matched or scoped release and relevant live acceptance without
 asking for another rollout confirmation, unless source-only work is requested.
 This does not waive writer draining, fencing or preservation of accounts,
 configuration and credentials.
@@ -163,7 +163,7 @@ protocol, record the decision under `docs/adr/` before implementation.
   cgroup/VM cleanup. Completed background work is never cancelled retroactively.
   Revoke routing before sealing; abnormal retirement retains its immutable cleanup
   target in the existing control Outbox, with no process-stop receipt table.
-  `SandboxProvider` owns Cube mechanics and exposes no native
+  `SandboxProvider` owns provider mechanics and exposes no native
   SDK or management credentials to the Worker. There is no independent Broker.
   Quota release requires positive deletion evidence under the selected provider
   contract, never a missing heartbeat, inventory row or master route. A normal Tool error never authorizes whole-VM deletion.
@@ -176,6 +176,13 @@ protocol, record the decision under `docs/adr/` before implementation.
   Stock Cube cannot prove continuous physical coverage: sampled compute intervals
   are unconfirmed/unpriced. Model and capacity pricing retain their own evidence.
   Accounting never becomes resource authority.
+- Under ADR-0315 ordinary control Tools do not query Worker lease validity.
+  Under ADR-0316 role loaders, secret mounts and image source subsets follow their
+  real consumers. Under ADR-0319 registered backend revisions update existing
+  management/execution clients; device registration requires an explicit target
+  organization and never silently transfers ownership. Under ADR-0320 use the
+  reviewed release plan, preserve original artifact/scan provenance, and coordinate
+  actual shared contract changes. A Chart label is not a reason to restart Pods.
 - CubeSandbox KVM is the default Linux Tool runtime. Pinned BoxLite and Android
   operator targets are explicit integrations under ADR-0313. Adding another
   runtime requires a new current ADR and the same security/recovery acceptance

@@ -2,7 +2,10 @@
 
 Status: integrated under [ADR-0313](adr/0313-alternate-runtime-production-integration.md)
 and issue #27, with [production-path acceptance](reports/alternate-runtimes-20261112.md).
-Cube remains the default; the optional node is stopped when unused.
+Independent persistence and dynamic registration are
+[live-verified under #30/#31](reports/decoupling-delivery-20261113.md).
+Cube remains the default; the optional node is stopped and its registration
+disabled when unused.
 This is an explicitly selected, single-node operator backend, not a fallback or
 a new placement scheduler. BoxLite engine/SDK source is unmodified and pinned to
 `@boxlite-ai/boxlite` 0.12.0.
@@ -27,7 +30,9 @@ the SDK to mount only the guarded Workspace leaf. It does not construct a Cube
 client or call Cube volume APIs. The same opaque attachment receipts and pool/
 generation checks are used by Cube's supported plugin. Missing metadata is never
 zero references. No second Workspace copy or archive head is introduced.
-This source boundary awaits the matched adoption and Cube-unavailable acceptance.
+The matched adoption, Cube-unavailable public upload/capacity/lifecycle checks and
+sequential Cube/Box use of the same host file inode have passed. This does not
+claim a public live-migration API or distributed storage.
 
 The node keeps bounded immutable creation/attachment connection metadata beside
 native SDK state, because native Box info does not expose arbitrary creation

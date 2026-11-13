@@ -16,7 +16,8 @@ operator experiments. The BoxLite native SDK lives in its own trusted node,
 while Cube and BoxLite share fixed Guest Tools and the existing Workspace
 attachment guard. Android's trusted receiver uses scoped HTTPS completion and
 restores pending waits to their original reply destinations. No vendor source
-patch or automatic fallback is used. [Acceptance and limits](reports/alternate-runtimes-20261112.md).
+patch or automatic fallback is used. [Current acceptance and limits](reports/decoupling-delivery-20261113.md)
+also cover independent storage, dynamic registration and scoped publication.
 
 ## One message
 
@@ -28,7 +29,7 @@ Pi Worker -> transactional Session producer -> Kafka -> Session Projector
                                                         +-> PG native state/history
                                                         +-> live view / browser SSE
                                                         +-> independent ordinary Tool host (HTTP)
-                                                        `-> Cube execution endpoint
+                                                        `-> execution adapter / fixed Guest or device
 Guest -> HTTPS completion -> original Kafka reply destination -> authorized Pi Harness
 Control Tool completion -> Kafka replies -> authorized Pi Harness
 
@@ -476,7 +477,10 @@ by the binding's original endpoint. Notifications plus revision reconciliation
 update both roles without a release. Registration and physical placement are
 different operations; it creates no VPN or shared storage. The
 [backend contract](RESOURCE_BACKENDS.md) describes mutation/quiescence and Android
-existing-device boundaries. This source stage awaits matched live acceptance.
+existing-device boundaries. Device registration names the destination organization
+explicitly; retries cannot transfer an existing device to another owner. Dynamic
+registration, resource-page selection and local Cube/Box storage independence are
+[live-verified](reports/decoupling-delivery-20261113.md).
 
 ## Models, Subagents and integrations
 

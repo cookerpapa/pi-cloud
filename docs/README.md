@@ -32,6 +32,7 @@ work from remaining proposals and unverified limits.
 | --- | --- |
 | [Configuration](CONFIGURATION.md) | Maintained configuration authorities |
 | [Workspace storage pool](WORKSPACE_STORAGE_POOL.md) | XFS capacity, migration, mount recovery and growth |
+| [Resource backends](RESOURCE_BACKENDS.md) | Dynamic cluster registration, explicit selection and device ownership |
 | [Deployment](PRODUCTION_DEPLOYMENT.md) | Self-hosted runtime operations |
 | [Matched release](MATCHED_RELEASE.md) | Coordinated changes, draining and artifact checks |
 | [Component release](COMPONENT_RELEASE.md) | Supported independent publication scopes |
@@ -41,7 +42,7 @@ work from remaining proposals and unverified limits.
 | [Distributed deployment](DISTRIBUTED_DEPLOYMENT.md) | Multi-machine deployment requirements |
 | [Private pilot](PRIVATE_PILOT.md) | Trial scope and acceptance |
 | [Optional modules](OPTIONAL_MODULES.md) | Optional integrations |
-| [Android target](ANDROID_EXECUTION.md) | Operator target, original-operation recovery; no Web picker |
+| [Android target](ANDROID_EXECUTION.md) | Existing-device registration/binding, original-operation recovery and userdata |
 | [BoxLite provider](BOXLITE_EXECUTION.md) | Explicit stock compute adapter, shared storage and live acceptance |
 
 ## Decisions and evidence
@@ -63,7 +64,8 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest validation: [Integrated BoxLite / Android acceptance](reports/alternate-runtimes-20261112.md).
+Latest delivery and validation: [Decoupling, resource backends and scoped releases](reports/decoupling-delivery-20261113.md).
+Previous validation: [Integrated BoxLite / Android acceptance](reports/alternate-runtimes-20261112.md).
 Latest maintenance: [Obsolete Cube metadata cleanup](reports/cube-metadata-cleanup-20261111.md).
 Serving runtime delivery: [Platform-owned elastic expiry](reports/platform-idle-expiry-20261111.md).
 Previous delivery: [Stock Cube deployment](reports/stock-cube-source-20261111.md).

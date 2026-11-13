@@ -13,7 +13,12 @@ scale or as a highly available production service.
 [Alternate runtime acceptance](docs/reports/alternate-runtimes-20261112.md) covers
 an explicit stock BoxLite backend and Android operator targets. Linux providers
 share the fixed Guest; device operations share the original-reply recovery and
-HTTPS completion path. There is no automatic provider fallback or phone picker.
+HTTPS completion path. Administrators can register compatible backends without
+restarting platform services; users select them on the resource page. Existing
+Android devices can be registered for an organization and bound to idle Sessions.
+There is no automatic provider fallback or emulator-provisioning UI. See the
+[backend contract](docs/RESOURCE_BACKENDS.md) and
+[current delivery evidence](docs/reports/decoupling-delivery-20261113.md).
 
 ## What it does
 
@@ -35,7 +40,9 @@ HTTPS completion path. There is no automatic provider fallback or phone picker.
   Forks keep the source Workspace, directory and stable development-machine
   binding. Files are shared, not copied or rolled back by conversation Fork.
 - **Workspaces:** elastic compute or dedicated development machines, persistent
-  Workspace files, browser tooling, terminals, SSH and application previews.
+  Workspace files, backend/environment selection, browser tooling, terminals,
+  SSH and application previews. Local Workspace storage is independent of Cube
+  or BoxLite compute and retains exact attachment/deletion protection.
 - **Attachments:** long text pastes become editable text files. Uploaded originals
   stay with the conversation in object storage; Workspace copies support normal
   file/shell tools. History originals can be viewed, downloaded and reused.
@@ -269,5 +276,3 @@ are preserved; obsolete development compatibility paths are removed.
 Pi Managed Agents is licensed under the [MIT License](LICENSE).
 Third-party components and files with explicit license declarations retain their
 own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).
-
-Workspace persistence is now separate from the compute adapter ([ADR-0318](docs/adr/0318-workspace-persistence-and-native-mounts.md)). The local implementation uses the existing XFS storage service; Cube and BoxLite mount the same guarded storage without making Cube its byte owner. This source change requires the recorded cold adoption before deployment; multi-node and hosted storage are not yet live-verified.

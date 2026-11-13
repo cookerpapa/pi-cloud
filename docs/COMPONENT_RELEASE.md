@@ -14,8 +14,10 @@ catalog and presentation-only Web operations. Install its initial schema 196 / W
 
 [ADR-0305](adr/0305-execution-owned-tools-and-bindings.md) moves ordinary handlers
 into `tool-host`. Install its matched schema 214 / `toolHostReplacement: 1` and
-`toolCatalogPublication: 1` contracts first. Source implementation and pending
-acceptance are tracked in [BACKLOG](BACKLOG.md). The old `session-runtime` tool
+`toolCatalogPublication: 1` contracts first. The
+[current live acceptance](reports/decoupling-delivery-20261113.md) keeps an original
+Run/Worker/VM running through a Tool-host-only replacement and verifies the next
+request's updated directory, preview and generated image. The old `session-runtime` tool
 release scope is removed; the API and Projector remain serving during tool updates.
 
 The scope accepts implementation/registration changes under

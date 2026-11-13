@@ -1,6 +1,6 @@
 # ADR-0317: Two Skill tools and exact installation removal
 
-Date: 2026-11-12. Status: accepted for implementation. Tracking: #34.
+Date: 2026-11-12. Status: accepted; implemented and live-verified on 2026-11-13. Tracking: #34.
 
 Expose `skill` with list/read/inspect/uninstall actions and retain `publish_skill`.
 Remove the former model-facing reader/inspector names after coordinated retirement
@@ -37,3 +37,5 @@ Pi sections, ordinary tool registry and native effect/UNKNOWN mechanisms.
 Validate read/activation/inspection, name ambiguity, publication, root/personal
 scope, revision conflicts, duplicate removal, reinstallation and frozen selection.
 Run matching real model/Guest behavior after the integrated publication.
+
+Implementation and measured limits: [November 13 delivery](../reports/decoupling-delivery-20261113.md).

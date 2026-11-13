@@ -6,8 +6,10 @@ The resource page offers registered Linux backends, environment templates and
 profiles. An open page refreshes the catalog automatically, including when it
 has no development machines yet.
 
-This source slice is tracked in #31 / ADR-0319. Matched publication and the live
-second-backend acceptance are still pending; do not infer them from unit tests.
+Implemented under #31 / ADR-0319 and
+[live-verified](reports/decoupling-delivery-20261113.md): registration during an
+active Cube Run, automatic discovery in an open page, explicit resource creation,
+BoxLite execution without Cube API, and Android registration/binding.
 
 ## Registration and admission
 

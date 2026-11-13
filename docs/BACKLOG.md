@@ -1,52 +1,43 @@
 # Maintained backlog
 
-## Authorized decoupling and resource integration — in progress
+## Decoupling and resource integration — delivered
 
-The owner authorized #30, #31 and #33–#37 for implementation on 2026-11-12.
-Work proceeds in complete slices; heavy checks, builds and live acceptance are
-serial. Preserve accounts/configuration/credentials, Workspace bytes and Android
-userdata. Push completed commits and perform the required matched/scoped rollout.
+The seven authorized issues (#30, #31, #33–#37) are implemented, published and
+[verified](reports/decoupling-delivery-20261113.md). Heavy checks ran serially;
+accounts, model/provider configuration, credentials, original Workspace files
+and Android userdata were preserved.
 
-- [x] #35 source: ordinary control dispatch no longer reads Worker lease expiry;
-  cold recovery filters closed/superseded Run identities. Forty-two focused tests
-  and the Control Plane type check pass under ADR-0315.
-- [ ] #35: coordinated publication and relevant live Tool/recovery acceptance.
-- [x] #36 configuration source: API/execution/management loaders and Helm mounts
-  are role-specific. Twenty-five focused configuration/assembly checks, type
-  checks and the maintained Helm gate pass under ADR-0316.
-- [ ] #36: finish provider construction integration with #30/#31 and live role replacement.
-- [x] #37 Worker source: remove Control Plane/accounting COPY inputs, import the
-  narrow execution client, and check the actual Worker assembly in its image.
-  Dependency/context checks, type checking and five lifecycle tests pass.
-- [ ] #37: verify the built Worker and finish role-input integration with #33.
-- [x] #37 source follow-up: narrow client imports keep provider assembly out of
-  API and ordinary Tool-host startup. The maintained closure gate records ten
-  role entrypoints; 16 affected tests and type checks pass. The full 432-case
-  fault matrix, RF3 transport checks and 310 release/helper tests have passed.
-  The file gateway also drops unused database/domain/event-log/attachment source
-  and Kafka native compilation; actual gateway imports replace the old unrelated
-  database smoke check. Native XFS/quota and mount-receipt checks pass.
-- [x] #30 source: independent Workspace persistence and pool/generation identity;
-  BoxLite no longer constructs a Cube client or loads Cube credentials. The mount
-  adapter no longer creates/deletes bytes. Schema 221 and ADR-0318 record ownership.
-- [ ] #30: operator cold adoption, native registration retirement and serial live
-  Cube/BoxLite storage/quota/recovery acceptance with original assets preserved.
-- [x] #31 source: versioned PG backend registry, private configuration, per-domain
-  lifecycle controllers and execution data directory; no per-Tool lease reads.
-  Web catalog/selection and existing-device registration use the maintained APIs.
-- [ ] #31: complete integrated admission/browser checks and live registration of
-  another native backend while existing Sessions, resources and Pods stay intact.
-- [x] #34 source: `skill` plus `publish_skill`, exact personal uninstall and
-  non-reused PG installation revisions (schema 220 / ADR-0317). Skill/PG/native
-  context checks pass; packages, current selections and Workspace files remain.
-- [ ] #34: coordinated catalog/Worker publication, retained requirement inspection
-  and actual model/Guest Skill acceptance.
-- [x] #33 source: shared CI/operator scope policy, planned artifact reuse with
-  original provenance, metadata-only Helm publication and conditional physical
-  maintenance under ADR-0320. Current private SQL remnants are verified absent;
-  completed destructive cleanup and legacy holder initialization are removed.
-- [ ] #33: complete integrated operator checks, build/scan the candidate, apply
-  Workspace adoption and verify real scoped/metadata-only replacement.
+- [x] #30: independent Workspace byte authority, cold adoption, native mount
+  receipts and cleanup; public Box uploads/capacity growth with Cube API down;
+  sequential Cube/Box use of the same original inode and ownership.
+- [x] #31: versioned backend registry, management/execution reconciliation,
+  registration during an active Run without Pod replacement, open-page discovery,
+  resource-page selection/creation and Android registration for an explicit organization.
+- [x] #33: common CI/operator scope classifier, exact artifact/scan reuse,
+  conditional physical maintenance, Tool-host-only replacement during a live Run,
+  Web-only replacement and Chart metadata publication with zero Pod restarts.
+- [x] #34: two Skill tools, personal uninstall with non-reused revisions,
+  current-Run/package/file retention and model/browser/PG acceptance.
+- [x] #35: no ordinary control Tool Worker-lease gate; cold/business authority,
+  cancellation/closure/recovery preserved; preview, image generation, Skills and schedules verified.
+- [x] #36: role-specific configuration, mounts and client construction; actual
+  startup, failure cleanup and independent role replacement verified.
+- [x] #37: Worker/File Gateway source subsets, ten-role import manifests and
+  actual built-image startup/model/Tool/continuation/shutdown paths verified.
+
+Current publication is `decoupled-metadata-20261113`, schema 222. Component images
+keep separate verified revisions; unchanged provider/native images retain their
+original evidence. Optional Box/Android nodes are stopped, and temporary Worker
+memory settings used for the constrained-host Android experiment are restored.
+
+## Operational follow-up
+
+- [ ] One original upload-area locator retains a stale guest inode after VM
+  recreation. Its sweeper conservatively defers cleanup. Design any repair around
+  verified Workspace/area identity; do not rebind unknown paths or delete uncertain
+  bytes. The original files were left unchanged and new upload/retention checks pass.
+- [ ] Multi-node/hosted storage and stronger BoxLite host isolation remain separate
+  acceptance work; registration alone does not provide those guarantees.
 
 ## Repository decoupling review — complete; fixes authorized
 
@@ -56,13 +47,12 @@ userdata. Push completed commits and perform the required matched/scoped rollout
   and 76 passing focused checks in the [review](reports/repository-decoupling-review-20261112.md).
 - [x] Agree control-Tool authority, role-specific startup/configuration and
   artifact/development-cutover cleanup before broadening release scopes.
-- [ ] [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33): implement
-  smaller publication scopes only after their dependency/replacement gates pass.
+- [x] [#33](https://github.com/cookerpapa/pi-managed-agents/issues/33): implement
+  smaller publication scopes after the dependency/replacement gates pass.
 
-[#30](https://github.com/cookerpapa/pi-managed-agents/issues/30) records the proposed
+[#30](https://github.com/cookerpapa/pi-managed-agents/issues/30) records the implemented
 Workspace persistence port; [#31](https://github.com/cookerpapa/pi-managed-agents/issues/31)
-records no-restart cluster registration. Both are authorized for implementation;
-source completion and live publication are tracked separately above.
+records no-restart cluster registration. Both are deployed and live-verified in the current delivery above.
 
 ## Alternate runtime production integration — deployed
 
