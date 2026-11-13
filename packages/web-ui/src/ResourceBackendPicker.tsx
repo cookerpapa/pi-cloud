@@ -124,7 +124,7 @@ export function ResourceBackendPicker({
           {!selected && <option value="">—</option>}
           {selected?.templates.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.name} · {t.operatingSystem}
+              {t.name === t.operatingSystem ? t.name : `${t.name} · ${t.operatingSystem}`}
             </option>
           ))}
         </select>
