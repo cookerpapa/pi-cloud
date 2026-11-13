@@ -1,6 +1,7 @@
 import { configureBuildProxy } from "./lib/upstream-proxy.mjs";
 import { changedVisibleModels, probeCatalogModel } from "./lib/model-catalog-probe.mjs";
 import assert from "node:assert/strict";
+import { writeRuntimeFileAtomically } from "./lib/runtime-file-policy.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -775,11 +776,9 @@ if (candidate.scope !== "catalog") {
   const path = resolve(runtimeDirectory, "k3s/images.json"),
     images = readJson(path);
   images[imageReleaseTargets[candidate.scope].catalogKey] = candidate.desired;
-  save(path + ".next", images);
-  renameSync(path + ".next", path);
+  await writeRuntimeFileAtomically(path, JSON.stringify(images, null, 2) + "\n");
 }
-save(deploymentPath + ".next", next);
-renameSync(deploymentPath + ".next", deploymentPath);
+await writeRuntimeFileAtomically(deploymentPath, JSON.stringify(next, null, 2) + "\n");
 save(resolve(directory, "applied.json"), {
   version: candidate.version,
   scope: candidate.scope,
