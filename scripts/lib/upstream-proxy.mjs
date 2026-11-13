@@ -47,7 +47,27 @@ export function proxyEnvironment(environment, proxy) {
 
 /** Explicit bootstrap for operator entry points; importing this module is inert. */
 export function configureBuildProxy() {
-  Object.assign(process.env, proxyEnvironment(process.env, configuredUpstreamProxy()));
+  Object.assign(process.env, buildProxyEnvironment(process.env, configuredUpstreamProxy()));
+}
+
+export function buildProxyEnvironment(environment, proxy) {
+  const mode = environment.PI_CLOUD_BUILD_PROXY_MODE ?? "configured";
+  if (mode === "configured") return proxyEnvironment(environment, proxy);
+  if (mode !== "direct") throw new Error("Build proxy mode must be configured or direct");
+  // Empty assignments also override deployment-file values merged by the image
+  // operator. Some native installers ignore NO_PROXY and read these directly.
+  return {
+    ...environment,
+    ...Object.fromEntries(
+      [
+        ...proxyVariables,
+        "npm_config_proxy",
+        "npm_config_https_proxy",
+        "NPM_CONFIG_PROXY",
+        "NPM_CONFIG_HTTPS_PROXY",
+      ].map((key) => [key, ""]),
+    ),
+  };
 }
 
 export function proxyDownloadNetwork(proxy, override) {

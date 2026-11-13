@@ -19,6 +19,12 @@ node --import tsx scripts/run-matched-release.mjs prepare /private/releases/cand
 node --import tsx scripts/run-matched-release.mjs preflight /private/releases/candidate-1
 ```
 
+Build downloads normally use the configured upstream proxy. For a verified
+direct route, prefix `prepare` with `PI_CLOUD_BUILD_PROXY_MODE=direct`; this clears
+proxy aliases only in that operator's subprocesses, including native installers
+that ignore `NO_PROXY`. It does not rewrite the persisted proxy, serving application
+settings or Docker daemon image-pull policy. Default mode remains `configured`.
+
 The private `release-plan.json` records the baseline, changed source, actual Docker
 COPY inputs, artifact identities, original provenance, serving role catalog,
 contract/maintenance reasons and required gates. Read the printed build/reuse and

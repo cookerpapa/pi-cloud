@@ -11,7 +11,36 @@ import {
   k3sProxyEnvironment,
   proxyVariables,
   proxyDownloadNetwork,
+  buildProxyEnvironment,
 } from "./upstream-proxy.mjs";
+
+it("allows explicit direct build downloads without rewriting persisted or runtime proxy policy", () => {
+  const input = {
+    PI_CLOUD_BUILD_PROXY_MODE: "direct",
+    HTTP_PROXY: "http://old:12450",
+    npm_config_proxy: "http://old:12450",
+    NO_PROXY: "localhost",
+    UNRELATED: "keep",
+  };
+  const result = buildProxyEnvironment(input, "http://current:12450");
+  for (const key of [
+    ...proxyVariables,
+    "npm_config_proxy",
+    "npm_config_https_proxy",
+    "NPM_CONFIG_PROXY",
+    "NPM_CONFIG_HTTPS_PROXY",
+  ])
+    expect(result[key]).toBe("");
+  expect(result.NO_PROXY).toBe("localhost");
+  expect(result.UNRELATED).toBe("keep");
+  expect(input.HTTP_PROXY).toBe("http://old:12450");
+  expect(buildProxyEnvironment({}, "http://current:12450").HTTPS_PROXY).toBe(
+    "http://current:12450",
+  );
+  expect(() => buildProxyEnvironment({ PI_CLOUD_BUILD_PROXY_MODE: "typo" }, undefined)).toThrow(
+    "Build proxy mode",
+  );
+});
 
 it("reaches host-local proxies from the database-download container and retains explicit network choices", () => {
   expect(proxyDownloadNetwork("http://127.0.0.1:12450")).toBe("host");
