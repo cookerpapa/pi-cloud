@@ -1,0 +1,14 @@
+**
+!packages/boxlite-node/native/package.json
+!packages/boxlite-node/native/package-lock.json
+!scripts/retry-npm-command.sh
+!packages/boxlite-node/package.json
+!packages/boxlite-node/tsconfig.json
+!packages/boxlite-node/src/**
+!deploy/cubesandbox/cube-volume-picloud-posix.sh
+!deploy/boxlite/supervisord.conf
+**/.env*
+**/node_modules
+**/.cache
+**/.git
+**/dist

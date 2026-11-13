@@ -21,6 +21,11 @@ without database identity cannot supply a reused scan. A shared host image may s
 several independently replaced roles; rebuilding it does not require replacing
 every role which happens to use the same repository.
 
+Dockerfile-specific ignore files follow Docker's native precedence and are part
+of that image's input identity. Context checks exercise each effective policy
+with synthetic source and secret canaries. An optional node can narrow its
+context without changing the global policy or invalidating unrelated images.
+
 Every candidate records the baseline, changed files, built/reused artifacts,
 affected roles, contract versions, drain/maintenance requirements and acceptance
 scope. Print this plan before mutation. Interrupted apply resumes the same

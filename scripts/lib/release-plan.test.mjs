@@ -42,10 +42,29 @@ it("reuses unchanged artifact inputs across a different-role change and refuses 
     const sourceRevision = await commit();
     const original = await artifactInputIdentity(root, sourceRevision, "Dockerfile");
     await writeFile(join(root, "other-role.mjs"), "// unrelated role\n");
+    await writeFile(
+      join(root, "Other.Dockerfile"),
+      "FROM fixture\nCOPY other-role.mjs /other.mjs\n",
+    );
+    await writeFile(join(root, "Other.Dockerfile.dockerignore"), "**\n!other-role.mjs\n");
     const releaseRevision = await commit();
     expect((await artifactInputIdentity(root, releaseRevision, "Dockerfile")).identity).toBe(
       original.identity,
     );
+    const other = await artifactInputIdentity(root, releaseRevision, "Other.Dockerfile");
+    expect(other.files).toContain("Other.Dockerfile.dockerignore");
+    expect(other.files).not.toContain(".dockerignore");
+    await writeFile(
+      join(root, "Other.Dockerfile.dockerignore"),
+      "**\n!other-role.mjs\n# reviewed policy change\n",
+    );
+    const policyRevision = await commit();
+    expect((await artifactInputIdentity(root, policyRevision, "Dockerfile")).identity).toBe(
+      original.identity,
+    );
+    expect(
+      (await artifactInputIdentity(root, policyRevision, "Other.Dockerfile")).identity,
+    ).not.toBe(other.identity);
     const imageId = "sha256:" + "a".repeat(64);
     const image = {
       Id: imageId,

@@ -10,9 +10,16 @@ const execute = promisify(execFile);
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { stdout } = await execute("git", ["ls-files", "-z"], { cwd: root });
 const tracked = stdout.split("\0").filter(Boolean);
-const dockerfiles = tracked.filter((path) => /(^|\/)Dockerfile(?:\.[^/]+)?$/u.test(path));
-const required = new Set();
+const dockerfiles = tracked.filter(
+  (path) => /(^|\/)Dockerfile(?:\.[^/]+)?$/u.test(path) && !path.endsWith(".dockerignore"),
+);
+const policies = new Map();
 for (const path of dockerfiles) {
+  const ignore = tracked.includes(path + ".dockerignore")
+    ? path + ".dockerignore"
+    : ".dockerignore";
+  const required = policies.get(ignore) ?? new Set();
+  policies.set(ignore, required);
   const content = (await readFile(resolve(root, path), "utf8")).replace(/\\\r?\n\s*/gu, " ");
   for (const line of content.split("\n")) {
     if (!line.startsWith("COPY ") || /--from=/u.test(line)) continue;
@@ -39,6 +46,8 @@ const excluded = [
   "packages/web-ui/dist/context-canary.js",
   "packages/sandbox-control/.cache/context-canary.txt",
   "packages/sandbox-control/src/.env.local",
+  "packages/boxlite-node/src/.env.local",
+  "packages/boxlite-node/native/node_modules/context-canary.txt",
   "deploy/production/.env",
   "deploy/production/runtime/secrets/context-canary.txt",
   "deploy/helm/pi-cloud-platform/files/context-canary.txt",
@@ -47,44 +56,44 @@ const excluded = [
 ];
 const directory = await mkdtemp(resolve(tmpdir(), "pi-cloud-build-context-"));
 try {
-  const context = resolve(directory, "input");
-  const output = resolve(directory, "output");
-  // Never send the real deployment directory or credentials to this probe.
-  // Every COPY input and excluded file contains only the same harmless marker.
-  for (const path of new Set([...required, ...excluded])) {
-    const target = resolve(context, path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, "pi-cloud build-context fixture\n");
-  }
-  await writeFile(
-    resolve(context, ".dockerignore"),
-    await readFile(resolve(root, ".dockerignore")),
-  );
-  await writeFile(resolve(context, "Dockerfile"), "FROM scratch\nCOPY . /\n");
-  await execute(
-    "docker",
-    ["build", "--network=none", "--output", `type=local,dest=${output}`, context],
-    { timeout: 120_000, maxBuffer: 1024 * 1024 },
-  );
-  const leaked = [];
-  for (const path of excluded) {
-    try {
-      await access(resolve(output, path));
-      leaked.push(path);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+  let index = 0;
+  for (const [ignore, required] of policies) {
+    const context = resolve(directory, String(index), "input");
+    const output = resolve(directory, String(index++), "output");
+    // Never send the real deployment directory or credentials to this probe.
+    // Every COPY input and excluded file contains only the same harmless marker.
+    for (const path of new Set([...required, ...excluded])) {
+      const target = resolve(context, path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, "pi-cloud build-context fixture\n");
     }
-  }
-  assert.deepEqual(leaked, [], "Private/generated paths must not enter the build context");
-  for (const path of required) {
-    await assert.doesNotReject(
-      access(resolve(output, path)),
-      `Build context lost COPY input ${path}`,
+    await writeFile(resolve(context, ".dockerignore"), await readFile(resolve(root, ignore)));
+    await writeFile(resolve(context, "Dockerfile"), "FROM scratch\nCOPY . /\n");
+    await execute(
+      "docker",
+      ["build", "--network=none", "--output", `type=local,dest=${output}`, context],
+      { timeout: 120_000, maxBuffer: 1024 * 1024 },
+    );
+    const leaked = [];
+    for (const path of excluded) {
+      try {
+        await access(resolve(output, path));
+        leaked.push(path);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+    assert.deepEqual(leaked, [], "Private/generated paths must not enter the build context");
+    for (const path of required) {
+      await assert.doesNotReject(
+        access(resolve(output, path)),
+        `Build context lost COPY input ${path}`,
+      );
+    }
+    console.log(
+      `docker_build_context_ok policy=${ignore} inputs=${required.size} excluded=${excluded.length}`,
     );
   }
-  console.log(
-    `docker_build_context_ok dockerfiles=${dockerfiles.length} inputs=${required.size} excluded=${excluded.length}`,
-  );
 } finally {
   await rm(directory, { recursive: true, force: true });
 }

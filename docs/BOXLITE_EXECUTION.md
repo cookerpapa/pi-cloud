@@ -10,6 +10,14 @@ This is an explicitly selected, single-node operator backend, not a fallback or
 a new placement scheduler. BoxLite engine/SDK source is unmodified and pinned to
 `@boxlite-ai/boxlite` 0.12.0.
 
+The node image installs that native SDK from `packages/boxlite-node/native`'s minimal
+npm lockfile; common runtime dependencies come from its matched parent image.
+The source check compares native versions/integrities with the main lockfile,
+and the built image verifies the adapter's SDK pin. Updating node code does not
+reinstall the whole platform dependency tree in the native stage.
+Its Dockerfile-specific context policy includes only those inputs; the global
+build context and other image identities remain unchanged.
+
 ## Boundaries
 
 Workers and public APIs do not load the native BoxLite SDK. Resource management

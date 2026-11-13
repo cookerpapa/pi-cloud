@@ -73,7 +73,10 @@ export const digest = (value) =>
     .digest("hex");
 
 export function dockerSourceInputs(dockerfile, tracked, content) {
-  const inputs = new Set([dockerfile, ".dockerignore"]);
+  const policy = tracked.includes(`${dockerfile}.dockerignore`)
+    ? `${dockerfile}.dockerignore`
+    : ".dockerignore";
+  const inputs = new Set([dockerfile, policy]);
   for (const line of content.replace(/\\\r?\n\s*/gu, " ").split("\n")) {
     if (!line.startsWith("COPY ") || /--from=/u.test(line)) continue;
     const tokens = line

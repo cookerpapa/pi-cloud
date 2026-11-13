@@ -1,0 +1,9 @@
+{
+  "name": "@pi-cloud/boxlite-native-dependencies",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "@boxlite-ai/boxlite": "0.12.0"
+  }
+}

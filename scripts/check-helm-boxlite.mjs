@@ -6,6 +6,22 @@ import { join } from "node:path";
 import { parseAllDocuments } from "yaml";
 const directory = mkdtempSync(join(tmpdir(), "boxlite-chart-"));
 try {
+  const adapter = JSON.parse(readFileSync("packages/boxlite-node/package.json", "utf8"));
+  const native = JSON.parse(readFileSync("packages/boxlite-node/native/package-lock.json", "utf8"));
+  const root = JSON.parse(readFileSync("package-lock.json", "utf8"));
+  assert.equal(
+    native.packages[""].dependencies["@boxlite-ai/boxlite"],
+    adapter.dependencies["@boxlite-ai/boxlite"],
+  );
+  for (const [path, entry] of Object.entries(native.packages)) {
+    if (!path) continue;
+    assert(
+      path.startsWith("node_modules/@boxlite-ai/"),
+      "The native stage must not reinstall platform dependencies",
+    );
+    assert.equal(entry.version, root.packages[path]?.version);
+    assert.equal(entry.integrity, root.packages[path]?.integrity);
+  }
   const file = join(directory, "values.json");
   writeFileSync(
     file,
