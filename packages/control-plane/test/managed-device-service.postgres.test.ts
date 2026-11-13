@@ -52,6 +52,21 @@ it("requires explicit managed Android enrollment and never bills an ordinary reg
         )
       ).rows,
     ).toEqual([]);
+    status.ready = false;
+    await expect(
+      registerResourceDevice(db, transport, tenant.tenantId, {
+        ...request,
+        computeService: { billing: "platform" },
+      }),
+    ).rejects.toThrow("must be ready");
+    expect(
+      (
+        await sql`select 1 from resource_metering_resources where tenant_id=${tenant.tenantId}::uuid`.execute(
+          db,
+        )
+      ).rows,
+    ).toEqual([]);
+    status.ready = true;
     await registerResourceDevice(db, transport, tenant.tenantId, {
       ...request,
       computeService: { billing: "platform" },

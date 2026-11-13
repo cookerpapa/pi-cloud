@@ -35,6 +35,8 @@ export async function registerResourceDevice(
     const compute = status.provisionedCompute;
     if (status.kind !== "android" || !compute)
       throw new Error("Only a verified managed Android allocation can offer platform compute");
+    if (!status.ready)
+      throw new Error("Managed Android service must be ready before compute enrollment");
     service = {
       billing: "platform",
       allocationId: compute.allocationId,

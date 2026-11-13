@@ -7,7 +7,7 @@ import { withChromePage } from "./lib/chrome-cdp.mjs";
 const cacheDir = await mkdtemp(join(tmpdir(), "pi-cloud-skill-browser-"));
 const entry = String.raw`
 import React from 'react';import {createRoot} from 'react-dom/client';
-import {SkillMarket} from '/src/SkillMarket.tsx';import {I18nProvider} from '/src/i18n.tsx';import {PiCloudApiError} from '/src/api.ts';import '/src/product.css';
+import {SkillMarket} from '/src/SkillMarket.tsx';import {I18nProvider} from '/src/i18n.tsx';import {PiCloudApiError} from '@pi-cloud/session-client';import '/src/product.css';
 const id=n=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0'),encode=value=>btoa(unescape(encodeURIComponent(value)));
 const make=(n,name,description)=>({versionId:id(n),packageId:id(n+100),name,label:'2.0',description,compatibility:'',digest:'a'.repeat(64),byteLength:100,requirements:{tools:[],runtime:'none',software:[]},source:{kind:'files'},availability:{state:'available',reasons:[]}});
 const design=make(1,'frontend-design','设计有辨识度的页面和交互'),review=make(2,'code-review','检查代码变更与回归风险'),report=make(3,'weekly-report','整理进展并生成周报');

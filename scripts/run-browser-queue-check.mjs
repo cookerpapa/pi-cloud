@@ -13,7 +13,7 @@ import {createRoot} from "react-dom/client";
 import {InputQueueProvider,PendingInputQueue,useInputQueue} from "/src/PendingInputQueue.tsx";
 import {InitialInputMessage} from "/src/InitialInputMessage.tsx";
 import {inputReturnRecovery} from "/src/returned-inputs.ts";
-import {PiCloudApiError} from "/src/api.ts";
+import {PiCloudApiError} from "@pi-cloud/session-client";
 import {parseInputQueueResource,parseReturnedInputsResource,parseQueuedInputAction} from "@pi-cloud/protocol";
 import {I18nProvider} from "/src/i18n.tsx";
 import "/src/product.css";
