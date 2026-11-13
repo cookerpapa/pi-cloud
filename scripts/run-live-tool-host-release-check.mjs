@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { execFileSync, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
@@ -11,6 +11,8 @@ import { previewToolDefinition } from "../packages/control-plane/src/ordinary-to
 import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
 import { uploadRelativePath } from "../packages/protocol/src/user-upload.ts";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
+import { PostgresAttachmentStore } from "../packages/session-attachments/src/store.ts";
+import { parseImageAttachmentReference } from "../packages/protocol/src/image-attachment.ts";
 import {
   runtimeDirectory,
   runtimeEnvironment,
@@ -370,11 +372,35 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
       report.imageFailure = JSON.stringify(generated[0].content).slice(0, 2000);
     await save();
     assert(!generated[0].isError, "Image generation did not return a confirmed result");
-    assert(
-      generated[0].content.some((part) => part.type === "image"),
-      "Generated image was not retained in the native result",
-    );
-    report.imageGeneration = { oneCall: true, retainedNativeImage: true };
+    const part = generated[0].content.find((part) => part.type === "pi_cloud_image_v1");
+    assert(part, "Native history did not retain the generated image reference");
+    const reference = parseImageAttachmentReference(part.attachment);
+    const imageBlobs = new S3AttachmentBlobStore({
+      endpoint: `http://${serviceAddress("session-images")}:8333`,
+      region: "us-east-1",
+      bucket: "pi-cloud-session-images",
+      ...JSON.parse(
+        await readFile(
+          resolve(runtimeDirectory, "secrets/session-image-s3-credentials.json"),
+          "utf8",
+        ),
+      ),
+    });
+    try {
+      const pixels = await new PostgresAttachmentStore(db, imageBlobs).get(
+        tenant.tenantId,
+        reference,
+      );
+      assert.equal(pixels.byteLength, reference.byteLength);
+      assert.equal(createHash("sha256").update(pixels).digest("hex"), reference.sha256);
+      report.imageGeneration = {
+        oneCall: true,
+        retainedReference: true,
+        verifiedBytes: pixels.byteLength,
+      };
+    } finally {
+      await imageBlobs.close();
+    }
   }
   assert.equal(
     getCurrentTools(messages).find((t) => t.name === "preview")?.description,

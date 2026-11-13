@@ -7,7 +7,7 @@ import type { ControlToolCatalogDefinition } from "@pi-cloud/protocol";
 export const previewToolDefinition: ControlToolCatalogDefinition = {
   name: "preview",
   description:
-    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated Pi Managed Agents application link. The port is the application's listening port inside the Sandbox. Include the returned application path as a Markdown link in your final answer. The returned path is relative to the platform web origin; keep it intact instead of substituting localhost or the raw Sandbox port. This Tool does not start or restart the server.",
+    "Publish a verified HTTP service already listening inside the current Sandbox as an authenticated Pi Managed Agents application link. The port is the application's listening port inside the Sandbox. An omitted path opens /. Include the returned application path as a Markdown link in your final answer. The returned path is relative to the platform web origin; keep it intact instead of substituting localhost or the raw Sandbox port. This Tool does not start or restart the server.",
   parameters: {
     type: "object",
     properties: {
