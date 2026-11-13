@@ -109,6 +109,11 @@ export async function androidRecoveryAcceptance({ db, api, session, target, unti
         "low",
       );
       onRun(active);
+      await until(
+        async () => (await api.getRun(active.runId)).workerId,
+        "Worker admission before Android reply recovery (check Worker capacity if queued)",
+        60_000,
+      );
       const arrived = await until(
         async () => {
           const state = readOwnedReplyFault(receipt);
