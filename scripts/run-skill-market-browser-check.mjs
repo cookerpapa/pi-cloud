@@ -11,19 +11,19 @@ import {SkillMarket} from '/src/SkillMarket.tsx';import {I18nProvider} from '/sr
 const id=n=>'10000000-0000-4000-8000-'+String(n).padStart(12,'0'),encode=value=>btoa(unescape(encodeURIComponent(value)));
 const make=(n,name,description)=>({versionId:id(n),packageId:id(n+100),name,label:'2.0',description,compatibility:'',digest:'a'.repeat(64),byteLength:100,requirements:{tools:[],runtime:'none',software:[]},source:{kind:'files'},availability:{state:'available',reasons:[]}});
 const design=make(1,'frontend-design','设计有辨识度的页面和交互'),review=make(2,'code-review','检查代码变更与回归风险'),report=make(3,'weekly-report','整理进展并生成周报');
-let packages=[],generation=0;
+let packages=[],generation=0,revisionSequence=1;
 const files=id=>({name:'fixture',requirements:design.requirements,files:[{path:'SKILL.md',base64:encode('---\nname: fixture\n---\n# Preview '+id+'\n\nFollow the project conventions.')},{path:'scripts/check.mjs',base64:encode('console.log("keep this file")')},{path:'assets/icon.bin',base64:btoa(String.fromCharCode(0,255,128))}]});
 const same=(a,b)=>a.kind===b.kind&&(a.kind!=='project'||a.projectId===b.projectId);
 window.calls=[];window.reads=[];window.fileReads=[];window.errors=[];addEventListener('error',e=>errors.push(e.message));addEventListener('unhandledrejection',e=>errors.push(String(e.reason)));
 const api={
  async listSkills(project,cursor,signal){window.reads.push(cursor??'first');if(window.failList){window.failList--;throw new PiCloudApiError(503,'unavailable','list unavailable');}const index=cursor?Number(cursor):0,value={packages:structuredClone(packages.slice(index,index+2)),nextCursor:index+2<packages.length?String(index+2):null};if(window.holdList){window.holdList=false;await new Promise(resolve=>window.releaseList=resolve);}return value;},
- async installSkill(packageId,change){const pack=packages.find(p=>p.packageId===packageId),old=pack.installations.find(i=>same(i.scope,change.scope));window.calls.push({action:'install',packageId,...change});if(window.conflict){window.conflict=false;old.revision=String(Number(old.revision)+1);throw new PiCloudApiError(409,'conflict','changed');}if(change.revision!==(old?.revision??null))throw new PiCloudApiError(409,'conflict','changed');const next={...change,revision:String(Number(old?.revision??0)+1)};pack.installations=[...pack.installations.filter(i=>!same(i.scope,change.scope)),next];if(window.loseReply){window.loseReply=false;throw Error('reply lost');}return structuredClone(next);},
+ async installSkill(packageId,change){const pack=packages.find(p=>p.packageId===packageId),old=pack.installations.find(i=>same(i.scope,change.scope));window.calls.push({action:'install',packageId,...change});if(window.conflict){window.conflict=false;old.revision=String(++revisionSequence);window.conflictRevision=old.revision;throw new PiCloudApiError(409,'conflict','changed');}if(change.revision!==(old?.revision??null))throw new PiCloudApiError(409,'conflict','changed');const next={...change,revision:String(++revisionSequence)};pack.installations=[...pack.installations.filter(i=>!same(i.scope,change.scope)),next];if(window.loseReply){window.loseReply=false;throw Error('reply lost');}return structuredClone(next);},
  async uninstallSkill(packageId,change){window.calls.push({action:'uninstall',packageId,...change});const pack=packages.find(p=>p.packageId===packageId);pack.installations=pack.installations.filter(i=>!same(i.scope,change.scope));},
  async exportSkill(versionId){window.fileReads.push(versionId);if(window.failFiles){window.failFiles--;throw new PiCloudApiError(503,'unavailable','preview unavailable');}if(window.holdVersion===versionId)await new Promise(resolve=>window.releaseVersion=resolve);return files(versionId);},
  async importSkill(input){window.calls.push({action:'publish',input});if(window.failPublish){window.failPublish=false;throw Error('save unavailable');}return {...design,versionId:id(50)};}
 };
 const root=createRoot(document.getElementById('root'));
-window.render=(owner=true,canMutate=true)=>{packages=[{packageId:design.packageId,ownerUserId:'owner',versions:[design,{...design,versionId:id(9),label:'1.0',description:'旧版页面设计'}],installations:[]},{packageId:review.packageId,ownerUserId:'colleague',versions:[review],installations:[{scope:{kind:'tenant'},versionId:review.versionId,revision:'1',enabled:true}]},{packageId:report.packageId,ownerUserId:'colleague',versions:[report],installations:[]}];window.calls=[];window.reads=[];window.fileReads=[];window.packages=packages;root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(SkillMarket,{key:++generation,api,owner,canMutate,userId:'owner',projectId:id(300),onClose:()=>{},onCreate:()=>{window.createRequests=(window.createRequests??0)+1}}))));};window.fixtureId=id;render();
+window.render=(owner=true,canMutate=true)=>{revisionSequence=1;packages=[{packageId:design.packageId,ownerUserId:'owner',versions:[design,{...design,versionId:id(9),label:'1.0',description:'旧版页面设计'}],installations:[]},{packageId:review.packageId,ownerUserId:'colleague',versions:[review],installations:[{scope:{kind:'tenant'},versionId:review.versionId,revision:'1',enabled:true}]},{packageId:report.packageId,ownerUserId:'colleague',versions:[report],installations:[]}];window.calls=[];window.reads=[];window.fileReads=[];window.packages=packages;root.render(React.createElement(React.StrictMode,null,React.createElement(I18nProvider,{initialLanguage:'zh-CN'},React.createElement(SkillMarket,{key:++generation,api,owner,canMutate,userId:'owner',projectId:id(300),onClose:()=>{},onCreate:()=>{window.createRequests=(window.createRequests??0)+1}}))));};window.fixtureId=id;render();
 `;
 const server = await createServer({
   root: resolve("packages/web-ui"),
@@ -130,7 +130,10 @@ try {
     );
     await click("停用");
     await page.waitFor("document.querySelector('dialog .skill-primary').textContent==='启用'");
-    assert.equal(await page.evaluate("calls.at(-1).revision"), "2");
+    assert.equal(
+      await page.evaluate("calls.at(-1).revision"),
+      await page.evaluate("conflictRevision"),
+    );
     await page.evaluate("window.holdVersion=fixtureId(9)");
     await select("版本", await page.evaluate("fixtureId(9)"));
     await page.waitFor("window.releaseVersion");
