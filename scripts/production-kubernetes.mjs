@@ -208,6 +208,8 @@ async function build() {
         "HTTP_PROXY",
         "--build-arg",
         "HTTPS_PROXY",
+        "--build-arg",
+        "NO_PROXY",
         ".",
       ],
       { env: environment },
