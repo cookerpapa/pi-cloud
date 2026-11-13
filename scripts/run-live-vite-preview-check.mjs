@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { format } from "prettier";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 if (process.env.PI_CLOUD_LIVE_VITE_PREVIEW_CHECK !== "1")

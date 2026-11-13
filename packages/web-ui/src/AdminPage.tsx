@@ -6,7 +6,8 @@ import type {
   ProviderModelSelection,
   TenantIdentityResource,
 } from "@pi-cloud/protocol";
-import { PiCloudApiError, type PiCloudApi } from "./api.ts";
+import { type PiCloudApi } from "./api.ts";
+import { PiCloudApiError } from "@pi-cloud/session-client";
 import { errorMessage } from "./ui-errors.ts";
 import { useI18n } from "./i18n.tsx";
 import { AccountMenu } from "./AccountMenu.tsx";

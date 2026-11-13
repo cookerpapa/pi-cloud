@@ -17,8 +17,9 @@ import {
   workspaceVolumeId,
 } from "../packages/sandbox-control/src/index.ts";
 import { CubeExecutionRejected } from "../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { PiCloudApiError, newIdempotencyKey } from "@pi-cloud/session-client";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { isDurableAgentActivity } from "./lib/live-run-timing.mjs";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";

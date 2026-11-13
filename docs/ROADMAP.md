@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## Cloud clients and sandbox service accounting — in progress
+
+Implement #38 through a shared Session client and explicit local execution with
+cloud-owned Pi loops (ADR-0321). Follow with #39's provider-independent service
+minutes, BYO exemption and reclamation evidence. Verify and publish complete
+slices; heavy suites and real provider acceptance remain serial.
+
 ## Decoupling and dynamic resource backends — delivered
 
 Issues #30, #31 and #33–#37 are implemented and deployed under ADR-0315–0320.

@@ -4,8 +4,8 @@ import {
   authoritativeInputAppeared,
   withLocalSubmission,
 } from "../src/submission-presentation.ts";
-import { createInitialSessionView, type TurnView } from "../src/session-view.ts";
-import type { ComposerSubmissionView } from "../src/composer-submission.ts";
+import { createInitialSessionView, type TurnView } from "@pi-cloud/session-client";
+import type { ComposerSubmissionView } from "@pi-cloud/session-client";
 import { virtualConversationRows } from "../src/virtual-conversation-rows.ts";
 const old: TurnView = {
   turnId: "old",

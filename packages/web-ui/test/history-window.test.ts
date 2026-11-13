@@ -18,7 +18,7 @@ import {
   sessionViewReducer,
   type TurnView,
   presentationItemCharacters,
-} from "../src/session-view.ts";
+} from "@pi-cloud/session-client";
 import { virtualConversationRows } from "../src/virtual-conversation-rows.ts";
 
 const turnId = "20000000-0000-4000-8000-000000000001";

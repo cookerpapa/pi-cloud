@@ -4,16 +4,17 @@ import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { createHash, randomUUID, randomInt } from "node:crypto";
 import sharp from "sharp";
-import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import {
   createInitialSessionView,
   sessionViewReducer,
-} from "../packages/web-ui/src/session-view.ts";
+} from "@pi-cloud/session-client";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { SandboxControlClient } from "../packages/sandbox-control/src/sandbox-control-client.ts";
 import { sql } from "kysely";

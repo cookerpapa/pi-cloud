@@ -1,4 +1,4 @@
-import type { TranscriptItem } from "./session-view.ts";
+import type { TranscriptItem } from "@pi-cloud/session-client";
 import type { ToolTranscriptItem } from "./ToolActivity.tsx";
 import { inlineToolImages } from "./ToolImages.tsx";
 

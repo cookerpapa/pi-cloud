@@ -12,7 +12,6 @@
     "test": "vitest --run"
   },
   "dependencies": {
-    "@discoveryjs/json-ext": "1.1.0",
     "@noble/hashes": "2.4.0",
     "@pi-cloud/protocol": "0.1.0",
     "@tanstack/react-virtual": "3.14.22",
@@ -25,7 +24,8 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "tus-js-client": "4.3.1",
-    "unified": "11.0.5"
+    "unified": "11.0.5",
+    "@pi-cloud/session-client": "0.1.0"
   },
   "devDependencies": {
     "@types/react": "19.2.17",

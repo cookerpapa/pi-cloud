@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { runStatus } from "../src/RunStatus.tsx";
 import { RunObservationStore } from "../src/run-observation-store.ts";
-import type { TurnView } from "../src/session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 
 it("clears old activity, VM evidence and Tool age when a new-generation path arrives", () => {
   const store = new RunObservationStore(),

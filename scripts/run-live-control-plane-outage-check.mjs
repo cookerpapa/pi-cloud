@@ -11,7 +11,8 @@ import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { S3AttachmentBlobStore } from "../packages/session-attachments/src/s3.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { purgeOwnedAcceptanceTenant } from "./lib/owned-acceptance-cleanup.mjs";
 import { armRuntimeRestore } from "./lib/owned-runtime-outage.mjs";
 import {

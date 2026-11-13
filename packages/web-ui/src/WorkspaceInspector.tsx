@@ -1,7 +1,8 @@
 import { WorkspaceCapacity } from "./WorkspaceCapacity.tsx";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkspaceDirectoryEntryResource } from "@pi-cloud/protocol";
-import { PiCloudApi, PiCloudApiError } from "./api.ts";
+import { PiCloudApi } from "./api.ts";
+import { PiCloudApiError } from "@pi-cloud/session-client";
 import { useI18n, type Translate } from "./i18n.tsx";
 import { useComposerUploads } from "./useComposerUploads.ts";
 import { ComposerUploadCards } from "./UploadCards.tsx";

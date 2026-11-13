@@ -1,7 +1,7 @@
 import { useInputQueue } from "./PendingInputQueue.tsx";
 import { HistoryDisclosureContext } from "./history-disclosure.tsx";
 import { withLocalSubmission } from "./submission-presentation.ts";
-import type { ComposerSubmissionView } from "./composer-submission.ts";
+import type { ComposerSubmissionView } from "@pi-cloud/session-client";
 import {
   useCallback,
   useEffect,
@@ -19,7 +19,7 @@ import type {
   ConversationSearchResult,
 } from "@pi-cloud/protocol";
 import type { PiCloudApi } from "./api.ts";
-import type { SessionViewState } from "./session-view.ts";
+import type { SessionViewState } from "@pi-cloud/session-client";
 import {
   appendHistoryPage,
   freezeHistoryView,

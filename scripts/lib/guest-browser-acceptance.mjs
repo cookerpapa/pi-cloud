@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path/posix";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { withChromePage } from "./chrome-cdp.mjs";
 import { imageReferences, nativeMessages } from "./native-session-history.mjs";
 

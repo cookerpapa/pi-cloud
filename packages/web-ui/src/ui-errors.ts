@@ -1,4 +1,4 @@
-import { PiCloudApiError } from "./api.ts";
+import { PiCloudApiError } from "@pi-cloud/session-client";
 import type { Translate } from "./i18n.tsx";
 
 export function errorMessage(error: unknown, t?: Translate): string {

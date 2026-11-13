@@ -8,8 +8,9 @@ import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import { localWorkerTargets } from "./lib/live-run-timing.mjs";
 

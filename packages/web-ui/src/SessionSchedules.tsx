@@ -6,7 +6,8 @@ import type {
   SessionScheduleSummary,
   ScheduleDeletion,
 } from "@pi-cloud/protocol";
-import { type PiCloudApi, newIdempotencyKey } from "./api.ts";
+import { type PiCloudApi } from "./api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 import { errorMessage } from "./ui-errors.ts";
 

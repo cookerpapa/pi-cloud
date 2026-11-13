@@ -14,7 +14,8 @@ import {
   settleOwnedAcceptanceRuns,
   purgeOwnedAcceptanceTenant,
 } from "./lib/owned-acceptance-cleanup.mjs";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 
 if (process.env.PI_CLOUD_LIVE_NATIVE_INPUT_CHECK !== "1")
   throw new Error(

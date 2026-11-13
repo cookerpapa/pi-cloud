@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import {
   kubectl,
   kubectlAsync,

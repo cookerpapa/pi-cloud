@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { streamSessionEvents } from "../../packages/web-ui/src/sse.ts";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import { RunObservationStore } from "../../packages/web-ui/src/run-observation-store.ts";
 
 /** Owned acceptance only. Observe real SSE with the same store as the browser;

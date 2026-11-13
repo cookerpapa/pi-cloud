@@ -85,10 +85,10 @@ it("keeps presentation acceptance helpers outside the deployed runtime boundary"
   expect(() =>
     assertScopedSources("web", [
       "packages/web-ui/src/ConversationTimeline.tsx",
-      "packages/web-ui/src/session-view.ts",
+      "packages/session-client/src/session-view.ts",
       "packages/web-ui/src/conversation-presentation.ts",
       "packages/web-ui/src/virtual-conversation-rows.ts",
-      "packages/web-ui/src/composer-submission.ts",
+      "packages/session-client/src/composer-submission.ts",
       "packages/web-ui/src/submission-presentation.ts",
       "scripts/run-history-layout-check.mjs",
       "scripts/run-skill-market-browser-check.mjs",

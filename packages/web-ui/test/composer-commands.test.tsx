@@ -6,7 +6,7 @@ import {
   createInitialSessionView,
   sessionViewReducer,
   type TurnView,
-} from "../src/session-view.ts";
+} from "@pi-cloud/session-client";
 import { ConversationUsage } from "../src/ConversationUsage.tsx";
 
 it("intercepts only complete command tokens and preserves instructions", () => {

@@ -1,5 +1,5 @@
 import type { PiCloudApi } from "./api.ts";
-import type { TurnView } from "./session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 import { useInputQueue, PendingInputEditor } from "./PendingInputQueue.tsx";
 import { UploadCards } from "./UploadCards.tsx";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";

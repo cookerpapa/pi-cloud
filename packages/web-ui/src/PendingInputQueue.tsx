@@ -14,7 +14,8 @@ import {
   type ReactNode,
 } from "react";
 import type { InputQueueResource, QueuedInputAction } from "@pi-cloud/protocol";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
+import { PiCloudApi } from "./api.ts";
+import { PiCloudApiError, newIdempotencyKey } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 
 type Action =

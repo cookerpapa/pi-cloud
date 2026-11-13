@@ -5,7 +5,7 @@ import {
   createInitialSessionView,
   sessionViewReducer,
   type TurnView,
-} from "../src/session-view.ts";
+} from "@pi-cloud/session-client";
 import type { PiCloudEvent } from "@pi-cloud/protocol";
 const origin = {
   kind: "schedule" as const,

@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { DevelopmentEnvironmentResource, WorkspaceSummaryResource } from "@pi-cloud/protocol";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
-import { PiCloudApi, newIdempotencyKey } from "./api.ts";
+import { PiCloudApi } from "./api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 import { errorMessage } from "./ui-errors.ts";
 

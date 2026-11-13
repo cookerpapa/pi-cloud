@@ -4,7 +4,8 @@ import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import WebSocket from "ws";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { readPreviewDocument } from "./lib/preview-client.mjs";
 
 if (process.env.PI_CLOUD_LIVE_MACHINE_FAILURE_CHECK !== "1")

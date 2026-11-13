@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 
 /** Called only inside an owned mixed phone/Linux acceptance Session. */
 export async function checkSubagentWorkspace({

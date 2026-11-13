@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { execIn, runtimeEnvironment } from "./lib/production-kubernetes.mjs";
 
 if (process.env.PI_CLOUD_LIVE_COMPLETE_TOOL_CHECK !== "1")

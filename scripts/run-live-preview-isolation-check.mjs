@@ -5,7 +5,8 @@ import { readPreviewDocument } from "./lib/preview-client.mjs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 
 if (process.env.PI_CLOUD_LIVE_PREVIEW_ISOLATION_CHECK !== "1") {
   throw new Error(

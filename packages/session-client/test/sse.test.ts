@@ -5,7 +5,11 @@ import {
   type SessionViewSnapshotResource,
 } from "@pi-cloud/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { SseFrameParser, streamSessionEvents, type SessionStreamStatus } from "../src/sse.ts";
+import {
+  SseFrameParser,
+  streamSessionEvents,
+  type SessionStreamStatus,
+} from "@pi-cloud/session-client";
 import { sessionJsonFrames } from "../../runtime-core/src/session-stream-framing.ts";
 import { projectConversationTurnTranscript } from "../../runtime-core/src/conversation-turn-projection.ts";
 import { SESSION_STREAM_MAX_FRAME_BYTES } from "@pi-cloud/protocol";
@@ -13,6 +17,72 @@ import { SESSION_STREAM_MAX_FRAME_BYTES } from "@pi-cloud/protocol";
 const SESSION_ID = "10000000-0000-4000-8000-000000000001";
 const TURN_ID = "20000000-0000-4000-8000-000000000001";
 const CREATED_AT = "2026-07-19T00:00:00.000Z";
+
+it("uses the same authenticated client in Node and keeps another reader alive after disconnect", async () => {
+  const { createServer } = await import("node:http");
+  const { SessionApi } = await import("../src/api.ts");
+  const readers = new Set<import("node:http").ServerResponse>();
+  const requests: Array<{ method?: string; path?: string; authorization?: string }> = [];
+  const initial = snapshot([event(1, "Already received")]);
+  const server = createServer((request, response) => {
+    requests.push({
+      ...(request.method ? { method: request.method } : {}),
+      ...(request.url ? { path: request.url } : {}),
+      ...(request.headers.authorization ? { authorization: request.headers.authorization } : {}),
+    });
+    if (request.url?.endsWith("/events")) {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write(frame("session.snapshot", initial));
+      readers.add(response);
+      response.on("close", () => readers.delete(response));
+    } else {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(initial.conversation));
+    }
+  });
+  const controllers = [new AbortController(), new AbortController()];
+  const streams: Promise<void>[] = [];
+  try {
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as import("node:net").AddressInfo).port;
+    const api = new SessionApi(fetch, "t".repeat(32), `http://127.0.0.1:${port}`);
+    expect((await api.getConversation(SESSION_ID)).session.sessionId).toBe(SESSION_ID);
+    const snapshots = [vi.fn(), vi.fn()];
+    const events = [vi.fn(), vi.fn()];
+    for (const [i, controller] of controllers.entries()) {
+      streams.push(
+        api.streamSession({
+          sessionId: SESSION_ID,
+          signal: controller.signal,
+          onSnapshot: snapshots[i]!,
+          onStatus() {},
+          onEvent(value) {
+            events[i]!(value);
+            controller.abort();
+          },
+        }),
+      );
+    }
+    await vi.waitFor(() => expect(snapshots.every((fn) => fn.mock.calls.length === 1)).toBe(true));
+    controllers[0]!.abort();
+    await streams[0];
+    await vi.waitFor(() => expect(readers.size).toBe(1));
+    for (const reader of readers) reader.write(frame("assistant.text.delta", event(2, " more")));
+    await streams[1];
+    expect(events[0]).not.toHaveBeenCalled();
+    expect(events[1]).toHaveBeenCalledExactlyOnceWith(event(2, " more"));
+    expect(requests.every((request) => request.method === "GET")).toBe(true);
+    expect(requests.every((request) => request.authorization === "Bearer " + "t".repeat(32))).toBe(
+      true,
+    );
+    expect(requests).toHaveLength(3);
+  } finally {
+    for (const controller of controllers) controller.abort();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await Promise.allSettled(streams);
+  }
+});
 
 it("parses a large pushed input queue without consuming transcript sequence", async () => {
   const controller = new AbortController(),

@@ -23,7 +23,7 @@ import { AttachmentActions } from "./AttachmentActions.tsx";
 import { longPasteFile } from "./pasted-text.ts";
 import { flushSync } from "react-dom";
 import { composerPlacement } from "./submission-presentation.ts";
-import { ComposerSubmission, type ComposerInput } from "./composer-submission.ts";
+import { ComposerSubmission, type ComposerInput } from "@pi-cloud/session-client";
 import { ComposerDelivery } from "./ComposerDelivery.tsx";
 import { useComposerEnterMode } from "./useComposerEnterMode.tsx";
 import {
@@ -59,7 +59,8 @@ import type {
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
 import { DEFAULT_EXCLUSIVE_WORKING_DIRECTORY } from "@pi-cloud/protocol";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "./api.ts";
+import { PiCloudApi } from "./api.ts";
+import { PiCloudApiError, newIdempotencyKey } from "@pi-cloud/session-client";
 import { AccountMenu } from "./AccountMenu.tsx";
 import { AuthScreen } from "./AuthScreen.tsx";
 import { ConversationTreeNavigator } from "./ConversationTreeNavigator.tsx";
@@ -73,8 +74,7 @@ import {
   defaultNewConversationSettings,
   settingsFromSessionModel,
 } from "./ModelSettingsMenu.tsx";
-import { activeTurn, createInitialSessionView, sessionViewReducer } from "./session-view.ts";
-import { streamSessionEvents } from "./sse.ts";
+import { activeTurn, createInitialSessionView, sessionViewReducer } from "@pi-cloud/session-client";
 import { ToolProgressStore } from "./tool-progress-store.ts";
 import { RunObservationStore } from "./run-observation-store.ts";
 import { errorMessage } from "./ui-errors.ts";
@@ -838,137 +838,139 @@ export default function ChatApp({ configuration }: { configuration: WebConfigura
           );
       }, 100);
     };
-    void streamSessionEvents({
-      sessionId,
-      signal: controller.signal,
-      onSnapshot(snapshot) {
-        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
-        commandEvents.current("snapshot");
-        toolProgress.reset();
-        runObservations.reset();
-        // Reject a snapshot which raced with an accepted local input. This is
-        // request invalidation, not a persisted or server-supplied stream cursor.
-        if (snapshotInputRevision !== inputRevision.current) {
-          controller.abort();
-          setReconnectGeneration((v) => v + 1);
-          return;
-        }
-        update({
-          type: "conversation.loaded",
-          conversation: snapshot.conversation,
-          preserveInputRevision: true,
-        });
-        setConversationLoading(null);
-        if (
-          snapshot.conversation.session.workspaceState === "missing" &&
-          !snapshot.conversation.turns.some(
-            (turn) =>
-              turn.operation?.kind === "compact" &&
-              ["queued", "running", "cancelling"].includes(turn.state),
+    void api
+      .streamSession({
+        sessionId,
+        signal: controller.signal,
+        onSnapshot(snapshot) {
+          if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+          commandEvents.current("snapshot");
+          toolProgress.reset();
+          runObservations.reset();
+          // Reject a snapshot which raced with an accepted local input. This is
+          // request invalidation, not a persisted or server-supplied stream cursor.
+          if (snapshotInputRevision !== inputRevision.current) {
+            controller.abort();
+            setReconnectGeneration((v) => v + 1);
+            return;
+          }
+          update({
+            type: "conversation.loaded",
+            conversation: snapshot.conversation,
+            preserveInputRevision: true,
+          });
+          setConversationLoading(null);
+          if (
+            snapshot.conversation.session.workspaceState === "missing" &&
+            !snapshot.conversation.turns.some(
+              (turn) =>
+                turn.operation?.kind === "compact" &&
+                ["queued", "running", "cancelling"].includes(turn.state),
+            )
+          ) {
+            setWorkspaceRebindOpen(true);
+          }
+        },
+        onEvent(event) {
+          if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+          if (
+            event.type === "tool.completed" &&
+            renderedState.current.turns.some(
+              (turn) =>
+                turn.turnId === event.turnId &&
+                turn.items.some(
+                  (item) =>
+                    item.kind === "tool" &&
+                    item.toolCallId === event.payload.toolCallId &&
+                    ["subagent", "subagent_control", "subagent_supervisor", "workflow"].includes(
+                      item.toolName,
+                    ),
+                ),
+            )
           )
-        ) {
-          setWorkspaceRebindOpen(true);
-        }
-      },
-      onEvent(event) {
-        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
-        if (
-          event.type === "tool.completed" &&
-          renderedState.current.turns.some(
-            (turn) =>
-              turn.turnId === event.turnId &&
-              turn.items.some(
-                (item) =>
-                  item.kind === "tool" &&
-                  item.toolCallId === event.payload.toolCallId &&
-                  ["subagent", "subagent_control", "subagent_supervisor", "workflow"].includes(
-                    item.toolName,
-                  ),
-              ),
-          )
-        )
-          refreshChildren();
-        timelineControl.current?.event(event);
-        update({ type: "stream.event", event });
-        commandEvents.current(event.type);
-        if (
-          event.type === "turn.started" &&
-          !renderedState.current.turns.some((turn) => turn.turnId === event.turnId && turn.runId)
-        ) {
-          void api
-            .getConversation(sessionId)
-            .then((conversation) => {
-              const turn = conversation.turns.find((turn) => turn.turnId === event.turnId);
-              if (turn && !controller.signal.aborted)
-                update({ type: "turn.discovered", sessionId, turn });
-            })
-            .catch((error) => {
-              if (!controller.signal.aborted)
-                update({
-                  type: "api.error",
-                  message: errorMessage(error, streamPresentation.current.t),
-                });
-            });
-        }
-        if (
-          event.type === "turn.completed" ||
-          event.type === "turn.failed" ||
-          event.type === "turn.cancelled"
-        ) {
-          setInspectorRefreshSignal((value) => value + 1);
-          setQueueRefreshGeneration((value) => value + 1);
-          void refreshConversations().catch(() => undefined);
-          void refreshConversationTree(sessionId, streamPresentation.current.treeView).catch(
-            () => undefined,
-          );
-        }
-      },
-      onToolProgress(progress) {
-        if (!controller.signal.aborted && currentStreamSession.current === sessionId) {
-          toolProgress.receive(progress);
-          runObservations.toolProgress(progress.turnId);
-        }
-      },
-      onRunObservation(observation) {
-        if (!controller.signal.aborted && currentStreamSession.current === sessionId) {
-          runObservations.receive(observation);
-          if (observation.type === "run.child_activity") {
-            const key = `${observation.childSessionId}:${observation.state}`;
-            if (!discoveredChildren.has(key)) {
-              discoveredChildren.add(key);
-              refreshChildren();
+            refreshChildren();
+          timelineControl.current?.event(event);
+          update({ type: "stream.event", event });
+          commandEvents.current(event.type);
+          if (
+            event.type === "turn.started" &&
+            !renderedState.current.turns.some((turn) => turn.turnId === event.turnId && turn.runId)
+          ) {
+            void api
+              .getConversation(sessionId)
+              .then((conversation) => {
+                const turn = conversation.turns.find((turn) => turn.turnId === event.turnId);
+                if (turn && !controller.signal.aborted)
+                  update({ type: "turn.discovered", sessionId, turn });
+              })
+              .catch((error) => {
+                if (!controller.signal.aborted)
+                  update({
+                    type: "api.error",
+                    message: errorMessage(error, streamPresentation.current.t),
+                  });
+              });
+          }
+          if (
+            event.type === "turn.completed" ||
+            event.type === "turn.failed" ||
+            event.type === "turn.cancelled"
+          ) {
+            setInspectorRefreshSignal((value) => value + 1);
+            setQueueRefreshGeneration((value) => value + 1);
+            void refreshConversations().catch(() => undefined);
+            void refreshConversationTree(sessionId, streamPresentation.current.treeView).catch(
+              () => undefined,
+            );
+          }
+        },
+        onToolProgress(progress) {
+          if (!controller.signal.aborted && currentStreamSession.current === sessionId) {
+            toolProgress.receive(progress);
+            runObservations.toolProgress(progress.turnId);
+          }
+        },
+        onRunObservation(observation) {
+          if (!controller.signal.aborted && currentStreamSession.current === sessionId) {
+            runObservations.receive(observation);
+            if (observation.type === "run.child_activity") {
+              const key = `${observation.childSessionId}:${observation.state}`;
+              if (!discoveredChildren.has(key)) {
+                discoveredChildren.add(key);
+                refreshChildren();
+              }
             }
           }
+        },
+        onInputQueue(queue) {
+          if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
+          setStreamQueue(queue);
+        },
+        onStatus(status) {
+          if (controller.signal.aborted) return;
+          if (status.phase !== "live") toolProgress.reset();
+          if (status.phase !== "live") runObservations.reset();
+          if (status.phase !== "live") setStreamQueue(null);
+          if (status.phase === "connecting" || status.phase === "reconnecting")
+            snapshotInputRevision = inputRevision.current;
+          // Read once after subscription is established, covering changes between
+          // the initial HTTP snapshot and SSE opening. Later updates are pushed.
+          if (status.phase === "live") {
+            setQueueRefreshGeneration((value) => value + 1);
+            refreshChildren();
+          }
+          update({ type: "stream.status", status });
+        },
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setConversationLoading(null);
+          update({
+            type: "api.error",
+            message: streamPresentation.current.t("chat.streamDisconnected"),
+          });
         }
-      },
-      onInputQueue(queue) {
-        if (controller.signal.aborted || currentStreamSession.current !== sessionId) return;
-        setStreamQueue(queue);
-      },
-      onStatus(status) {
-        if (controller.signal.aborted) return;
-        if (status.phase !== "live") toolProgress.reset();
-        if (status.phase !== "live") runObservations.reset();
-        if (status.phase !== "live") setStreamQueue(null);
-        if (status.phase === "connecting" || status.phase === "reconnecting")
-          snapshotInputRevision = inputRevision.current;
-        // Read once after subscription is established, covering changes between
-        // the initial HTTP snapshot and SSE opening. Later updates are pushed.
-        if (status.phase === "live") {
-          setQueueRefreshGeneration((value) => value + 1);
-          refreshChildren();
-        }
-        update({ type: "stream.status", status });
-      },
-    }).catch(() => {
-      if (!controller.signal.aborted) {
-        setConversationLoading(null);
-        update({
-          type: "api.error",
-          message: streamPresentation.current.t("chat.streamDisconnected"),
-        });
-      }
-    });
+      });
     return () => {
       controller.abort();
       if (reconcileQueue.current === reconcile) reconcileQueue.current = null;

@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { nativeHistory, nativeMessages, runUsage } from "./lib/native-session-history.mjs";
 import {
   runtimeDirectory,

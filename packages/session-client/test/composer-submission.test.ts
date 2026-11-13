@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ComposerSubmission } from "../src/composer-submission.ts";
+import { ComposerSubmission } from "@pi-cloud/session-client";
 
 function deferred() {
   let resolve!: () => void;

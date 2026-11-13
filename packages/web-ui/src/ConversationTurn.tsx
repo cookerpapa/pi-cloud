@@ -11,7 +11,7 @@ import {
 } from "./conversation-presentation.ts";
 import { ToolImages } from "./ToolImages.tsx";
 import { Markdown } from "./Markdown.tsx";
-import type { TranscriptItem, TurnView } from "./session-view.ts";
+import type { TranscriptItem, TurnView } from "@pi-cloud/session-client";
 import { compactToolSummary, ToolActivity, type ToolTranscriptItem } from "./ToolActivity.tsx";
 import { useI18n } from "./i18n.tsx";
 import { MessageCopyButton } from "./MessageCopyButton.tsx";

@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { createPiCloudEventFactory, resolveDurableDisplay } from "@pi-cloud/protocol";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import type { ToolTranscriptItem } from "../src/ToolActivity.tsx";
-import type { TurnView } from "../src/session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 
 const path = "/v1/conversations/10000000-0000-4000-8000-000000000001/preview/5173/";
 const details = { port: 5173, previewPath: path };

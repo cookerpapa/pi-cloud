@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { ComposerSubmission } from "../../../packages/web-ui/src/composer-submission.ts";
+import { ComposerSubmission } from "@pi-cloud/session-client";
 import { PiCloudApi } from "../../../packages/web-ui/src/api.ts";
 import {
   inputReturnRecovery,

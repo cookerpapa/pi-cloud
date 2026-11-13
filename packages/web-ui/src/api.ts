@@ -1,3 +1,10 @@
+import {
+  SessionApi,
+  request,
+  requestBytes,
+  jsonRequest,
+  type FetchImplementation,
+} from "@pi-cloud/session-client";
 import type { WorkspaceCapacitySnapshot } from "@pi-cloud/protocol";
 import type { ResourceStatementPage, ResourceBillingSummary } from "@pi-cloud/protocol";
 import {
@@ -19,19 +26,7 @@ import {
   parseScheduleDeletion,
   type ScheduleChange,
 } from "@pi-cloud/protocol";
-import {
-  parseExecutionTargetList,
-  parseSessionExecutionTarget,
-  type ConversationHistoryQuery,
-  parseConversationSearchResult,
-  type ConversationSearchResult,
-} from "@pi-cloud/protocol";
-import {
-  parseConversationUsageResource,
-  parseConversationCompactResource,
-  type ConversationUsageResource,
-  type ConversationCompactResource,
-} from "@pi-cloud/protocol";
+
 import { blobContentDigest } from "./upload-digest.ts";
 import { Upload as TusUpload } from "tus-js-client";
 import {
@@ -44,32 +39,12 @@ import {
   parseUserUpload,
   userUploadSource,
   type UserUpload,
-  parseInputQueueResource,
-  parseQueuedInputActionResult,
-  type InputQueueResource,
-  type QueuedInputAction,
-  type QueuedInputActionResult,
-  parseReturnedInputsResource,
-  type ReturnedInputsResource,
-  parseAcceptedTurnCancellationResource,
-  parseAcceptedConversationInputResource,
   parseAuthSessionResource,
   parseAuthenticationConfigurationResource,
-  parseConversationDetailResource,
-  parseConversationListResource,
-  parseConversationTreeResource,
-  parseConversationForkResource,
-  parseConversationPruneResource,
-  parseControlPlaneApiError,
   parseModelConfigurationResource,
-  parseModelCatalogResource,
-  parseSessionModelResource,
   parseCubeProxyConfigurationResource,
   parseLogoutResource,
   parseProjectResource,
-  parseRunResource,
-  parseSessionResource,
-  parseTenantIdentityResource,
   parseTenantRegistrationResource,
   parseWorkspaceDirectoryResource,
   parseWorkspaceDeletionResource,
@@ -77,36 +52,19 @@ import {
   parseDevelopmentEnvironmentResource,
   parseDevelopmentEnvironmentDirectoryResource,
   parseWorkspaceListResource,
-  parseConversationWorkspaceBindingResource,
   parseSshAccessTicketResource,
   parseSourceControlIssueJobListResource,
   parseSourceControlIssueJobResource,
   parseSourceControlIssueGitCredentialResource,
   parseCodeHostConnectionListResource,
-  type ConversationDetailResource,
   type AuthSessionResource,
   type AuthenticationConfigurationResource,
-  type ConversationListResource,
-  type ConversationTreeResource,
-  type ConversationTreeView,
-  type ConversationForkResource,
-  type ConversationPruneResource,
-  type AcceptedTurnCancellationResource,
-  type AcceptedConversationInputResource,
   type ProjectResource,
-  type RunResource,
   type ProviderModelSelection,
-  type SessionModelSelection,
   type ModelConfigurationResource,
-  type ModelCatalogResource,
-  type SessionModelResource,
   type CubeProxyConfigurationResource,
   type LogoutResource,
-  type ExecutionMode,
-  type SessionResource,
-  type TenantIdentityResource,
   type TenantRegistrationResource,
-  type TurnThinkingLevel,
   type WorkspaceDirectoryResource,
   type WorkspaceDeletionResource,
   type DevelopmentEnvironmentAction,
@@ -115,7 +73,6 @@ import {
   type DevelopmentEnvironmentDirectoryResource,
   type WorkspaceListResource,
   type WorkspaceSourceRequest,
-  type ConversationWorkspaceBindingResource,
   type SshAccessTicketResource,
   type SourceControlIssueJobListResource,
   type SourceControlIssueJobResource,
@@ -126,126 +83,7 @@ import {
   type DisconnectCodeHostRequest,
 } from "@pi-cloud/protocol";
 
-export class PiCloudApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-
-  constructor(status: number, code: string, message: string) {
-    super(message);
-    this.name = "PiCloudApiError";
-    this.status = status;
-    this.code = code;
-  }
-}
-
-type FetchImplementation = typeof fetch;
-
-async function responseJson(response: Response): Promise<unknown> {
-  try {
-    return (await response.json()) as unknown;
-  } catch {
-    throw new PiCloudApiError(
-      response.status,
-      "invalid_response",
-      "Control plane returned a non-JSON response",
-    );
-  }
-}
-
-async function request(
-  fetchImplementation: FetchImplementation,
-  path: string,
-  init: RequestInit,
-  authorizationToken?: string,
-): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await fetchImplementation(path, {
-      credentials: "same-origin",
-      ...init,
-      headers: {
-        ...Object.fromEntries(new Headers(init.headers).entries()),
-        ...(authorizationToken === undefined
-          ? {}
-          : { authorization: `Bearer ${authorizationToken}` }),
-      },
-    });
-  } catch {
-    throw new PiCloudApiError(0, "network_error", "Control plane is unreachable");
-  }
-  if (response.status === 204) return null;
-  const body = await responseJson(response);
-  if (!response.ok) {
-    try {
-      const parsed = parseControlPlaneApiError(body);
-      throw new PiCloudApiError(response.status, parsed.error.code, parsed.error.message);
-    } catch (error: unknown) {
-      if (error instanceof PiCloudApiError) throw error;
-      throw new PiCloudApiError(
-        response.status,
-        "invalid_error_response",
-        `Control plane rejected the request with HTTP ${String(response.status)}`,
-      );
-    }
-  }
-  return body;
-}
-
-async function requestBytes(
-  fetchImplementation: FetchImplementation,
-  path: string,
-  authorizationToken?: string,
-  signal?: AbortSignal,
-): Promise<{ bytes: Uint8Array; contentType: string }> {
-  let response: Response;
-  try {
-    response = await fetchImplementation(path, {
-      method: "GET",
-      signal: signal ?? null,
-      credentials: "same-origin",
-      ...(authorizationToken === undefined
-        ? {}
-        : { headers: { authorization: `Bearer ${authorizationToken}` } }),
-    });
-  } catch {
-    throw new PiCloudApiError(0, "network_error", "Control plane is unreachable");
-  }
-  if (!response.ok) {
-    const body = await responseJson(response);
-    try {
-      const parsed = parseControlPlaneApiError(body);
-      throw new PiCloudApiError(response.status, parsed.error.code, parsed.error.message);
-    } catch (error: unknown) {
-      if (error instanceof PiCloudApiError) throw error;
-      throw new PiCloudApiError(
-        response.status,
-        "invalid_error_response",
-        `Control plane rejected the request with HTTP ${String(response.status)}`,
-      );
-    }
-  }
-  return {
-    bytes: new Uint8Array(await response.arrayBuffer()),
-    contentType: response.headers.get("content-type") ?? "application/octet-stream",
-  };
-}
-
-function jsonRequest(
-  body: unknown,
-  idempotencyKey?: string,
-  method: "POST" | "PUT" | "PATCH" | "DELETE" = "POST",
-): RequestInit {
-  return {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(idempotencyKey === undefined ? {} : { "idempotency-key": idempotencyKey }),
-    },
-    body: JSON.stringify(body),
-  };
-}
-
-export class PiCloudApi {
+export class PiCloudApi extends SessionApi {
   readonly #fetch: FetchImplementation;
   readonly #authorizationToken: string | undefined;
 
@@ -253,26 +91,14 @@ export class PiCloudApi {
     fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
     authorizationToken?: string,
   ) {
+    super(fetchImplementation, authorizationToken);
     this.#fetch = fetchImplementation;
-    if (
-      authorizationToken !== undefined &&
-      (!/^[A-Za-z0-9._~+/=-]{32,4096}$/.test(authorizationToken) ||
-        /[\r\n]/.test(authorizationToken))
-    ) {
-      throw new TypeError("authorizationToken is invalid");
-    }
     this.#authorizationToken = authorizationToken;
   }
 
   async getAuthenticationConfiguration(): Promise<AuthenticationConfigurationResource> {
     return parseAuthenticationConfigurationResource(
       await request(this.#fetch, "/v1/auth/providers", { method: "GET" }),
-    );
-  }
-
-  async getIdentity(): Promise<TenantIdentityResource> {
-    return parseTenantIdentityResource(
-      await request(this.#fetch, "/v1/identity", { method: "GET" }, this.#authorizationToken),
     );
   }
 
@@ -324,49 +150,6 @@ export class PiCloudApi {
     );
   }
 
-  async getModelCatalog(): Promise<ModelCatalogResource> {
-    return parseModelCatalogResource(
-      await request(this.#fetch, "/v1/models", { method: "GET" }, this.#authorizationToken),
-    );
-  }
-
-  async getSessionModel(sessionId: string): Promise<SessionModelResource> {
-    return parseSessionModelResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/model`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  /** Used by diagnostic/acceptance clients, not as a second browser stream poll. */
-  async getRun(runId: string): Promise<RunResource> {
-    return parseRunResource(
-      await request(
-        this.#fetch,
-        `/v1/runs/${encodeURIComponent(runId)}`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async updateSessionModel(
-    sessionId: string,
-    selection: SessionModelSelection,
-  ): Promise<SessionModelResource> {
-    return parseSessionModelResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/model`,
-        jsonRequest(selection, undefined, "PUT"),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async getCubeProxyConfiguration(): Promise<CubeProxyConfigurationResource> {
     return parseCubeProxyConfigurationResource(
       await request(
@@ -398,17 +181,6 @@ export class PiCloudApi {
   ): Promise<TenantRegistrationResource> {
     return parseTenantRegistrationResource(
       await request(this.#fetch, "/v1/registrations", jsonRequest({ tenantSlug, displayName })),
-    );
-  }
-
-  async listConversations(cursor?: string): Promise<ConversationListResource> {
-    return parseConversationListResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations${cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
     );
   }
 
@@ -671,35 +443,6 @@ export class PiCloudApi {
     );
   }
 
-  async deleteConversation(sessionId: string): Promise<void> {
-    await request(
-      this.#fetch,
-      `/v1/conversations/${encodeURIComponent(sessionId)}`,
-      { method: "DELETE" },
-      this.#authorizationToken,
-    );
-  }
-
-  async rebindConversationWorkspace(
-    sessionId: string,
-    workspaceId: string,
-    idempotencyKey: string,
-    workingDirectory?: string,
-  ): Promise<ConversationWorkspaceBindingResource> {
-    return parseConversationWorkspaceBindingResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/workspace`,
-        jsonRequest(
-          { workspaceId, ...(workingDirectory === undefined ? {} : { workingDirectory }) },
-          idempotencyKey,
-          "PUT",
-        ),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async issueSshAccessTicket(sessionId: string): Promise<SshAccessTicketResource> {
     return parseSshAccessTicketResource(
       await request(
@@ -709,82 +452,6 @@ export class PiCloudApi {
         this.#authorizationToken,
       ),
     );
-  }
-
-  async getConversationUsage(
-    sessionId: string,
-    signal?: AbortSignal,
-  ): Promise<ConversationUsageResource> {
-    return parseConversationUsageResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/usage`,
-        { method: "GET", ...(signal ? { signal } : {}) },
-        this.#authorizationToken,
-      ),
-    );
-  }
-  async compactConversation(
-    sessionId: string,
-    instructions: string,
-    key: string,
-  ): Promise<ConversationCompactResource> {
-    return parseConversationCompactResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/compact`,
-        jsonRequest(instructions ? { instructions } : {}, key),
-        this.#authorizationToken,
-      ),
-    );
-  }
-  async getCompaction(
-    sessionId: string,
-    commandId?: string,
-    signal?: AbortSignal,
-  ): Promise<ConversationCompactResource | null> {
-    const value = await request(
-      this.#fetch,
-      `/v1/conversations/${encodeURIComponent(sessionId)}/compact${commandId ? "/" + encodeURIComponent(commandId) : ""}`,
-      { method: "GET", ...(signal ? { signal } : {}) },
-      this.#authorizationToken,
-    );
-    return value === null ? null : parseConversationCompactResource(value);
-  }
-
-  async getConversation(
-    sessionId: string,
-    query: ConversationHistoryQuery = {},
-    signal?: AbortSignal,
-  ): Promise<ConversationDetailResource> {
-    return parseConversationDetailResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}?${new URLSearchParams(Object.entries(query).filter((pair): pair is [string, string] => typeof pair[1] === "string"))}`,
-        { method: "GET", ...(signal ? { signal } : {}) },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async searchConversation(
-    sessionId: string,
-    text: string,
-    before?: string,
-    signal?: AbortSignal,
-  ): Promise<ConversationSearchResult> {
-    const params = new URLSearchParams({ q: text, ...(before ? { before } : {}) });
-    return parseConversationSearchResult(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/search?${params}`,
-        { method: "GET", ...(signal ? { signal } : {}) },
-        this.#authorizationToken,
-      ),
-    );
-  }
-  conversationExportUrl(sessionId: string): string {
-    return `/v1/conversations/${encodeURIComponent(sessionId)}/export`;
   }
   async resourceBilling(
     query: URLSearchParams,
@@ -925,93 +592,6 @@ export class PiCloudApi {
     );
   }
 
-  async listExecutionTargets() {
-    return parseExecutionTargetList(
-      await request(
-        this.#fetch,
-        "/v1/execution-targets",
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-  async getSessionExecutionTarget(id: string) {
-    return parseSessionExecutionTarget(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(id)}/execution-target`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-  async bindExecutionTarget(id: string, targetId: string | null, revision: string) {
-    return parseSessionExecutionTarget(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(id)}/execution-target`,
-        jsonRequest({ targetId, revision }, undefined, "PUT"),
-        this.#authorizationToken,
-      ),
-    );
-  }
-  readExecutionTargetScreen(id: string, signal?: AbortSignal) {
-    return requestBytes(
-      this.#fetch,
-      `/v1/execution-targets/${encodeURIComponent(id)}/screen`,
-      this.#authorizationToken,
-      signal,
-    );
-  }
-
-  async getConversationTree(
-    sessionId: string,
-    view: ConversationTreeView,
-    navigation: { branchSessionId?: string; beforeEntryId?: string } = {},
-  ): Promise<ConversationTreeResource> {
-    return parseConversationTreeResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/tree?${new URLSearchParams({ view, ...navigation })}`,
-        { method: "GET" },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async forkConversation(
-    sessionId: string,
-    turnId: string,
-    entryId: string,
-    title: string | undefined,
-    idempotencyKey: string,
-  ): Promise<ConversationForkResource> {
-    return parseConversationForkResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/forks`,
-        jsonRequest({ turnId, entryId, ...(title === undefined ? {} : { title }) }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async pruneConversation(
-    sessionId: string,
-    turnId: string,
-    entryId: string,
-    idempotencyKey: string,
-  ): Promise<ConversationPruneResource> {
-    return parseConversationPruneResource(
-      await request(
-        this.#fetch,
-        `/v1/conversations/${encodeURIComponent(sessionId)}/prunes`,
-        jsonRequest({ turnId, entryId }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async listWorkspaceDirectory(sessionId: string, path = ""): Promise<WorkspaceDirectoryResource> {
     const query = path.length === 0 ? "" : `?path=${encodeURIComponent(path)}`;
     return parseWorkspaceDirectoryResource(
@@ -1050,36 +630,6 @@ export class PiCloudApi {
     );
   }
 
-  async createSession(
-    projectId: string,
-    workspaceId: string,
-    title: string,
-    executionMode: ExecutionMode,
-    sandboxProfileKey:
-      import("@pi-cloud/protocol").DevelopmentEnvironmentProfileKey | undefined = executionMode ===
-    "development_environment"
-      ? undefined
-      : "standard",
-    workingDirectory = executionMode === "development_environment" ? "/home/user" : "/workspace",
-    model?: SessionModelSelection,
-  ): Promise<SessionResource> {
-    return parseSessionResource(
-      await request(
-        this.#fetch,
-        `/v1/projects/${encodeURIComponent(projectId)}/sessions`,
-        jsonRequest({
-          workspaceId,
-          title,
-          ...(model === undefined ? {} : { model }),
-          executionMode,
-          ...(sandboxProfileKey === undefined ? {} : { sandboxProfileKey }),
-          workingDirectory,
-        }),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
   async uploadWorkspaceFile(
     sessionId: string,
     id: string,
@@ -1103,21 +653,6 @@ export class PiCloudApi {
         this.#authorizationToken,
       ),
     );
-  }
-
-  async inputReceipt(
-    sessionId: string,
-    key: string,
-  ): Promise<{ status: "accepted" | "unconfirmed" }> {
-    const value = (await request(
-      this.#fetch,
-      `/v1/sessions/${encodeURIComponent(sessionId)}/input-receipt?key=${encodeURIComponent(key)}`,
-      { method: "GET" },
-      this.#authorizationToken,
-    )) as { status?: unknown };
-    if (value.status !== "accepted" && value.status !== "unconfirmed")
-      throw new Error("Invalid input receipt");
-    return { status: value.status };
   }
 
   async createWorkspaceFileTransfer(
@@ -1280,142 +815,4 @@ export class PiCloudApi {
       ),
     );
   }
-
-  async acceptTurn(
-    sessionId: string,
-    prompt: string,
-    idempotencyKey: string,
-    thinkingLevel?: TurnThinkingLevel,
-    uploadIds?: string[],
-    whenBusy?: "follow_up" | "steer",
-  ): Promise<AcceptedConversationInputResource> {
-    return parseAcceptedConversationInputResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
-        jsonRequest(
-          {
-            prompt,
-            ...(uploadIds?.length ? { uploadIds } : {}),
-            ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
-            ...(whenBusy === undefined ? {} : { whenBusy }),
-          },
-          idempotencyKey,
-        ),
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async getInputQueue(
-    sessionId: string,
-    signal?: AbortSignal,
-    page?: { afterPosition: number; revision: string },
-  ): Promise<InputQueueResource> {
-    const query = page
-      ? `?${new URLSearchParams({ afterPosition: String(page.afterPosition), revision: page.revision })}`
-      : "";
-    return parseInputQueueResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs${query}`,
-        {
-          method: "GET",
-          signal: signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
-            : AbortSignal.timeout(10_000),
-        },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async mutateQueuedInput(
-    sessionId: string,
-    inputId: string,
-    action: QueuedInputAction,
-    idempotencyKey: string,
-  ): Promise<QueuedInputActionResult> {
-    return parseQueuedInputActionResult(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/queued-inputs/${encodeURIComponent(inputId)}/actions`,
-        { ...jsonRequest(action, idempotencyKey), signal: AbortSignal.timeout(10_000) },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async getReturnedInputs(
-    sessionId: string,
-    signal?: AbortSignal,
-    page: { requestId?: string; afterPosition?: number } = {},
-  ): Promise<ReturnedInputsResource> {
-    const params = new URLSearchParams();
-    if (page.requestId) params.set("requestId", page.requestId);
-    if (page.afterPosition) params.set("afterPosition", String(page.afterPosition));
-    const query = params.size ? `?${params.toString()}` : "";
-    return parseReturnedInputsResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs${query}`,
-        {
-          signal: signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
-            : AbortSignal.timeout(10_000),
-        },
-        this.#authorizationToken,
-      ),
-    );
-  }
-
-  async acknowledgeReturnedInputs(
-    sessionId: string,
-    requestId: string,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    await request(
-      this.#fetch,
-      `/v1/sessions/${encodeURIComponent(sessionId)}/returned-inputs/acknowledgements`,
-      {
-        ...jsonRequest({ requestId }),
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
-          : AbortSignal.timeout(10_000),
-      },
-      this.#authorizationToken,
-    );
-  }
-
-  async cancelTurn(
-    sessionId: string,
-    turnId: string,
-    idempotencyKey: string,
-    gracePeriodMs = 2_000,
-  ): Promise<AcceptedTurnCancellationResource> {
-    return parseAcceptedTurnCancellationResource(
-      await request(
-        this.#fetch,
-        `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/cancellations`,
-        jsonRequest({ gracePeriodMs }, idempotencyKey),
-        this.#authorizationToken,
-      ),
-    );
-  }
-}
-
-export function newIdempotencyKey(
-  prefix:
-    | "turn"
-    | "compact"
-    | "cancel"
-    | "steer"
-    | "delete"
-    | "retry"
-    | "fork"
-    | "prune"
-    | "environment"
-    | "workspace-rebind",
-): string {
-  return `${prefix}:${globalThis.crypto.randomUUID()}`;
 }

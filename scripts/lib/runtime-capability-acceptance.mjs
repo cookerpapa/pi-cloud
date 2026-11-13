@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from "node:util";
 import { getCurrentSystemMessage, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { controlToolCatalog } from "../../packages/control-plane/src/control-tool-registry.ts";
 import { previewToolDefinition } from "../../packages/control-plane/src/ordinary-tools/preview-tool.ts";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
 import {
   kubectl,

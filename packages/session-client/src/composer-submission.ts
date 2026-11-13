@@ -1,4 +1,4 @@
-import { newIdempotencyKey } from "./api.ts";
+import { newIdempotencyKey } from "./http.ts";
 
 export type ComposerInput = Readonly<{
   kind: "turn" | "compact";

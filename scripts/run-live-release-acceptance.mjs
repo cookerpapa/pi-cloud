@@ -4,7 +4,8 @@ import { randomUUID, randomInt, createHash } from "node:crypto";
 import sharp from "sharp";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import {
   nativeHistory,
   nativeMessages,

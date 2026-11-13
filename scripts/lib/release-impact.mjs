@@ -230,13 +230,13 @@ export function permitsScopedSource(scope, file, runtimeInputs) {
       (file === workerBootstrapSource || file === "scripts/production-kubernetes.mjs")) ||
     (scope === "session-api" && sessionApiSource(file)) ||
     (scope === "web" &&
-      (file === "packages/web-ui/index.html" ||
+      (file.startsWith("packages/session-client/src/") ||
+        file.startsWith("packages/session-client/test/") ||
+        file === "packages/web-ui/index.html" ||
         /^packages\/web-ui\/src\/.*\.(tsx|css)$/.test(file) ||
         [
-          "session-view.ts",
           "conversation-presentation.ts",
           "virtual-conversation-rows.ts",
-          "composer-submission.ts",
           "submission-presentation.ts",
         ].some((name) => file === `packages/web-ui/src/${name}`) ||
         [
@@ -288,7 +288,10 @@ export function releaseImpact(files) {
     "worker-bootstrap": (file) => file === workerBootstrapSource,
     "session-retention": (file) => file === sessionRetentionSource,
     "session-decoder": (file) => file === sessionDecoderSource,
-    web: (file) => file.startsWith("packages/web-ui/src/") || file === "packages/web-ui/index.html",
+    web: (file) =>
+      file.startsWith("packages/session-client/src/") ||
+      file.startsWith("packages/web-ui/src/") ||
+      file === "packages/web-ui/index.html",
   };
   for (const [scope, source] of Object.entries(sources)) {
     if (!files.some(source) || !files.every((file) => permitsScopedSource(scope, file))) continue;

@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 if (process.env.PI_CLOUD_LIVE_DIRECTORY_PICKER_CHECK !== "1") {

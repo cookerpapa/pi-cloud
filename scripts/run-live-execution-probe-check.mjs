@@ -3,8 +3,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 
 if (process.env.PI_CLOUD_LIVE_EXECUTION_PROBE_CHECK !== "1")
   throw new Error(

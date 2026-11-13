@@ -10,7 +10,8 @@ import type {
   SourceControlIssueJobResource,
   WorkspaceSummaryResource,
 } from "@pi-cloud/protocol";
-import { newIdempotencyKey, PiCloudApi, PiCloudApiError } from "./api.ts";
+import { PiCloudApi } from "./api.ts";
+import { newIdempotencyKey, PiCloudApiError } from "@pi-cloud/session-client";
 import { validMachineDirectory } from "@pi-cloud/protocol";
 import { useI18n } from "./i18n.tsx";
 import { WorkspaceDirectoryPicker } from "./WorkspaceDirectoryPicker.tsx";

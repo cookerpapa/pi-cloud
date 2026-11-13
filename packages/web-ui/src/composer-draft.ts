@@ -1,5 +1,5 @@
 import type { UserUpload } from "@pi-cloud/protocol";
-import type { ComposerInput } from "./composer-submission.ts";
+import type { ComposerInput } from "@pi-cloud/session-client";
 import type { ComposerUpload } from "./useComposerUploads.ts";
 
 export type PendingComposerDraft = {

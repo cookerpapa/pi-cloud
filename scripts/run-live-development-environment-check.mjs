@@ -13,7 +13,8 @@ import {
   OfficialCubeSandboxRuntimeClient,
   workspaceVolumeId,
 } from "../packages/sandbox-control/src/index.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 if (process.env.PI_CLOUD_LIVE_DEVELOPMENT_ENVIRONMENT_CHECK !== "1") {

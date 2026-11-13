@@ -3,7 +3,7 @@ import {
   type ConversationPresentationRow,
 } from "./conversation-presentation.ts";
 import { streamingMarkdownBlocks } from "./Markdown.tsx";
-import type { TurnView, TranscriptItem } from "./session-view.ts";
+import type { TurnView, TranscriptItem } from "@pi-cloud/session-client";
 
 export type VirtualConversationRow = {
   key: string;

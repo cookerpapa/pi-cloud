@@ -5,7 +5,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { PiCloudApiError, newIdempotencyKey } from "@pi-cloud/session-client";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 import {
   installFirstAssistantTextTiming,

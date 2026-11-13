@@ -1,7 +1,7 @@
 import { useInputQueue } from "./PendingInputQueue.tsx";
 import { authoritativeInputAppeared } from "./submission-presentation.ts";
-import type { TurnView } from "./session-view.ts";
-import type { ComposerSubmissionView } from "./composer-submission.ts";
+import type { TurnView } from "@pi-cloud/session-client";
+import type { ComposerSubmissionView } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 
 /** Local delivery feedback. It never creates a Run or a canonical user row. */

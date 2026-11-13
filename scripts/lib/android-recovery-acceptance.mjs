@@ -12,7 +12,7 @@ import {
   restoreOwnedReplyFault,
 } from "./live-tool-reply-fault.mjs";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 const execute = promisify(execFile);
 const terminal = (run) => ["completed", "failed", "cancelled", "timed_out"].includes(run.state);
 

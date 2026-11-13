@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PiCloudApi, PiCloudApiError, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { PiCloudApiError, newIdempotencyKey } from "@pi-cloud/session-client";
 
 if (process.env.PI_CLOUD_LIVE_MODEL_SETTINGS_CHECK !== "1") {
   throw new Error("Set PI_CLOUD_LIVE_MODEL_SETTINGS_CHECK=1 to acknowledge real token usage");

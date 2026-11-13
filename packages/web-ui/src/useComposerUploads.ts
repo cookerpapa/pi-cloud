@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { uploadFileName, type UserUpload, type WorkspaceFileTransfer } from "@pi-cloud/protocol";
-import { PiCloudApiError, type PiCloudApi } from "./api.ts";
+import { type PiCloudApi } from "./api.ts";
+import { PiCloudApiError } from "@pi-cloud/session-client";
 import { characterCount } from "./pasted-text.ts";
 import { blobSha256 } from "./upload-digest.ts";
 import {

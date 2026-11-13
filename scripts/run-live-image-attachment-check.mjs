@@ -5,7 +5,8 @@ import { execFile as execFileCallback, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { sql } from "kysely";
 import {

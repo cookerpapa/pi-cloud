@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 
 if (process.env.PI_CLOUD_LIVE_RUNTIME_CHECK !== "1")
   throw new Error("Set PI_CLOUD_LIVE_RUNTIME_CHECK=1 to use Luna and a disposable Cube Workspace");

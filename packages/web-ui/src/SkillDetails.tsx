@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { SkillInstallation, SkillPackageContent, SkillScope } from "@pi-cloud/protocol";
-import type { PiCloudApi, PiCloudApiError } from "./api.ts";
+import type { PiCloudApi } from "./api.ts";
+import type { PiCloudApiError } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 import { errorMessage } from "./ui-errors.ts";
 import { Markdown } from "./Markdown.tsx";

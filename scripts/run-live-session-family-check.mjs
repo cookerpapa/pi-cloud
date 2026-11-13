@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, writeFile } from "node:fs/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { streamSessionEvents } from "../packages/web-ui/src/sse.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import { snapshotTurn } from "./lib/session-snapshot.mjs";
 import {
   isDurableAgentActivity,

@@ -1,7 +1,8 @@
 // Real Luna/Cube acceptance of indexed navigation and independent native Fork copies.
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { execIn, runtimeEnvironment } from "./lib/production-kubernetes.mjs";
 if (process.env.PI_CLOUD_LIVE_NAVIGATION_CHECK !== "1")
   throw new Error(

@@ -4,7 +4,7 @@ import { LargeCode } from "./LargeCode.tsx";
 import { ChildAgentProgressContext } from "./ChildAgentProgress.tsx";
 import { HighlightedCode } from "./HighlightedCode.tsx";
 import { useI18n, type Translate } from "./i18n.tsx";
-import type { TranscriptItem } from "./session-view.ts";
+import type { TranscriptItem } from "@pi-cloud/session-client";
 import { LiveToolProgress } from "./tool-progress.tsx";
 import { ChildAgentProgress } from "./ChildAgentProgress.tsx";
 

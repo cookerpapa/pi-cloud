@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { RUN_OBSERVATION_STALE_MS, type RunObservation, type RunPhase } from "@pi-cloud/protocol";
-import type { TurnView } from "./session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 import { useI18n } from "./i18n.tsx";
 
 import { type Observations, type RunObservationStore } from "./run-observation-store.ts";

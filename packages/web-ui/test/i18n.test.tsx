@@ -5,7 +5,7 @@ import { AuthScreen } from "../src/AuthScreen.tsx";
 import { AccountMenu } from "../src/AccountMenu.tsx";
 import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { I18nProvider, translate } from "../src/i18n.tsx";
-import type { TurnView } from "../src/session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 
 describe("UI internationalization", () => {
   it("keeps both dictionaries complete and interpolates dynamic UI values", () => {

@@ -10,7 +10,7 @@ import { InheritedContext } from "../src/InheritedContext.tsx";
 import { ToolActivity } from "../src/ToolActivity.tsx";
 import { PiCloudApi } from "../src/api.ts";
 import { ResourceManagementPage, resourceRefreshPending } from "../src/ResourceManagementPage.tsx";
-import type { TurnView } from "../src/session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 import { WorkspaceDirectoryPicker } from "../src/WorkspaceDirectoryPicker.tsx";
 import { WorkspaceInspector } from "../src/WorkspaceInspector.tsx";
 import type { WebConfiguration } from "../src/web-configuration.ts";

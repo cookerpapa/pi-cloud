@@ -4,7 +4,7 @@ import { ConversationTurn } from "../src/ConversationTurn.tsx";
 import { deriveConversationPresentationRows } from "../src/conversation-presentation.ts";
 import { inlineToolImages } from "../src/ToolImages.tsx";
 import { ToolActivity, type ToolTranscriptItem } from "../src/ToolActivity.tsx";
-import type { TurnView } from "../src/session-view.ts";
+import type { TurnView } from "@pi-cloud/session-client";
 const id = "10000000-0000-4000-8000-000000000002";
 const image = {
   type: "image",

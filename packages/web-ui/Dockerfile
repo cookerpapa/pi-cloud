@@ -6,11 +6,13 @@ COPY tsconfig.base.json ./
 COPY scripts/retry-npm-command.sh scripts/retry-npm-command.sh
 COPY scripts/prepare-json-parser.mjs scripts/prepare-json-parser.mjs
 COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/session-client/package.json packages/session-client/package.json
 COPY packages/web-ui/package.json packages/web-ui/package.json
 RUN sh scripts/retry-npm-command.sh ci --ignore-scripts \
     && node scripts/prepare-json-parser.mjs \
     && node scripts/prepare-json-parser.mjs --check
 COPY packages/protocol/src packages/protocol/src
+COPY packages/session-client/src packages/session-client/src
 COPY packages/web-ui/index.html packages/web-ui/index.html
 COPY packages/web-ui/src packages/web-ui/src
 COPY packages/web-ui/tsconfig.json packages/web-ui/tsconfig.json

@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { uploadRelativePath } from "../packages/protocol/src/user-upload.ts";
 import { parseModelCatalogConfiguration } from "../packages/protocol/src/model-catalog.ts";
 import {

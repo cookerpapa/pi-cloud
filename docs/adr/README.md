@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0321](0321-shared-session-client.md) extracts the shared Session client while
+keeping the Harness in cloud Workers and device execution independent (#38).
+
 [ADR-0320](0320-release-plans-and-artifact-reuse.md) separates affected artifacts,
 serving roles and physical maintenance while retaining release evidence (#33/#37).
 

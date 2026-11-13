@@ -1,5 +1,17 @@
 # Maintained backlog
 
+## Shared clients, local execution and service accounting — in progress
+
+- [ ] #38 / ADR-0321: shared Session transport/state, explicit outbound Linux
+  execution, failure acceptance and publication. No local Harness migration.
+- [x] #38 client extraction: web and Node share HTTP/SSE/state/input identities;
+  two readers and disconnect behavior pass alongside 30 client and 219 web checks.
+  The combined feature's publication and local execution remain pending.
+- [ ] #39: platform service minutes, BYO exemption, managed Android lifecycle
+  evidence and lightweight reclamation timestamps; independent accounting.
+- Heavy verification and provider acceptance run serially. WSL memory and
+  BoxLite's documented host-isolation configuration are outside this work.
+
 ## Decoupling and resource integration — delivered
 
 The seven authorized issues (#30, #31, #33–#37) are implemented, published and

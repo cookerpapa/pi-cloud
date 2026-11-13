@@ -1,6 +1,6 @@
 import type { InputQueueResource } from "@pi-cloud/protocol";
-import type { ComposerPlacement, ComposerSubmissionView } from "./composer-submission.ts";
-import type { SessionViewState, TurnView } from "./session-view.ts";
+import type { ComposerPlacement, ComposerSubmissionView } from "@pi-cloud/session-client";
+import type { SessionViewState, TurnView } from "@pi-cloud/session-client";
 
 export function composerPlacement(
   state: SessionViewState,

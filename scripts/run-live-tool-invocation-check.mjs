@@ -4,7 +4,8 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { readFile, writeFile } from "node:fs/promises";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { ACCEPTED_FACT_TOPIC } from "../packages/event-log/src/index.ts";
 import { toolCommandsForFact } from "../packages/runtime-core/src/tool-invocation-fact.ts";
 

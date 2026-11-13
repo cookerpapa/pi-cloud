@@ -8,7 +8,8 @@ import {
   issuePrivateTenantCredential,
   revokePrivateTenantCredential,
 } from "../packages/control-plane/src/tenant-administration.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import {
   runtimeDirectory,
   runtimeEnvironment,

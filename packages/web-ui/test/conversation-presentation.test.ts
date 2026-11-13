@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deriveConversationPresentationRows } from "../src/conversation-presentation.ts";
-import type { TranscriptItem } from "../src/session-view.ts";
+import type { TranscriptItem } from "@pi-cloud/session-client";
 
 function tool(key: string, sequence: number): Extract<TranscriptItem, { kind: "tool" }> {
   return {

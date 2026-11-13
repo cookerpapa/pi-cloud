@@ -12,7 +12,7 @@ import {
   type SessionViewState,
   type TurnView,
   type TranscriptItem,
-} from "./session-view.ts";
+} from "@pi-cloud/session-client";
 
 export type HistoryPage = {
   turns: readonly TurnView[];

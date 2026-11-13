@@ -3,7 +3,7 @@ import { nativeCubeLifecycleOptions } from "./cube-native-lifecycle-options.mjs"
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { OfficialCubeSandboxRuntimeClient } from "../../packages/sandbox-control/src/cubesandbox-runtime-client.ts";
 import { runtimeDirectory, kubectl, serviceAddress } from "./production-kubernetes.mjs";
 import { armRuntimeRestore } from "./owned-runtime-outage.mjs";

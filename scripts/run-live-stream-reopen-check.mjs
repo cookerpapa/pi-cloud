@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
-import { SseFrameParser } from "../packages/web-ui/src/sse.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
+import { SseFrameParser } from "@pi-cloud/session-client";
 import { withChromePage } from "./lib/chrome-cdp.mjs";
 
 if (process.env.PI_CLOUD_LIVE_STREAM_REOPEN_CHECK !== "1")

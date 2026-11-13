@@ -4,7 +4,8 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "kysely";
 import { createDatabase } from "../packages/database/src/index.ts";
-import { PiCloudApi, newIdempotencyKey } from "../packages/web-ui/src/api.ts";
+import { PiCloudApi } from "../packages/web-ui/src/api.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { serviceAddress, kubectl } from "./lib/production-kubernetes.mjs";
 
 if (process.env.PI_CLOUD_LIVE_CREATION_RECOVERY_CHECK !== "1")

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { sql } from "kysely";
-import { newIdempotencyKey } from "../../packages/web-ui/src/api.ts";
-import { streamSessionEvents } from "../../packages/web-ui/src/sse.ts";
+import { newIdempotencyKey } from "@pi-cloud/session-client";
+import { streamSessionEvents } from "@pi-cloud/session-client";
 import {
   createInitialSessionView,
   sessionViewReducer,
-} from "../../packages/web-ui/src/session-view.ts";
+} from "@pi-cloud/session-client";
 import { crashOwnedWorker } from "./owned-worker-crash.mjs";
 import { kubectl, podFor, serviceAddress, signalService } from "./production-kubernetes.mjs";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";
