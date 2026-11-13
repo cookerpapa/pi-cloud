@@ -15,6 +15,13 @@ export async function localNamespaceArguments(options: {
   if (process.platform !== "linux")
     throw new Error("Local execution currently requires Linux and Bubblewrap 0.9.0");
   const project = await realpath(options.project);
+  try {
+    const privateRuntime = await realpath(resolve(options.repository, "deploy/production/runtime"));
+    if (privateRuntime === project || privateRuntime.startsWith(project + "/"))
+      throw new Error("Select a project without platform runtime credentials");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
   if (project === "/" || project === (await realpath(homedir())))
     throw new Error("Select a project directory, not the host root or home");
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535)

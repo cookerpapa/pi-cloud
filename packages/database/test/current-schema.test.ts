@@ -163,7 +163,7 @@ describe("current PiCloud schema", () => {
         "model_invocations",
         "model_metering_events",
         "model_rate_versions",
-        "resource_lifecycle_sources",
+        "compute_service_periods",
         "resource_metering_resources",
         "resource_metering_events",
         "resource_rate_versions",

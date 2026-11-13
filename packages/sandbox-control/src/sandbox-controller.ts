@@ -406,6 +406,7 @@ export class SandboxController {
   readonly #toolBindings = new Map<string, ManagedToolBinding>();
   readonly #warm = new Map<string, ManagedElasticRuntime>();
   readonly #terminals = new Map<string, ManagedWorkspaceTerminal>();
+  readonly #serviceObservations = new Map<string, { at: number; available: boolean }>();
   readonly #developmentEnvironments = new Map<string, ManagedDevelopmentEnvironment>();
   readonly #admission: SandboxAdmission;
   readonly #workspaceRuntimeProvisioningTails = new Map<string, Promise<void>>();
@@ -486,6 +487,7 @@ export class SandboxController {
       targets: () => this.#runtimeHealthTargets(),
       inventory: () => this.#provider.observeRuntimeInventory(),
       onError: (error) => this.#onMaintenanceError?.(error),
+      observations: (values, at) => this.#recordServiceObservations(values, at),
       ...(options.runtimeProbeConcurrency === undefined
         ? {}
         : { concurrency: options.runtimeProbeConcurrency }),
@@ -609,13 +611,14 @@ export class SandboxController {
     const intent = await this.#stateRepository.closeAllocation(id, kind);
     if (kind !== "terminal") await this.#bindings.confirmPhysicalClosure(id);
     if (intent.status === "never_issued" && !handle && !capsule) return;
+    if (handle && handle.activationId !== id)
+      throw new SandboxControlError(
+        "cubesandbox_allocation_identity_unavailable",
+        "Allocation handle changed",
+        false,
+      );
+    await this.#recordReclamation(id, "dispatched");
     if (handle) {
-      if (handle.activationId !== id)
-        throw new SandboxControlError(
-          "cubesandbox_allocation_identity_unavailable",
-          "Allocation handle changed",
-          false,
-        );
       await this.#provider.destroy(handle);
     } else if (capsule) await this.#provider.destroyPersistentCapsule(capsule, id, assignment);
     else
@@ -627,6 +630,62 @@ export class SandboxController {
         },
         intent.status === "issued" ? intent.receipt : undefined,
       );
+    await this.#recordReclamation(id, "confirmed");
+  }
+
+  async #recordReclamation(id: string, phase: "dispatched" | "confirmed"): Promise<void> {
+    try {
+      const facts = await this.#stateRepository.recordReclamation?.(
+        id,
+        phase,
+        new Date(this.#clock()),
+      );
+      const attempts = Number(facts?.attempts ?? 1);
+      if (phase === "confirmed" || attempts <= 1 || (attempts & (attempts - 1)) === 0)
+        process.stdout.write(
+          JSON.stringify({ event: "sandbox.reclamation", allocationId: id, phase, ...facts }) +
+            "\n",
+        );
+    } catch (error) {
+      this.#onMaintenanceError?.(error);
+    }
+  }
+
+  async #recordServiceObservations(
+    values: ReadonlyMap<string, boolean>,
+    at: number,
+  ): Promise<void> {
+    if (!this.#stateRepository.recordComputeServiceObservations) return;
+    const targets = this.#runtimeHealthTargets();
+    const current = new Set(targets.map((target) => target.allocationId));
+    for (const id of this.#serviceObservations.keys())
+      if (!current.has(id)) this.#serviceObservations.delete(id);
+    const observations = targets.flatMap((target) => {
+      const available = values.get(target.id),
+        previous = this.#serviceObservations.get(target.allocationId);
+      if (
+        available === undefined ||
+        (previous &&
+          (at <= previous.at ||
+            (previous.available === available &&
+              Math.floor(at / 60_000) === Math.floor(previous.at / 60_000))))
+      )
+        return [];
+      this.#serviceObservations.set(target.allocationId, { at, available });
+      return [{ id: target.allocationId, at, available }];
+    });
+    if (!observations.length) return;
+    let applied: readonly string[] = [];
+    try {
+      applied = await this.#stateRepository.recordComputeServiceObservations(observations);
+    } finally {
+      for (const observation of observations)
+        if (
+          !applied.includes(observation.id) &&
+          this.#serviceObservations.get(observation.id)?.at === observation.at
+        )
+          this.#serviceObservations.delete(observation.id);
+    }
   }
 
   async recoverPersistentDevelopmentEnvironments(): Promise<number> {
@@ -3430,7 +3489,7 @@ export class SandboxController {
     return this.#runtimeHealth.evidence(targetId, observedAt);
   }
 
-  #runtimeHealthTargets(): Array<RuntimeHealthTarget & { tenantId: string }> {
+  #runtimeHealthTargets(): Array<RuntimeHealthTarget & { tenantId: string; allocationId: string }> {
     const runtimes = new Set([
       ...this.#warm.values(),
       ...[...this.#toolBindings.values()].flatMap((binding) =>
@@ -3451,6 +3510,13 @@ export class SandboxController {
             fail: (error: Error) => this.#quarantineDevelopmentEnvironment(environment, error),
           })),
       );
+    for (const terminal of this.#terminals.values()) {
+      if (
+        !terminal.closing &&
+        !candidates.some((value) => value.handle.activationId === terminal.handle.activationId)
+      )
+        candidates.push({ handle: terminal.handle, fail: async () => {} });
+    }
     return candidates.flatMap((candidate) => {
       let id: string;
       try {
@@ -3464,6 +3530,7 @@ export class SandboxController {
       return [
         {
           tenantId: candidate.handle.assignment.tenantId,
+          allocationId: candidate.handle.activationId,
           id,
           observe: () => this.#provider.observeRuntime(candidate.handle),
           fail: () =>

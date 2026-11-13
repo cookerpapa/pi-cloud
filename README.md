@@ -2,7 +2,7 @@
 
 Self-hosted infrastructure for managed agents, powered by Pi.
 
-Built around Pi Durable 1.0's public embedded SDK. Coding-agent loops run in trusted Workers; file and shell tools
+Built around Pi Durable 1.0's public embedded SDK. Coding-agent loops run in trusted Workers; cloud file and shell tools
 run in separate KVM guests, with CubeSandbox as the default provider. Conversations and retained attachments survive
 Worker replacement and Workspace changes.
 
@@ -56,6 +56,12 @@ There is no automatic provider fallback or emulator-provisioning UI. See the
 - **Delegation and automation:** native child Conversations within one Session
   family, compact child progress, and scheduled inputs that start a new Run when
   the conversation is idle. Ultra enables proactive delegation.
+- **Independent clients and local execution:** a reusable Session client for web
+  and other interfaces, plus an explicit outbound Linux executor. Agent loops
+  remain in cloud Workers. [Local setup and limits](docs/LOCAL_EXECUTION.md).
+- **Resource statements:** minute-level platform compute service, explicit BYO
+  exemption, independent model/storage usage and lightweight reclamation timings.
+  [Accounting contract](docs/RESOURCE_BILLING.md).
 - **Recovery:** durable accepted input, ordered writer handoff, native continuation
   and explicit uncertainty for interrupted external effects. Cancelled visible
   assistant text is retained for later context through native context edits.
@@ -89,7 +95,7 @@ Control Tool completion -> Kafka replies -> authorized Pi Worker
 Workspace files -> independent Workspace storage (local XFS)
 Retained attachment originals -> private S3 objects; Kafka/PG carry references
 Model / storage receipts -> independent Metering service -> PG ledger
-Provider observations -> independent Metering -> PG ledger (unverified time unpriced)
+Resource manager -> PG service periods -> independent Metering -> minute receipts
 ```
 
 | Component | Responsibility |
@@ -111,8 +117,9 @@ cross-request continuation. Existing installations use the reviewed provider
 configuration conversion in the [component release procedure](docs/COMPONENT_RELEASE.md).
 [Model metering](docs/MODEL_BILLING.md) records request receipts separately from
 conversation history, with versioned prices and an informational Model costs page.
-The independent metering service collects native compute observations and separately receives persistent Workspace capacity receipts; [resource statements](docs/RESOURCE_BILLING.md) preserve
-unconfirmed gaps. Payment collection and production tariffs are not enabled.
+The independent metering service settles platform service minutes from PG and
+separately receives persistent Workspace capacity receipts; [resource statements](docs/RESOURCE_BILLING.md) preserve
+unconfirmed gaps and exempt user-provided compute. Payment collection and production tariffs are not enabled.
 
 The `session-api` process owns public requests and relays live views from the
 single Session Projector. It can be replaced without draining the Worker family.
@@ -209,8 +216,9 @@ The stock Cube integration in [#26](https://github.com/cookerpapa/pi-managed-age
 is deployed using unchanged, digest-pinned official v0.7.3 images. The owner accepted
 the reviewed findings for those four exact images under [ADR-0310](docs/adr/0310-stock-cube-release-exception.md);
 other release gates remain enforced. Serial deployment and acceptance are recorded in the
-[delivery report](docs/reports/stock-cube-source-20261111.md). Stock compute observations
-are unconfirmed/unpriced; model and Workspace-capacity metering remain independent.
+[delivery report](docs/reports/stock-cube-source-20261111.md). Physical compute observations do not establish continuous uptime. ADR-0323
+prices an explicit platform service contract; model and Workspace-capacity
+metering remain independent.
 
 The repository contains native SDK contract tests, PostgreSQL/Kafka integration
 checks, browser layout tests, deterministic fault scenarios and opt-in live

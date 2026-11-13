@@ -2,8 +2,7 @@ import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createDatabase } from "@pi-cloud/database";
 import { createMeteringApplication } from "./http.ts";
-import { CubeLifecycleSource } from "./cube-lifecycle-source.ts";
-import { LifecycleCollector } from "./lifecycle-collector.ts";
+import { ServiceMinuteCollector } from "./service-minute-collector.ts";
 
 async function secretFile(name: string): Promise<string> {
   const file = process.env[name];
@@ -22,29 +21,7 @@ export async function startMetering() {
     checkoutTimeoutMs: 10_000,
   });
   const application = createMeteringApplication(database, token);
-  const sourceUrl = process.env.PI_CLOUD_SANDBOX_LIFECYCLE_URL;
-  const collector =
-    sourceUrl && process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
-      ? new LifecycleCollector(
-          database,
-          new CubeLifecycleSource({
-            id: `cubesandbox:${process.env.PI_CLOUD_SANDBOX_DOMAIN_ID ?? "sandbox-domain-0001"}`,
-            database,
-            ...(process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE
-              ? {
-                  lifecycleRedisPassword: await secretFile(
-                    "PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE",
-                  ),
-                }
-              : {}),
-            ...(process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL
-              ? { lifecycleRedisUrl: process.env.PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL }
-              : {}),
-            url: sourceUrl,
-            apiKey: await secretFile("PI_CLOUD_CUBESANDBOX_API_KEY_FILE"),
-          }),
-        )
-      : undefined;
+  const collector = new ServiceMinuteCollector(database);
   let closing: Promise<void> | undefined;
   const close = () =>
     (closing ??= (async () => {

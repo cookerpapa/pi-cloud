@@ -5,7 +5,10 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 
 | Source | Destination | Runtime access / policy | Purpose |
 | --- | --- | --- | --- |
-| Browser | Web/Session API | yes | authenticated product API, history/statements and SSE |
+| Browser / desktop client | Web/Session API | yes | authenticated product API, history/statements and snapshot-first SSE |
+| Local connector | Device link through Web ingress | outbound WSS; device-scoped token | bounded executor admission/cancellation transport; no command replay |
+| Session runtime / resource management | Device link | private HTTP | existing executor transport; separate cloud management credential |
+| Local receiver | Tool completion HTTPS | operation-scoped capability | original result/image destination, independent of the link |
 | Session API | PostgreSQL | yes | Run admission and scoped public reads |
 | Session API | Session runtime | yes | authenticated private live-view relay |
 | Session runtime | PostgreSQL | yes | projection, admission and cold resource-view bootstrap; no maintenance Worker/lease polling |
@@ -24,7 +27,7 @@ firewall denial. Enforce deployment isolation with the configured networks/CNI.
 | Tool completion | Session runtime | yes | disposable progress HTTP observations |
 | Volume gateway | PostgreSQL / Workspace storage / quota helper | yes | revision/Volume coordination and initial capacity enforcement |
 | CLIProxyAPI / Workspace quota helper | Metering receiver | yes | model/storage receipts independently of management |
-| Metering collector | Cube lifecycle API | yes | bounded raw history and gap-aware catch-up |
+| Metering collector | PostgreSQL service periods | yes | complete service minutes and atomic checkpoints; no native provider credentials |
 | Metering receiver | PostgreSQL | yes | idempotent accounting ledger and immutable price versions |
 | Cube guest | egress proxy | optional | governed public HTTP/HTTPS |
 | Cube guest | configured company CIDRs | optional | direct debugging/service access |

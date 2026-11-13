@@ -1,4 +1,3 @@
-import { nativeCubeLifecycleOptions } from "./lib/cube-native-lifecycle-options.mjs";
 // Owned, bounded live evidence for source compute/storage receipts and kernel
 // Workspace quotas. No shared-service outage, price changes or user resources.
 // Run after matched deployment:
@@ -15,8 +14,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { sql } from "kysely";
-import { CubeLifecycleSource } from "../packages/accounting/src/cube-lifecycle-source.ts";
-import { LifecycleCollector } from "../packages/accounting/src/lifecycle-collector.ts";
+import { ServiceMinuteCollector } from "../packages/accounting/src/service-minute-collector.ts";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { createPrivateTenant } from "../packages/control-plane/src/tenant-administration.ts";
 import { PiCloudApi } from "../packages/web-ui/src/api.ts";
@@ -424,16 +422,16 @@ try {
       ) &&
       rows.some(
         (row) =>
-          row.payload.quality === "unconfirmed" &&
+          row.payload.basis === "platform_service_minute_v1" &&
           Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
           row.payload.resource.kind === "compute",
       ) &&
       rows
     );
-  }, "Unpriced native compute observations and confirmed 1 GiB retention receipts");
+  }, "Confirmed service minutes and confirmed 1 GiB retention receipts");
   const firstCompute = initialRows.find(
     (row) =>
-      row.payload.quality === "unconfirmed" &&
+      row.payload.basis === "platform_service_minute_v1" &&
       Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
       row.payload.resource.kind === "compute",
   );
@@ -450,7 +448,7 @@ try {
     quantity: firstCompute.payload.quantity,
     beforeAnyRun: true,
     quality: firstCompute.payload.quality,
-    nativeObservationsUnpriced: true,
+    platformServiceMinutes: true,
   };
   const firstStorage = initialRows.find(
     (row) => positiveConfirmed(row) && row.payload.resource.kind === "workspace",
@@ -738,7 +736,7 @@ try {
   const duplicates = [
     pausedRows.find(
       (row) =>
-        row.payload.quality === "unconfirmed" &&
+        row.payload.basis === "platform_service_minute_v1" &&
         Date.parse(row.payload.to) > Date.parse(row.payload.from) &&
         row.payload.resource.kind === "compute",
     ),
@@ -753,54 +751,21 @@ try {
     });
     assert.equal(ack.accepted, 1);
   }
-  const lifecycleSource = await db
-    .selectFrom("resource_lifecycle_sources")
-    .selectAll()
-    .where("id", "=", firstCompute.payload.sourceId)
-    .executeTakeFirstOrThrow();
-  assert(lifecycleSource.epoch && BigInt(lifecycleSource.after_sequence) > 0n);
-  const cluster = JSON.parse(
-    await readFile(`${runtimeDirectory}/cubesandbox/cluster.json`, "utf8"),
-  );
-  const lifecycleApiKey = (
-    await readFile(`${runtimeDirectory}/secrets/cubesandbox-api-key`, "utf8")
-  ).trim();
-  secrets.push(lifecycleApiKey);
-  const lifecycle = new CubeLifecycleSource({
-    database: db,
-    ...nativeCubeLifecycleOptions(),
-    id: lifecycleSource.provider,
-    url: `http://${cluster.api.host}:${cluster.api.port}`,
-    apiKey: lifecycleApiKey,
-  });
-  const rawPage = await lifecycle.read(
-    lifecycleSource.node_id,
-    {
-      epoch: lifecycleSource.epoch,
-      sequence: String(lifecycleSource.after_sequence),
-      ...(lifecycleSource.source_position
-        ? { sourcePosition: lifecycleSource.source_position }
-        : {}),
-    },
-    abort.signal,
-  );
-  assert.equal(rawPage.epoch, lifecycleSource.epoch);
-  const collector = new LifecycleCollector(db, lifecycle);
+  const collector = new ServiceMinuteCollector(db);
+  const { rows: servicePeriods } =
+    await sql`select id,resource_key,settled_through from compute_service_periods
+    where resource_key=${"compute:" + firstCompute.payload.resource.resourceId}`.execute(db);
+  assert(servicePeriods.length > 0, "Missing durable service periods");
   try {
-    // A stock observation page is fresh, not replayable provider history. A
-    // collector with an obsolete PG cursor still cannot commit that page;
-    // compute receipts cannot be injected through the Workspace receipt API.
     for (let repeat = 0; repeat < 2; repeat++)
-      assert.equal(await collector.apply(lifecycleSource.id, undefined, rawPage), false);
+      for (const period of servicePeriods) await collector.settle(period.id, period.resource_key);
   } finally {
     await collector.close();
   }
   report.lifecycle = {
-    sourceId: lifecycleSource.id,
-    epoch: rawPage.epoch,
-    observedHigh: rawPage.high,
-    accountingCursor: String(lifecycleSource.after_sequence),
-    stalePagesRejected: 2,
+    sourceId: "platform-service-v1",
+    periods: servicePeriods.length,
+    repeatedSettlementRounds: 2,
   };
   const originIds = duplicates.map((row) => row.id);
   const { rows: duplicated } = await sql`select id,payload_hash from resource_metering_events

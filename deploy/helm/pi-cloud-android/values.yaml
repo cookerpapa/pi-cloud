@@ -2,6 +2,7 @@
 targetId: ""
 nodeName: ""
 vsockCid: 20003
+compute: { cpus: 2, memoryMiB: 3072 }
 artifactDirectory: ""
 hostDirectory: ""
 stateDirectory: ""

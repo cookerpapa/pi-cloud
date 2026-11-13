@@ -77,6 +77,7 @@ export const PutResourceBackendSchema = Type.Object(
     location: name,
     expectedRevision: Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
     state: Type.Union([Type.Literal("active"), Type.Literal("draining"), Type.Literal("disabled")]),
+    computeBilling: Type.Optional(Type.Union([Type.Literal("platform"), Type.Literal("external")])),
     configuration: Type.Optional(ResourceBackendConfigurationSchema),
   },
   { additionalProperties: false },
@@ -90,6 +91,7 @@ export type ResourceBackendResource = {
   revision: number;
   state: "active" | "draining" | "disabled";
   provider: "cubesandbox" | "boxlite";
+  computeBilling: "platform" | "external";
   templates: readonly {
     id: string;
     name: string;
@@ -101,7 +103,17 @@ export type ResourceBackendResource = {
 };
 export const RESOURCE_BACKENDS_INTERNAL_PATH = "/internal/v1/resource-backends";
 const RegisterDeviceSchema = Type.Object(
-  { targetId: UuidSchema, name, endpoint },
+  {
+    targetId: UuidSchema,
+    name,
+    endpoint,
+    computeService: Type.Optional(
+      Type.Union([
+        Type.Null(),
+        Type.Object({ billing: Type.Literal("platform") }, { additionalProperties: false }),
+      ]),
+    ),
+  },
   { additionalProperties: false },
 );
 export type RegisterResourceDevice = Static<typeof RegisterDeviceSchema>;
@@ -128,7 +140,7 @@ export function parseRegisterResourceDevice(value: unknown): RegisterResourceDev
     (url.pathname !== "/" && !/^\/targets\/[0-9a-f-]{36}$/.test(url.pathname))
   )
     throw new TypeError("Use a device endpoint origin");
-  return { ...value, endpoint: url.origin };
+  return { ...value, endpoint: url.origin + (url.pathname === "/" ? "" : url.pathname) };
 }
 export function parsePutResourceBackend(value: unknown): PutResourceBackend {
   if (!Value.Check(PutResourceBackendSchema, value))

@@ -117,23 +117,10 @@ delete completion. Android keeps its separate existing-device semantics.
 Run source/PG/transport checks and image builds serially on the WSL host, then
 real model Tools/images, Worker handoff to original replies, API-child restart,
 Guest/VM loss, cancellation, terminal/preview, expiry and retained Workspace
-checks. Keep Android device acceptance separate and serial. Compute observations
-remain unconfirmed/unpriced; model and capacity billing retain their own evidence.
-BoxLite currently registers allocation identity/size but has no compute-observation
-collector. It therefore does not accumulate a priced compute duration. The owned
-acceptance cleanup distinguishes this absent producer from pending Cube receipts,
-and requires confirmed Workspace purge before discarding test registrations.
-Do not infer production readiness from the earlier SDK-only experiment.
-
-The maintained node and lifecycle checks use disposable owned fixtures:
-
-```sh
-PI_CLOUD_LIVE_BOXLITE_CHECK=1 node --import tsx scripts/run-boxlite-node-live-check.mjs PRIVATE_NODE_REPORT
-PI_CLOUD_LIVE_BOXLITE_CHECK=1 node --import tsx scripts/run-live-boxlite-lifecycle-check.mjs PRIVATE_LIFECYCLE_REPORT
-```
-
-The lifecycle check advances only its own settled Session's PG idle deadline.
-It verifies provider deletion and retained Workspace recovery without claiming
-an actual 30-minute elapsed-time sample. Production retention policy is unchanged.
-Run these serially with the existing model Tool, Worker handoff, cancellation,
-browser/image and lost-reply acceptance scripts.
+checks. Keep Android device acceptance separate and serial. ADR-0323 prices
+platform-provided service minutes from the resource owner's readiness, passive
+observations and cutoff facts. BoxLite uses the same collector as Cube; it does
+not need an embedded compute producer. External/BYO backends remain exempt.
+Physical uptime is not inferred as exact, and missing evidence leaves gaps
+unpriced. [Service accounting](RESOURCE_BILLING.md) defines the contract and
+reclamation diagnostics; publication status is tracked in BACKLOG.

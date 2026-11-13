@@ -171,10 +171,12 @@ protocol, record the decision under `docs/adr/` before implementation.
   ordinary Tool host and HTTPS completion as independent maintained roles.
   The public API relays the single execution owner's live view without acquiring
   a Session consumer or execution authority. Cubelet contains no Node completion
-  process, Kafka/PG/S3 client or compute-price/interval producer. Independent
-  metering commits provider observations and opaque cursors with derived receipts.
-  Stock Cube cannot prove continuous physical coverage: sampled compute intervals
-  are unconfirmed/unpriced. Model and capacity pricing retain their own evidence.
+  process, Kafka/PG/S3 client or compute-price/interval producer. Under ADR-0323 independent
+  metering consumes platform service periods, settles complete eligible minutes
+  and exempts BYO compute. Native observations do not prove continuous physical
+  uptime; gaps stay unpriced and cleanup after the billing cutoff is platform cost.
+  Resource-owner facts and per-resource receipt/checkpoint transactions remain
+  separate from lifecycle authority. Model and capacity pricing retain their own evidence.
   Accounting never becomes resource authority.
 - Under ADR-0315 ordinary control Tools do not query Worker lease validity.
   Under ADR-0316 role loaders, secret mounts and image source subsets follow their
@@ -194,6 +196,10 @@ protocol, record the decision under `docs/adr/` before implementation.
   fallback; document and verify their actual capabilities and isolation.
 - Do not mount the Docker socket, host home directory, or long-lived provider
   credentials into an agent sandbox.
+- ADR-0321 keeps the reusable Session client independent of device execution.
+  ADR-0322 authorizes explicit local Linux execution through the validated
+  Bubblewrap boundary and outbound device link. Pi Agent loops remain in cloud
+  Workers; this is not a silent fallback or a claim of KVM-equivalent isolation.
 - Do not add a second event broker, cache, workflow scheduler or cluster layer
   merely to make the architecture look larger. Kafka, PostgreSQL and Kubernetes
   have bounded current roles; additions require a demonstrated gap and the

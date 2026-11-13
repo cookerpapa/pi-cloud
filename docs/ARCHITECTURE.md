@@ -662,14 +662,15 @@ configuration, credentials and retained Workspace assets are preserved.
 ## Independent usage accounting
 
 Provider model receipts and enforced Workspace capacity intervals reach the
-independent receiver directly. Stock Cube inventory and native lifecycle events
-are observations, not a continuous physical accounting journal. A bounded native
-resource mapping is recorded with creation; the independent collector atomically
-commits observation pages and cursors in PG. Sampled compute intervals remain
-unconfirmed and unpriced under ADR-0309. Model and Workspace storage retain their
-existing pricing evidence. Accounting never acquires resource lifecycle authority.
-See [resource accounting](RESOURCE_BILLING.md) and
-[Workspace capacity](adr/0301-workspace-capacity-enforcement.md).
+independent receiver directly. Under ADR-0323 resource management records
+platform-provided service availability and cutoff facts in PG; independent
+metering settles complete service minutes with immutable receipts and prices.
+Cube, BoxLite and explicitly enrolled managed Android share that contract.
+User-provided devices/backends are exempt from compute charges. Physical
+observations are not relabelled as continuous uptime, and uncertain gaps remain
+unpriced. Reclamation request/adapter/confirmation times are bounded diagnostics,
+not authorization to release resources. Accounting has no lifecycle authority.
+See [resource accounting](RESOURCE_BILLING.md).
 
 Workspace bytes stay in the configured persistence backend. PG capacity/revision/pending
 fields represent requested grow-only policy; the storage helper acknowledges

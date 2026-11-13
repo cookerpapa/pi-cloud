@@ -25,6 +25,7 @@ type TargetRow = {
   bound_session_id: string | null;
   admission_generation: string;
   enabled: boolean;
+  compute_service: unknown | null;
 };
 export type ExecutionBindingRow = {
   id: string;
@@ -83,6 +84,7 @@ export class ExecutionTargetService {
         name: r.name,
         capabilities: r.capabilities,
         boundSessionId: r.bound_session_id,
+        computeBilling: r.compute_service ? "platform" : "external",
       })),
     };
   }

@@ -82,7 +82,6 @@ bootstrap:
   maximumSessions: null
 
 metering:
-  sourcePorts: [443, 6379]
   replicas: 1
   resources:
     requests: { cpu: 50m, memory: 128Mi }

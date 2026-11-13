@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0323](0323-platform-service-minutes.md) defines platform-provided compute
+service minutes, BYO exemption and separate reclamation evidence (#39).
+
 [ADR-0322](0322-outbound-local-execution.md) keeps local Linux execution behind
 the existing destination contract with an outbound link and explicit isolation.
 

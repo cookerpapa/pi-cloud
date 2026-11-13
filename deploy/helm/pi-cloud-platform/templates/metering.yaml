@@ -48,13 +48,6 @@ spec:
           env:
             - { name: NODE_ENV, value: production }
             - { name: HOST, value: 0.0.0.0 }
-            - { name: PI_CLOUD_SANDBOX_LIFECYCLE_URL, value: {{ .Values.sandboxPlane.cube.apiUrl | quote }} }
-            - { name: PI_CLOUD_SANDBOX_DOMAIN_ID, value: {{ .Values.sandboxPlane.domainId | quote }} }
-            {{- if .Values.sandboxPlane.cube.lifecycleRedisSecret.name }}
-            - { name: PI_CLOUD_CUBE_LIFECYCLE_REDIS_PASSWORD_FILE, value: /run/pi-cloud-native/redis-password }
-            {{- end }}
-            - { name: PI_CLOUD_CUBE_LIFECYCLE_REDIS_URL, value: {{ .Values.sandboxPlane.cube.lifecycleRedisUrl | quote }} }
-            - { name: PI_CLOUD_CUBESANDBOX_API_KEY_FILE, value: /run/pi-cloud-secrets/cubesandbox-api-key }
             - { name: DATABASE_URL_FILE, value: /run/pi-cloud-secrets/database-url }
             - { name: PI_CLOUD_METERING_TOKEN_FILE, value: /run/pi-cloud-secrets/metering-key }
           readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, timeoutSeconds: 3 }
@@ -65,21 +58,10 @@ spec:
             capabilities: { drop: [ALL] }
           resources: {{- toYaml .Values.metering.resources | nindent 12 }}
           volumeMounts:
-            {{- if .Values.sandboxPlane.cube.lifecycleRedisSecret.name }}
-            - { name: native-lifecycle-secret, mountPath: /run/pi-cloud-native/redis-password, subPath: redis-password, readOnly: true }
-            {{- end }}
-            - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/cubesandbox-api-key, subPath: cubesandbox-api-key, readOnly: true }
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/database-url, subPath: {{ .Values.external.database.secretKey }}, readOnly: true }
             - { name: platform-secrets, mountPath: /run/pi-cloud-secrets/metering-key, subPath: metering-ingest-token, readOnly: true }
             - { name: tmp, mountPath: /tmp }
       volumes:
-        {{- if .Values.sandboxPlane.cube.lifecycleRedisSecret.name }}
-        - name: native-lifecycle-secret
-          secret:
-            secretName: {{ .Values.sandboxPlane.cube.lifecycleRedisSecret.name }}
-            defaultMode: 288
-            items: [{ key: {{ .Values.sandboxPlane.cube.lifecycleRedisSecret.key }}, path: redis-password }]
-        {{- end }}
         - name: platform-secrets
           secret: { secretName: {{ .Values.global.existingSecret }}, defaultMode: 288 }
         - name: tmp
@@ -117,16 +99,10 @@ spec:
             matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
       ports:
         - { protocol: TCP, port: 5432 }
-        {{- range $.Values.metering.sourcePorts }}
-        - { protocol: TCP, port: {{ . }} }
-        {{- end }}
     {{- range .Values.networkPolicy.externalEgressCidrs }}
     - to: [{ ipBlock: { cidr: {{ . | quote }} } }]
       ports:
         - { protocol: TCP, port: 5432 }
-        {{- range $.Values.metering.sourcePorts }}
-        - { protocol: TCP, port: {{ . }} }
-        {{- end }}
     {{- end }}
 {{- end }}
 {{- end }}

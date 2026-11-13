@@ -70,36 +70,6 @@ async function boundedRead(url, token, maximum, signal) {
   return Buffer.concat(parts).toString("utf8");
 }
 
-export function lifecycleProviderId(pod) {
-  const domain = pod.spec?.containers
-    ?.find((container) => container.name === "metering")
-    ?.env?.find((entry) => entry.name === "PI_CLOUD_SANDBOX_DOMAIN_ID")?.value;
-  assert(
-    typeof domain === "string" && domain.length > 0,
-    "Metering source identity is unavailable",
-  );
-  return `cubesandbox:${domain}`;
-}
-
-/** BoxLite compute is registered but currently has no observation producer.
- * Only a positively purged owned test Workspace can retire those unpriced
- * registrations. A newly installed collector must join the delivery inventory. */
-export function assertUncollectedComputeClosed({
-  sourceId,
-  registeredBoxliteBackend,
-  workspacePurged,
-  collectorExists,
-}) {
-  assert(
-    typeof sourceId === "string" &&
-      /^boxlite:[A-Za-z0-9_.-]{1,64}$/.test(sourceId) &&
-      registeredBoxliteBackend === true,
-    "Unknown compute receipt producer",
-  );
-  assert(!collectorExists, "BoxLite collector must join the receipt delivery inventory");
-  assert(workspacePurged, "Uncollected compute still has an unconfirmed Workspace closure");
-}
-
 /** Operator-only private reader. Kubernetes is used only to discover existing
  * source Pods/Services. Source calls only read metrics/history and the accounting cursor; no lifecycle mutation. */
 export async function createDeployedSourceDeliveryReader({ database, tenantId }) {
@@ -124,54 +94,22 @@ export async function createDeployedSourceDeliveryReader({ database, tenantId })
     const providerPod = onePod(pods, "cli-proxy-api"),
       quotaPod = onePod(pods, "workspace-quota"),
       meteringPod = onePod(pods, "metering");
-    const provider = lifecycleProviderId(meteringPod);
-    const cursor = await database
-      .selectFrom("resource_lifecycle_sources")
-      .select(["epoch", "checked_at", "failed_at"])
-      .where("provider", "=", provider)
-      .where("node_id", "=", "observations")
-      .executeTakeFirst();
     const {
       rows: [owned],
     } = await sql`select count(*)::int as resources,
-      count(*) filter(where lifecycle_state->'event'->>'state' is distinct from 'absent')::int as pending
-      from resource_metering_resources where tenant_id=${tenantId}::uuid and kind='compute'
-      and provider_binding->>'sourceId'=${provider}`.execute(database);
-    const { rows: uncollected } = await sql`
-      select r.provider_binding->>'sourceId' as source_id,
-        bool_and(w.storage_purged_at is not null) as workspace_purged,
-        bool_and(exists(select 1 from sandbox_domains d
-          where d.backend_catalog->>'provider'='boxlite'
-            and 'boxlite:'||d.id=r.provider_binding->>'sourceId')) as registered_boxlite_backend,
-        bool_or(exists(select 1 from resource_lifecycle_sources s
-          where s.provider=r.provider_binding->>'sourceId')) as collector_exists
-      from resource_metering_resources r left join workspaces w
-        on w.id=r.workspace_id and w.tenant_id=r.tenant_id
-      where r.tenant_id=${tenantId}::uuid and r.kind='compute'
-        and (r.provider_binding->>'sourceId') is distinct from ${provider}
-      group by r.provider_binding->>'sourceId'`.execute(database);
-    for (const row of uncollected)
-      assertUncollectedComputeClosed({
-        sourceId: row.source_id,
-        registeredBoxliteBackend: row.registered_boxlite_backend,
-        workspacePurged: row.workspace_purged === true,
-        collectorExists: row.collector_exists,
-      });
-    // Stock observations and derived receipts commit in one PG transaction.
-    // Once an owned resource is absent, future pages exclude it; stale pages
-    // cannot pass the collector's cursor CAS. No Cubelet journal remains to drain.
+      count(*) filter(where exists(select 1 from compute_service_periods p where p.resource_key=r.id and (p.ended_at is null or p.needs_settlement)))::int as pending
+      from resource_metering_resources r where tenant_id=${tenantId}::uuid and kind='compute'`.execute(
+      database,
+    );
+    // Source closure and final settlement share durable PG boundaries. A client
+    // checks the committed pending state, not a fabricated provider cursor.
     const compute = [
       {
-        sourceId: `${provider}:observations`,
+        sourceId: "platform-service-v1",
         podId: meteringPod.metadata.uid,
-        epoch: cursor?.epoch ?? "uninitialized",
-        checkedAt: cursor?.checked_at ? new Date(cursor.checked_at).getTime() : 0,
-        healthy: Boolean(
-          cursor?.epoch &&
-          cursor.checked_at &&
-          !cursor.failed_at &&
-          Date.now() - new Date(cursor.checked_at).getTime() <= 180000,
-        ),
+        epoch: "service-minute-v1",
+        checkedAt: Date.now(),
+        healthy: true,
         resources: owned.resources,
         pending: owned.pending,
       },

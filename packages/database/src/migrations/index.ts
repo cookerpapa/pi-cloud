@@ -1,3 +1,4 @@
+import * as computeServicePeriods from "./224_compute_service_periods.ts";
 import * as localExecutionTargets from "./223_local_execution_targets.ts";
 import * as resourceBackends from "./222_resource_backends.ts";
 import * as skillInstallationRevisions from "./220_skill_installation_revisions.ts";
@@ -415,6 +416,7 @@ export const migrationProvider: MigrationProvider = {
       "221_workspace_persistence": workspacePersistence,
       "222_resource_backends": resourceBackends,
       "223_local_execution_targets": localExecutionTargets,
+      "224_compute_service_periods": computeServicePeriods,
     };
   },
 };

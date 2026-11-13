@@ -105,3 +105,15 @@ are not the same pool; attachment verifies the pool/generation from ADR-0318.
 Registration cannot create shared storage, route across a disconnected network,
 or make untested hosted-provider persistence guarantees true. The supported Web
 form and protocol distinguish those limits from actual provisioned capabilities.
+
+## Compute service eligibility
+
+`computeBilling` is platform or external on the backend catalog. New registrations
+default to external; administrators explicitly offer platform compute. The choice
+is frozen when a new allocation begins. Changing catalog metadata does not
+reprice existing allocations or replace provider clients.
+
+Existing device registration defaults to BYO. Only explicitly enrolled managed
+Android capacity can have a compute service; local Linux and user phones do not
+become billable through connectivity or Session binding. See
+[service accounting](RESOURCE_BILLING.md) and [local execution](LOCAL_EXECUTION.md).

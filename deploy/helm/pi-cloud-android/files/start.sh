@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 : "${PI_CLOUD_ANDROID_VSOCK_CID:?A device-specific vsock CID is required}"
+: "${PI_CLOUD_ANDROID_CPUS:?A provisioned CPU count is required}"
+: "${PI_CLOUD_ANDROID_MEMORY_MIB:?Provisioned memory is required}"
 export ANDROID_HOST_OUT=/cvd ANDROID_PRODUCT_OUT=/data/images
 mkdir -p /data/images /data/instances /data/assembly
 # One persistent userdata owner. Never overwrite an already initialized device.
@@ -32,7 +34,7 @@ stop() { /cvd/bin/stop_cvd || true; }
 trap stop EXIT
 trap 'exit 0' TERM INT
 /cvd/bin/launch_cvd --system_image_dir=/data/images --instance_dir=/data/instances --assembly_dir=/data/assembly \
-  --memory_mb=3072 --cpus=2 --gpu_mode=guest_swiftshader --enable_sandbox=false \
+  --memory_mb="$PI_CLOUD_ANDROID_MEMORY_MIB" --cpus="$PI_CLOUD_ANDROID_CPUS" --gpu_mode=guest_swiftshader --enable_sandbox=false \
   --vhost_user_vsock=false --vsock_guest_cid="$PI_CLOUD_ANDROID_VSOCK_CID" \
   --enable_audio=false --start_webrtc=true --report_anonymous_usage_stats=n --daemon
 /cvd/bin/adb connect 127.0.0.1:6520

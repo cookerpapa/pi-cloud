@@ -894,7 +894,11 @@ export class RunExecutor {
         workspaceSeedKind: row.workspaceSeedKind,
         ...(row.computeSessionId === null ? {} : { computeSessionId: row.computeSessionId }),
         sandboxProfileKey: row.sandboxProfileKey,
-        workingDirectory: row.workingDirectory,
+        workingDirectory: parseExecutionTargetGrants(row.executionTargetSnapshot).some(
+          (target) => target.kind === "linux",
+        )
+          ? "/workspace"
+          : row.workingDirectory,
         toolCapabilities,
         ...(row.executionTargetSnapshot.length
           ? { executionTargets: parseExecutionTargetGrants(row.executionTargetSnapshot) }

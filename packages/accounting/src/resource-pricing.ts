@@ -70,7 +70,10 @@ export function valueResourceReceipt(
       from: new Date(from).toISOString(),
       to: new Date(to).toISOString(),
       customer: priceResourceInterval(event, to - from, select("customer")),
-      upstream_estimate: priceResourceInterval(event, to - from, select("upstream_estimate")),
+      upstream_estimate:
+        event.basis === "platform_service_minute_v1"
+          ? { state: "unpriced" as const, reason: "service_duration_is_not_vendor_usage" }
+          : priceResourceInterval(event, to - from, select("upstream_estimate")),
     };
   });
 }

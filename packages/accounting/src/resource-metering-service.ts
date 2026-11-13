@@ -52,7 +52,7 @@ export class ResourceMeteringService {
       .execute();
     const owner = await tx
       .selectFrom("resource_metering_resources")
-      .select(["context_hash", "lifecycle_state"])
+      .select("context_hash")
       .where("id", "=", key)
       .forUpdate()
       .executeTakeFirstOrThrow();

@@ -19,6 +19,7 @@ type Target = {
 export class RuntimeHealthMonitor {
   readonly #targets = new Map<string, Target>();
   readonly #active = new Set<Promise<void>>();
+  readonly #recordings = new Set<Promise<void>>();
   readonly #timer: NodeJS.Timeout;
   #inventory = new Map<string, SandboxRuntimeObservation>();
   #inventoryAt = 0;
@@ -31,6 +32,7 @@ export class RuntimeHealthMonitor {
       targets(): readonly RuntimeHealthTarget[];
       inventory(): Promise<ReadonlyMap<string, SandboxRuntimeObservation>>;
       onError(error: unknown): void;
+      observations?(available: ReadonlyMap<string, boolean>, observedAt: number): Promise<void>;
       sample?(stage: "probe" | "scheduling", durationMs: number, outcome: string): void;
       concurrency?: number;
       clock?: () => number;
@@ -70,6 +72,14 @@ export class RuntimeHealthMonitor {
         .then((value) => {
           this.#inventory = new Map(value);
           this.#inventoryAt = this.#now();
+          this.#record(
+            new Map(
+              [...value]
+                .filter(([id]) => this.#targets.has(id))
+                .map(([id, observation]) => [id, this.#available(observation)]),
+            ),
+            this.#inventoryAt,
+          );
         })
         .catch((error) => {
           this.#inventory.clear();
@@ -141,6 +151,22 @@ export class RuntimeHealthMonitor {
   #current(entry: Target): boolean {
     return !this.#closed && this.#targets.get(entry.target.id) === entry;
   }
+  #available(value: SandboxRuntimeObservation): boolean {
+    return (
+      value.presence === "present" &&
+      value.state === "running" &&
+      value.execution !== "unsafe" &&
+      value.execution !== "unavailable"
+    );
+  }
+  #record(values: ReadonlyMap<string, boolean>, at: number): void {
+    if (this.#closed || !values.size || !this.options.observations) return;
+    const task = this.options
+      .observations(values, at)
+      .catch((error) => this.options.onError(error))
+      .finally(() => this.#recordings.delete(task));
+    this.#recordings.add(task);
+  }
   async #classify(entry: Target, observation: SandboxRuntimeObservation): Promise<boolean> {
     if (!this.#current(entry)) return false;
     entry.observed = { value: observation, at: this.#now() };
@@ -160,9 +186,15 @@ export class RuntimeHealthMonitor {
       const inventory =
         this.#now() - this.#inventoryAt < 30_000 ? this.#inventory.get(entry.target.id) : undefined;
       const observed = inventory ?? (await entry.target.observe());
+      if (this.#current(entry))
+        this.#record(
+          new Map([[entry.target.id, this.#available(observed)]]),
+          inventory ? this.#inventoryAt : this.#now(),
+        );
       await this.#classify(entry, observed);
       this.options.sample?.("probe", this.#now() - started, observed.presence);
     } catch (error) {
+      if (this.#current(entry)) this.#record(new Map([[entry.target.id, false]]), this.#now());
       this.options.sample?.("probe", this.#now() - started, "unconfirmed");
       // A management read failure is not evidence that the VM died. Full Guest
       // probes belong to active execution; polling them here refreshes native idle TTL.
@@ -172,6 +204,7 @@ export class RuntimeHealthMonitor {
   async settle(): Promise<void> {
     await this.#inventoryPending;
     while (this.#active.size) await Promise.allSettled([...this.#active]);
+    while (this.#recordings.size) await Promise.allSettled([...this.#recordings]);
   }
   async close(): Promise<void> {
     this.#closed = true;

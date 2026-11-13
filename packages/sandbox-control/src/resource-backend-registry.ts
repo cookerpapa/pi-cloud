@@ -31,6 +31,7 @@ export function resourceBackendCatalog(
     state: input.state,
     revision,
     provider: config.compute.provider,
+    computeBilling: input.computeBilling ?? "external",
     templates: config.templates.map(({ id, name, operatingSystem, imageRevision }) => ({
       id,
       name,
@@ -108,12 +109,19 @@ export class ResourceBackendRegistry {
       throw new Error("Backend connection changes require all retained resources to be released");
   }
   async put(value: unknown): Promise<ResourceBackendResource> {
-    const input = parsePutResourceBackend(value);
+    const request = parsePutResourceBackend(value);
     const before = await this.options.database
       .selectFrom("sandbox_domains")
       .selectAll()
-      .where("id", "=", input.id)
+      .where("id", "=", request.id)
       .executeTakeFirst();
+    const input = {
+      ...request,
+      computeBilling:
+        request.computeBilling ??
+        (before?.backend_catalog as unknown as ResourceBackendResource | null)?.computeBilling ??
+        "external",
+    };
     const previous = before?.backend_configuration
       ? this.#open(input.id, before.backend_configuration)
       : undefined;

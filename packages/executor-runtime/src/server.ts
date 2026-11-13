@@ -12,7 +12,8 @@ import { DeviceExecutionManager, ExecutorRefusal } from "./execution-manager.ts"
 export function createExecutorServer(options: {
   token: string;
   manager: DeviceExecutionManager;
-  ready(): boolean;
+  ready(): boolean | Promise<boolean>;
+  provisionedCompute?: { allocationId: string; cpuMillis: number; memoryBytes: number };
   screenshot?(signal: AbortSignal): Promise<string>;
 }) {
   const server = Fastify({ logger: false, bodyLimit: 5 * 1024 * 1024, requestTimeout: 10000 });
@@ -25,7 +26,7 @@ export function createExecutorServer(options: {
   });
   server.get("/health/live", async () => ({ alive: true }));
   server.get("/health/ready", async (_request, reply) => {
-    const ready = options.ready();
+    const ready = await options.ready();
     return reply.code(ready ? 200 : 503).send({
       targetId: options.manager.options.targetId,
       bootId: options.manager.options.bootId,
@@ -34,6 +35,7 @@ export function createExecutorServer(options: {
       operationsStarted: options.manager.operationsStarted,
       kind: options.manager.options.kind,
       capabilities: options.manager.capabilities,
+      ...(options.provisionedCompute ? { provisionedCompute: options.provisionedCompute } : {}),
     });
   });
   server.post(EXECUTOR_OPERATIONS_PATH, async (request) =>

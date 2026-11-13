@@ -186,3 +186,18 @@ PI_CLOUD_LIVE_ANDROID_CHECK=1 node --import tsx scripts/run-live-android-restart
 The second command requires an unbound, settled target. It verifies a changed
 Guest boot, retained owned settings/files and the same userdata file, then removes
 its markers. Restore the target's original stopped/running state after acceptance.
+
+## Optional platform compute service
+
+Ordinary registration remains non-billable. A platform administrator may supply
+`computeService: { billing: "platform" }` when the trusted receiver reports its
+managed allocation UUID and capacity. The operator chart exposes Pod identity
+and the same CPU/memory values passed to the stock emulator. This reports the
+guest allocation, not host-side Appium/renderer overhead. User phones and local
+Linux targets do not qualify through registration alone.
+
+Resource management samples availability without treating accounting as execution
+authority; a check does not interrupt an active UI operation. Receiver/allocation
+changes and unavailable periods split the service history. All priced providers
+use the same independent minute collector. No provider engine/APK is patched.
+See [ADR-0323](adr/0323-platform-service-minutes.md).

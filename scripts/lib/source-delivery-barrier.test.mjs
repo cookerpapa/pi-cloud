@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
-import { lifecycleProviderId } from "./source-delivery-observation.mjs";
 import { waitForOwnedReceiptDelivery } from "./source-delivery-barrier.mjs";
 function snapshot(pending = 0) {
   return {
     compute: [
       {
-        sourceId: "cubesandbox:domain:observations",
-        epoch: "native-v1",
+        sourceId: "platform-service-v1",
+        epoch: "service-minute-v1",
         podId: "metering-pod",
         checkedAt: 10000,
         healthy: true,
@@ -43,25 +42,7 @@ function fixture(rows) {
     });
   return { run, tenantId, reads: () => reads };
 }
-it("reads the deployed accounting domain rather than guessing from sandbox DNS", () => {
-  expect(
-    lifecycleProviderId({
-      spec: {
-        containers: [
-          {
-            name: "metering",
-            env: [
-              { name: "PI_CLOUD_SANDBOX_DOMAIN_ID", value: "domain-1" },
-              { name: "PI_CLOUD_CUBESANDBOX_DOMAIN", value: "cube.example.com" },
-            ],
-          },
-        ],
-      },
-    }),
-  ).toBe("cubesandbox:domain-1");
-  expect(() => lifecycleProviderId({ spec: { containers: [] } })).toThrow("source identity");
-});
-it("waits until owned compute has a committed absent observation", async () => {
+it("waits until owned service periods are closed and settled", async () => {
   const f = fixture([snapshot(1), snapshot(1), snapshot(0)]);
   expect(await f.run()).toMatchObject({ verified: true, tenantId: f.tenantId });
   expect(f.reads()).toBe(3);

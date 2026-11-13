@@ -34,10 +34,19 @@ async function main() {
     });
     cleanup.push(() => manager.close());
     const server = createExecutorServer({
+      ...(process.env.PI_CLOUD_ANDROID_ALLOCATION_ID
+        ? {
+            provisionedCompute: {
+              allocationId: required("PI_CLOUD_ANDROID_ALLOCATION_ID"),
+              cpuMillis: Number(required("PI_CLOUD_ANDROID_CPUS")) * 1000,
+              memoryBytes: Number(required("PI_CLOUD_ANDROID_MEMORY_MIB")) * 1024 * 1024,
+            },
+          }
+        : {}),
       token: (await readFile(required("PI_CLOUD_SUPERVISOR_MANAGEMENT_TOKEN_FILE"), "utf8")).trim(),
       manager,
-      ready: () => driver.ready,
       screenshot: (signal) => driver.screenshot(signal),
+      ready: () => (manager.busy ? driver.recentlyAvailable : driver.observeAvailability()),
     });
     cleanup.push(() => server.close());
     await server.listen({

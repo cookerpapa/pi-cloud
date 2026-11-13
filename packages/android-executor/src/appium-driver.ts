@@ -18,6 +18,7 @@ export class AppiumAndroidDriver {
   #session: string | undefined;
   #deviceBoot: string | undefined;
   #healthy = false;
+  #verifiedAt = 0;
   constructor(readonly options: { url: string; udid: string; systemPort: number }) {}
   async #request(
     path: string,
@@ -86,6 +87,20 @@ export class AppiumAndroidDriver {
   get ready() {
     return Boolean(this.#session && this.#healthy);
   }
+  get recentlyAvailable() {
+    return this.ready && Date.now() - this.#verifiedAt <= 30_000;
+  }
+  /** Read-only availability sampling must not abort an in-flight UI operation. */
+  async observeAvailability(): Promise<boolean> {
+    if (!this.ready) return false;
+    try {
+      const available = (await this.#readBoot(AbortSignal.timeout(3000))) === this.#deviceBoot;
+      if (available) this.#verifiedAt = Date.now();
+      return available;
+    } catch {
+      return false;
+    }
+  }
   #call(path: string, method = "GET", body?: unknown, signal?: AbortSignal) {
     if (!this.#session) throw new Error("Device is not ready");
     signal?.throwIfAborted();
@@ -115,6 +130,7 @@ export class AppiumAndroidDriver {
     try {
       if ((await this.#readBoot(signal)) !== this.#deviceBoot)
         throw new Error("Device was replaced");
+      this.#verifiedAt = Date.now();
     } catch (error) {
       this.#healthy = false;
       throw error;

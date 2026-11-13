@@ -111,6 +111,7 @@ export async function purgeOwnedAcceptanceTenant(
     for (const table of [
       // All owned Sessions are gone. Remove the remaining graph in dependency
       // order instead of relying on the tenant's cascades or waiting for GC.
+      "compute_service_periods",
       "resource_metering_events",
       "resource_metering_resources",
       "resource_rate_versions",

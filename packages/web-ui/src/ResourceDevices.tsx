@@ -81,6 +81,11 @@ export function ResourceDevices({
           <div className="admin-settings-row" key={device.targetId}>
             <span>
               {device.name} · {device.kind === "linux" ? "Linux" : "Android"}
+              {device.computeBilling === "external"
+                ? zh
+                  ? " · 自有算力"
+                  : " · User-provided compute"
+                : ""}
               {bound ? ` · ${bound.title}` : ""}
             </span>
             {!device.boundSessionId && (

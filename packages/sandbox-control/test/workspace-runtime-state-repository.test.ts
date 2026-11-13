@@ -263,6 +263,76 @@ describe("PostgreSQL Sandbox control ownership", () => {
     expect((await f.row()).idle_expires_at).toEqual(expected);
   });
 
+  it("freezes compute eligibility before creation and records service checks without renewing retention", async () => {
+    const f = await allocationFixture();
+    await sql`update sandbox_domains set backend_catalog='{"provider":"cubesandbox","computeBilling":"platform"}'::jsonb where id='sandbox-domain-0001'`.execute(
+      f.database,
+    );
+    const spec = { ...f.spec, retentionWindowMs: 60_000 };
+    await f.repository.beginCreation(spec);
+    await sql`update sandbox_domains set backend_catalog=jsonb_set(backend_catalog,'{computeBilling}','"external"') where id='sandbox-domain-0001'`.execute(
+      f.database,
+    );
+    await f.repository.recordCreation(spec.activationId, "workspace", {
+      providerId: "cubesandbox",
+      runtimeId: randomUUID(),
+      runtimeName: "owned-service",
+      capsule: "x".repeat(100),
+      quantity: { kind: "compute", cpuMillis: 2000, memoryBytes: 1024 ** 3 },
+    });
+    await f.repository.setWorkspaceRuntimeState(spec.activationId, "allocated");
+    const readDeadline = async () =>
+      (
+        await f.database
+          .selectFrom("workspace_runtimes")
+          .select("idle_expires_at")
+          .where("workspace_runtime_id", "=", spec.activationId)
+          .executeTakeFirstOrThrow()
+      ).idle_expires_at;
+    const deadline = await readDeadline();
+    expect(
+      await f.repository.recordComputeServiceObservations([
+        { id: spec.activationId, at: Date.now(), available: true },
+      ]),
+    ).toEqual([spec.activationId]);
+    expect(await readDeadline()).toEqual(deadline);
+    await f.repository.closeAllocation(spec.activationId, "workspace");
+    const started = await f.repository.recordReclamation(
+      spec.activationId,
+      "dispatched",
+      new Date(),
+    );
+    const finished = await f.repository.recordReclamation(
+      spec.activationId,
+      "confirmed",
+      new Date(),
+    );
+    expect(started).toMatchObject({ attempts: 1 });
+    expect(finished).toMatchObject({
+      physicalStopOccurredAt: null,
+      evidence: "provider_delete_confirmed",
+    });
+    expect(finished?.deletionConfirmedAt).toBeTruthy();
+    expect(
+      await f.repository.recordComputeServiceObservations([
+        { id: spec.activationId, at: Date.now(), available: true },
+      ]),
+    ).toEqual([]);
+    const resource = await f.database
+      .selectFrom("resource_metering_resources")
+      .select("service_contract")
+      .where("id", "=", "compute:" + spec.activationId)
+      .executeTakeFirstOrThrow();
+    expect(resource.service_contract?.billing).toBe("platform");
+    const { rows: periods } = await sql<{
+      ended_at: Date | null;
+    }>`select ended_at from compute_service_periods where resource_key=${"compute:" + spec.activationId}`.execute(
+      f.database,
+    );
+    expect(periods).toHaveLength(1);
+    expect(periods[0]!.ended_at).not.toBeNull();
+  });
+
   it("retains a shared terminal through its Workspace and expires a standalone terminal through its own record", async () => {
     const f = await idleFixture();
     const user = await f.database

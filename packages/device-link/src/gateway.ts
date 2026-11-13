@@ -18,7 +18,11 @@ function authorized(actual: string | undefined, token: string | undefined): bool
     b = Buffer.from("Bearer " + token);
   return a.length === b.length && timingSafeEqual(a, b);
 }
-type Peer = { socket: WebSocket; pending: Map<string, (value: DeviceResponse) => void> };
+type Peer = {
+  socket: WebSocket;
+  pending: Map<string, (value: DeviceResponse) => void>;
+  bytes: number;
+};
 
 /** Disposable transport only. No Tool replay, command queue, Session or lifecycle ownership. */
 export async function createDeviceGateway(options: {
@@ -32,6 +36,7 @@ export async function createDeviceGateway(options: {
     requestTimeout: 10_000,
   });
   const peers = new Map<string, Peer>();
+  let pendingBytes = 0;
   await server.register(websocket, { options: { maxPayload: DEVICE_LINK_MAX_BYTES } });
   server.get("/health/live", async () => ({ alive: true }));
   server.get<{ Params: { targetId: string } }>(
@@ -55,7 +60,7 @@ export async function createDeviceGateway(options: {
         socket.close(1008, "Device already connected");
         return;
       }
-      const peer: Peer = { socket, pending: new Map() };
+      const peer: Peer = { socket, pending: new Map(), bytes: 0 };
       peers.set(target, peer);
       const close = () => {
         if (peers.get(target) === peer) peers.delete(target);
@@ -103,12 +108,27 @@ export async function createDeviceGateway(options: {
       if (!deviceId.test(request.params.targetId) || !isDeviceRequest(call))
         return reply.code(404).send();
       const peer = peers.get(request.params.targetId);
-      if (!peer || peer.socket.readyState !== 1 || peer.pending.size >= 64) {
+      const encoded = JSON.stringify(call),
+        bytes = Buffer.byteLength(encoded);
+      if (
+        !peer ||
+        peer.socket.readyState !== 1 ||
+        peer.pending.size >= 64 ||
+        peer.bytes + bytes > 8 * 1024 * 1024 ||
+        pendingBytes + bytes > 16 * 1024 * 1024
+      ) {
         const failure = unavailable(id, "not_started");
         return reply.code(failure.status).send(failure.body);
       }
       const response = await new Promise<DeviceResponse>((resolve) => {
+        let settled = false;
+        peer.bytes += bytes;
+        pendingBytes += bytes;
         const settle = (value: DeviceResponse) => {
+          if (settled) return;
+          settled = true;
+          peer.bytes -= bytes;
+          pendingBytes -= bytes;
           clearTimeout(timer);
           peer.pending.delete(id);
           resolve(value);
@@ -118,7 +138,7 @@ export async function createDeviceGateway(options: {
           options.waitMs ?? DEVICE_LINK_WAIT_MS,
         );
         peer.pending.set(id, settle);
-        peer.socket.send(JSON.stringify(call), (error) => {
+        peer.socket.send(encoded, (error) => {
           if (error) settle(unavailable(id, "unknown"));
         });
       });

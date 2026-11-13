@@ -10,8 +10,11 @@
 - [x] #38 source: outbound scoped device link, shared receiver and explicit Linux
   namespace execution. Native file/image/shell/background/cancellation checks and
   Android/Linux PG binding recovery pass; deployment acceptance remains pending.
-- [ ] #39: platform service minutes, BYO exemption, managed Android lifecycle
-  evidence and lightweight reclamation timestamps; independent accounting.
+- [ ] #39 / ADR-0323: platform service minutes, BYO exemption, managed Android
+  lifecycle evidence and lightweight reclamation timestamps; independent accounting.
+- [x] #39 source: PG service periods, complete-minute settlement, coalesced passive
+  observations, explicit managed Android enrollment and separate reclamation facts.
+  Targeted SQL/receiver tests pass; full verification and publication remain pending.
 - Heavy verification and provider acceptance run serially. WSL memory and
   BoxLite's documented host-isolation configuration are outside this work.
 
@@ -81,8 +84,8 @@ records no-restart cluster registration. Both are deployed and live-verified in 
 failed samples, isolation limits and the cold operator reconciliation boundary.
 The final matched release is `alternate-runtime-20261112-final`. Cube is the
 default, both original machines are running, and both optional runtimes are
-stopped when unused. BoxLite compute remains unpriced without an observation
-collector.
+stopped when unused. That delivery left BoxLite compute unpriced; #39 /
+ADR-0323 adds the distinct platform-service-minute contract.
 
 ## Platform-owned elastic idle expiry — deployed
 

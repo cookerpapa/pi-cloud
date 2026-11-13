@@ -1078,33 +1078,23 @@ export interface Database {
     created_at: GeneratedTimestamp;
   };
   resource_metering_resources: {
+    service_contract: GeneratedNullable<Record<string, unknown>>;
+    reclamation: GeneratedNullable<Record<string, unknown>>;
     provider_binding: GeneratedNullable<Record<string, unknown>>;
-    lifecycle_state: GeneratedNullable<Record<string, unknown>>;
     id: string;
     tenant_id: string;
-    workspace_id: string;
+    workspace_id: string | null;
     kind: string;
     resource_id: string;
     context: JsonObject;
     context_hash: string;
     received_at: GeneratedTimestamp;
   };
-  resource_lifecycle_sources: {
-    source_position: GeneratedNullable<string>;
-    id: string;
-    provider: string;
-    node_id: string;
-    epoch: GeneratedNullable<string>;
-    after_sequence: GeneratedInt8;
-    checked_at: GeneratedNullable<Date>;
-    failed_at: GeneratedNullable<Date>;
-    gap_detected_at: GeneratedNullable<Date>;
-  };
   resource_metering_events: {
     id: string;
     resource_key: string;
     tenant_id: string;
-    workspace_id: string;
+    workspace_id: string | null;
     resource_kind: string;
     from_at: Timestamp;
     to_at: Timestamp;

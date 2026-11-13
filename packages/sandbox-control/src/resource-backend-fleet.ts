@@ -291,6 +291,7 @@ export async function createResourceBackendFleet(options: Options) {
         };
       }
       await registry.bootstrap({
+        computeBilling: "platform",
         id: config.sandboxDomainId,
         name: "Primary",
         location: "Local",

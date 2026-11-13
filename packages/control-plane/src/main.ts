@@ -1,4 +1,5 @@
 import { registerResourceDevice } from "./execution-target-registration.ts";
+import { ManagedDeviceServiceObserver } from "./managed-device-service-observer.ts";
 import { HttpExecutorTransport } from "@pi-cloud/sandbox-control/executor-transport";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -85,6 +86,9 @@ export async function startControlPlane(): Promise<void> {
     const server = Fastify({ logger: false });
     const devices = new HttpExecutorTransport(config.supervisorManagementToken);
     cleanup.push(() => devices.close());
+    const deviceServices = new ManagedDeviceServiceObserver(database, devices);
+    cleanup.push(() => deviceServices.close());
+    deviceServices.start();
     installResourceBackendRoutes(
       server,
       sandbox.registry,

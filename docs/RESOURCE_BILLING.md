@@ -1,47 +1,72 @@
 # Resource usage and statements
 
-[ADR-0306](adr/0306-runtime-decoupling-and-continuation.md) separates provider
-lifecycle evidence from PiCloud interval calculation and pricing. Delivery status
-and verification are recorded in the [current report](reports/stock-cube-source-20261111.md).
-Statements remain informational: payment collection and production tariffs are disabled.
+[ADR-0323](adr/0323-platform-service-minutes.md) defines platform-provided service
+minutes independently of physical-uptime observations. The source implementation
+is tracked in #39; publication/acceptance status remains in BACKLOG. Statements
+remain informational: payment collection and production tariffs are disabled.
 
-## Compute
+## Compute service
 
-The independent metering process reads a provider-owned lifecycle port. It does
-not depend on Session activity, a running Agent, the public API or diagnostic
-probes. A shared VM has one allocation identity and one meter. Quantity is the
-accepted workload CPU/memory allocation, excluding host/VMM overhead and snapshot
-rounding; actual CPU utilization is a separate monitoring measurement.
+The resource manager records readiness, accepted pause/release and effective
+idle expiry. The current provider adapter supplies verified provisioned CPU and
+memory; actual utilization and VMM overhead are not the priced quantity.
+`resource_metering_resources.service_contract` freezes platform/external billing
+and capacity for each allocation. Readiness opens `compute_service_periods`;
+pause, interruption and resumption delimit availability periods. These records
+are accounting evidence, not another resource scheduler or ownership authority.
 
-Under [ADR-0309](adr/0309-stock-sandbox-contract.md), the stock Cube adapter reads
-native API inventory and the native Redis lifecycle channel. The first successful
-creation receipt registers its bounded provider-id/tenant/Workspace mapping in
-the existing accounting resource directory. This is attribution metadata, not
-an interval, price or additional resource authority. It survives removal of the
-active management binding. If native create omits CPU/memory, the same early
-receipt is enriched from the existing native detail read before Guest preparation.
-This preserves verified capacity for VMs shorter than the sampling interval; it
-does not invent a physical start time.
+The existing passive VM inventory/probes contribute coalesced service checks,
+at most one healthy PG update per minute per resource. This uses existing reads,
+not Guest traffic, per-Tool billing or Worker-lease queries. A gap longer than
+90 seconds ends the old period at its last observation and starts a fresh one.
+Unknown tails remain unpriced. This is sampled service availability under an
+explicit contract, not proof of continuous second-perfect physical VM uptime.
 
-Collection uses bounded pages and normally runs once per minute. Each observation
-page and its opaque cursor commit together in PG. A lost page or stale collector
-cannot duplicate settlement. Native notifications may be lost or trimmed; absence
-of an event or inventory entry does not prove resource removal.
+The independent metering process reads only PG service facts. It has no Cube API
+or Redis credential. Once per minute it settles new complete eligible minutes,
+carrying partial progress between batches and restarts and waiving a final
+incomplete minute. Receipts and period checkpoints commit together under one
+resource lock. A shared VM is counted once across Sessions and child Agents.
+Rate changes split a paid interval without rounding each segment again.
 
-Stock Cube does not supply verified continuous physical-time coverage. This
-adapter therefore marks sampled compute intervals `provider_observation` /
-`unconfirmed` and **does not price them**, including time between two running
-samples. Missing quantities are not replaced with a default VM size. Native
-explicit deletion evidence can settle resource state, but discovery time is not
-presented as a precise physical stop timestamp. Model and Workspace-capacity
-accounting retain their existing evidence and pricing behavior. Stronger compute
-pricing requires an explicitly agreed provider coverage or estimation contract.
+For an elastic resource, settlement is capped by its effective idle deadline.
+An accepted pause/release closes service at the accepted cutoff. Physical cleanup
+may finish later, at platform expense. Positive deletion evidence is still needed
+to release resource ownership/quota; billing never supplies that evidence.
+The original allocation's policy survives later backend catalog edits. New
+backend registrations default to external/BYO unless explicitly offered as
+platform compute. The initial managed deployment opts into platform service.
 
-PG `resource_lifecycle_sources` retains observation cursors and failure/gap
-watermarks; each resource retains its current observation checkpoint. There is no
-PiCloud lifecycle journal, pricing code or accounting credential inside Cubelet.
-Accounting never authorizes VM destruction, Tool replay, quota release or Session
-lease renewal.
+## Devices and BYO
+
+Ordinary Android/Linux device registration, connectivity and Tool activity do not
+create a compute charge. An administrator may explicitly provide
+`computeService: { billing: "platform" }` for a managed Android target that reports
+its actual allocation ID and provisioned capacity. Its passive availability
+observer uses the same period/receipt path. Physical/user phones and local Linux
+executors cannot invent that managed allocation through registration.
+`computeService: null` withdraws the service after existing unbind/closure checks.
+Changing device compute enrollment requires no active binding.
+
+Android service identity has `workspaceId: null`; it does not fabricate a Linux
+Workspace. Receiver/allocation changes split availability rather than extending
+an old period. Device unavailability or unregistering is not physical deletion
+proof. Model usage and separately provided storage keep their own accounting.
+No price settings or metering availability are required for BYO Tool execution.
+
+## Reclamation diagnostics
+
+The resource directory retains bounded request/cleanup/confirmation metadata.
+`deleteDispatchedAt` is when management invokes the provider cleanup adapter;
+`deletionConfirmedAt` is when it obtains positive absence evidence. The latter
+is not an invented exact physical stop time. `physicalStopOccurredAt` stays null
+unless reliable provider occurrence evidence is available. Structured
+`sandbox.reclamation` logs report transitions and aggregate repeated attempts;
+no per-second polling or full Tool/Workspace content enters logs.
+
+Example: ready at 10:00, expired at 10:30, deletion confirmed at 10:30:06 produces
+30 service minutes. The six-second cleanup tail is diagnostic, not a customer
+charge. Earlier failure and stale observations still follow the gap rule.
 
 ## Storage boundary
 
@@ -107,8 +132,9 @@ pagination avoids reordering a resource every time its next receipt arrives.
 ```
 
 Model and Workspace receipt delivery use the dedicated `metering-ingest-token`.
-Compute collection reads stock API inventory and native Redis notifications through
-its private adapter credentials; Cubelet receives no accounting or model credential. Ordinary public reads use existing tenant auth;
-only the configured platform owner can inspect another account or configure rates.
-Owned acceptance-fixture cleanup is the explicit exception to retaining financial
-records and must follow source delivery and physical cleanup confirmation.
+Compute service facts are committed by resource management and consumed directly
+from PG. Cubelet receives no accounting or model credential. Ordinary public
+reads use existing tenant auth; only the configured platform owner can configure
+rates. Compute receipts cannot be injected through the external Workspace receipt
+API. Owned acceptance-fixture cleanup is the explicit exception to retaining
+financial records and must follow delivery and physical cleanup confirmation.

@@ -41,6 +41,7 @@ function backend(id: string, url: string, revision = 1): ResourceBackend {
       revision,
       state: "active",
       provider: "boxlite",
+      computeBilling: "external",
       templates: [],
       capabilities: {
         kind: "linux",

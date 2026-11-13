@@ -135,7 +135,9 @@ export function ResourceBilling({ api, kind }: { api: PiCloudApi; kind: "compute
               {[
                 say("资源 / 工作区", "Resource / workspace"),
                 say("规格", "Capacity"),
-                say("已确认时长", "Confirmed duration"),
+                kind === "compute"
+                  ? say("计费服务分钟", "Billable service minutes")
+                  : say("已确认时长", "Confirmed duration"),
                 say("待核实", "Unconfirmed"),
                 say("模拟金额", "Quoted cost"),
                 say("上游估算", "Upstream estimate"),
@@ -149,8 +151,8 @@ export function ResourceBilling({ api, kind }: { api: PiCloudApi; kind: "compute
               <tr key={item.resource.resourceId}>
                 <td title={item.resource.resourceId}>
                   {item.resource.resourceId.slice(0, 12)}
-                  <small title={item.resource.workspaceId}>
-                    {item.resource.workspaceId.slice(0, 12)}
+                  <small title={item.resource.workspaceId ?? undefined}>
+                    {item.resource.workspaceId?.slice(0, 12) ?? say("设备", "Device")}
                   </small>
                 </td>
                 <td>
@@ -158,7 +160,11 @@ export function ResourceBilling({ api, kind }: { api: PiCloudApi; kind: "compute
                     ? `${item.quantity.cpuMillis / 1000} vCPU · ${item.quantity.memoryBytes / 1024 ** 3} GiB`
                     : `${item.quantity.capacityBytes / 1024 ** 3} GiB`}
                 </td>
-                <td>{(Number(item.confirmedMilliseconds) / 3_600_000).toFixed(3)} h</td>
+                <td>
+                  {kind === "compute"
+                    ? `${Math.floor(Number(item.confirmedMilliseconds) / 60_000)} min`
+                    : `${(Number(item.confirmedMilliseconds) / 3_600_000).toFixed(3)} h`}
+                </td>
                 <td>
                   {Number(item.unconfirmedMilliseconds)
                     ? `${(Number(item.unconfirmedMilliseconds) / 3_600_000).toFixed(3)} h`

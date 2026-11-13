@@ -14,6 +14,7 @@ export type ExecutorStatus = {
   bootId: string;
   ready: boolean;
   capabilities: string[];
+  provisionedCompute?: { allocationId: string; cpuMillis: number; memoryBytes: number };
 };
 export class ExecutorTransportFailure extends Error {
   constructor(readonly failure: ToolExecutionFailureData) {
@@ -108,6 +109,18 @@ export class HttpExecutorTransport implements ExecutorTransport {
       value.ready !== true
     )
       throw new Error("Executor is not ready");
+    if (value.provisionedCompute !== undefined) {
+      const compute = value.provisionedCompute;
+      if (
+        value.kind !== "android" ||
+        !/^[0-9a-f-]{36}$/i.test(compute?.allocationId) ||
+        !Number.isSafeInteger(compute.cpuMillis) ||
+        compute.cpuMillis < 1 ||
+        !Number.isSafeInteger(compute.memoryBytes) ||
+        compute.memoryBytes < 1
+      )
+        throw new Error("Invalid managed device capacity");
+    }
     return value;
   }
   async submit(endpoint: string, operation: ExecutorOperation, signal?: AbortSignal) {

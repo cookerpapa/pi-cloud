@@ -48,11 +48,15 @@ export const ExecutionTargetResourceSchema = Type.Object(
   {
     ...ExecutionTargetGrantSchema.properties,
     boundSessionId: Type.Union([UuidSchema, Type.Null()]),
+    computeBilling: Type.Union([Type.Literal("platform"), Type.Literal("external")]),
   },
   { additionalProperties: false },
 );
 // Resource fields are intentionally independent from transport endpoints/credentials.
-export type ExecutionTargetResource = ExecutionTargetGrant & { boundSessionId: string | null };
+export type ExecutionTargetResource = ExecutionTargetGrant & {
+  boundSessionId: string | null;
+  computeBilling: "platform" | "external";
+};
 export const ExecutionTargetListSchema = Type.Object(
   { targets: Type.Array(ExecutionTargetResourceSchema) },
   { additionalProperties: false },

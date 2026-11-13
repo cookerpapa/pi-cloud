@@ -6,7 +6,7 @@ export function resourceIdentityHash(resource: {
   kind: string;
   resourceId: string;
   tenantId: string;
-  workspaceId: string;
+  workspaceId: string | null;
 }): string {
   return createHash("sha256")
     .update(

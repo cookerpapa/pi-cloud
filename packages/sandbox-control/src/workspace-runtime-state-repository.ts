@@ -165,6 +165,14 @@ function allocationRecovery(
 }
 
 export interface WorkspaceRuntimeStateRepository {
+  recordComputeServiceObservations?(
+    values: readonly { id: string; at: number; available: boolean }[],
+  ): Promise<readonly string[]>;
+  recordReclamation?(
+    id: string,
+    phase: "dispatched" | "confirmed",
+    at: Date,
+  ): Promise<Record<string, unknown> | undefined>;
   recordResourceUse(uses: readonly PhysicalResourceUse[]): Promise<number>;
   claimExpiredWorkspaceRuntimes(limit: number): Promise<readonly OrphanedWorkspaceRuntime[]>;
   claimExpiredTerminals(limit: number): Promise<readonly OrphanedWorkspaceTerminal[]>;
@@ -559,6 +567,29 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         await sql`update ${table} set creation_spec=${encoded}::jsonb,
         provider_create_started_at=clock_timestamp(), updated_at=clock_timestamp()
         where ${key}=${spec.activationId}::uuid`.execute(tx);
+      if (fresh) {
+        const context = {
+          kind: "compute",
+          resourceId: spec.activationId,
+          tenantId: spec.assignment.tenantId,
+          workspaceId: spec.assignment.workspaceId,
+        };
+        const registered =
+          await sql`insert into resource_metering_resources(id,tenant_id,workspace_id,kind,resource_id,context,context_hash,service_contract)
+          values(${"compute:" + spec.activationId},${context.tenantId}::uuid,${context.workspaceId}::uuid,'compute',${spec.activationId},${JSON.stringify(context)}::jsonb,${resourceIdentityHash(context)},
+            jsonb_build_object('billing',coalesce((select backend_catalog->>'computeBilling' from sandbox_domains where id=${this.#sandboxDomainId}),'external'),
+              'provider',(select backend_catalog->>'provider' from sandbox_domains where id=${this.#sandboxDomainId}),'domainId',${this.#sandboxDomainId}::text,
+              'sourceKind',${kind}::text,'sourceId',${spec.activationId}::text,'quantity',null,'acceptedAt',clock_timestamp()))
+          on conflict(id) do update set context=resource_metering_resources.context
+            where resource_metering_resources.context_hash=${resourceIdentityHash(context)} returning id`.execute(
+            tx,
+          );
+        if (!registered.rows.length)
+          throw new WorkspaceRuntimeStateRepositoryError(
+            "state_conflict",
+            "Compute service identity changed",
+          );
+      }
       return { fresh, ...(row.provider_receipt ? { receipt: row.provider_receipt } : {}) };
     });
   }
@@ -617,6 +648,10 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         resourceId: receipt.runtimeName,
         ...(receipt.quantity ? { quantity: receipt.quantity } : {}),
       };
+      const contract = sql<Record<string, unknown>>`jsonb_build_object(
+        'billing',coalesce((select backend_catalog->>'computeBilling' from sandbox_domains where id=${this.#sandboxDomainId}),'external'),
+        'provider',${receipt.providerId}::text,'domainId',${this.#sandboxDomainId}::text,'sourceKind',${kind}::text,'sourceId',${id}::text,
+        'quantity',${JSON.stringify(receipt.quantity ?? null)}::jsonb,'acceptedAt',clock_timestamp())`;
       const registered = await tx
         .insertInto("resource_metering_resources")
         .values({
@@ -628,12 +663,18 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
           context: identity,
           context_hash: resourceIdentityHash(identity),
           provider_binding: binding,
+          service_contract: contract,
         })
         .onConflict((oc) =>
           oc
             .column("id")
             .doUpdateSet({
               provider_binding: sql`coalesce(resource_metering_resources.provider_binding, '{}'::jsonb) || ${JSON.stringify(binding)}::jsonb`,
+              service_contract: sql`case
+                when resource_metering_resources.service_contract is null then ${contract}
+                when resource_metering_resources.service_contract->'quantity' is null or resource_metering_resources.service_contract->'quantity'='null'::jsonb
+                  then jsonb_set(resource_metering_resources.service_contract,'{quantity}',${JSON.stringify(receipt.quantity ?? null)}::jsonb)
+                else resource_metering_resources.service_contract end`,
             })
             .where(
               sql<boolean>`resource_metering_resources.context_hash=${resourceIdentityHash(identity)}`,
@@ -675,6 +716,60 @@ export class PostgresWorkspaceRuntimeStateRepository implements WorkspaceRuntime
         status: "issued",
         ...(row.provider_receipt ? { receipt: row.provider_receipt } : {}),
       };
+    });
+  }
+
+  /** Existing passive observations, batched and bounded; no Agent or Tool lease query. */
+  async recordComputeServiceObservations(
+    values: readonly { id: string; at: number; available: boolean }[],
+  ): Promise<readonly string[]> {
+    if (!values.length) return [];
+    const applied: string[] = [];
+    for (let offset = 0; offset < values.length; offset += 64) {
+      const batch = values.slice(offset, offset + 64).map((value) => ({
+        id: value.id,
+        at: new Date(value.at).toISOString(),
+        available: value.available,
+      }));
+      await this.#ownedTransaction(async (tx) => {
+        const { rows } = await sql<{ id: string }>`with observations as materialized (
+          select * from jsonb_to_recordset(${JSON.stringify(batch)}::jsonb) as v(id uuid,at timestamptz,available boolean)
+          where at between clock_timestamp()-interval '90 seconds' and clock_timestamp()+interval '5 seconds'
+        ), owned as materialized (
+          select workspace_runtime_id as id from workspace_runtimes where owner_instance_id=${this.#instanceId}::uuid and sandbox_domain_id=${this.#sandboxDomainId} and state='allocated' and not allocation_closed
+          union all select terminal_id from workspace_terminal_sessions where owner_instance_id=${this.#instanceId}::uuid and sandbox_domain_id=${this.#sandboxDomainId} and state='active' and not allocation_closed
+          union all select allocation_id from development_environments where owner_instance_id=${this.#instanceId}::uuid and sandbox_domain_id=${this.#sandboxDomainId} and state='ready' and desired_state='running' and not allocation_closed
+        ), locked as materialized (
+          select r.id,r.resource_id from resource_metering_resources r join observations o on r.id='compute:'||o.id::text join owned on owned.id=o.id
+          where r.service_contract->>'billing'='platform' order by r.id for update of r skip locked
+        ) select locked.resource_id as id,pi_cloud_compute_service_state(locked.id,o.available,least(o.at,clock_timestamp()),'unavailable')
+          from locked join observations o on locked.resource_id=o.id::text`.execute(tx);
+        applied.push(...rows.map((row) => row.id));
+      });
+    }
+    return applied;
+  }
+
+  /** Optional diagnostic persistence never substitutes for provider absence proof. */
+  async recordReclamation(
+    id: string,
+    phase: "dispatched" | "confirmed",
+    at: Date,
+  ): Promise<Record<string, unknown> | undefined> {
+    return this.#ownedTransaction(async (tx) => {
+      const fields =
+        phase === "dispatched"
+          ? sql`jsonb_build_object('deleteDispatchedAt',coalesce(reclamation->>'deleteDispatchedAt',${at.toISOString()}),
+            'lastDeleteAttemptAt',${at.toISOString()}::text,'attempts',coalesce((reclamation->>'attempts')::int,0)+1)`
+          : sql`jsonb_build_object('deletionConfirmedAt',coalesce(reclamation->>'deletionConfirmedAt',${at.toISOString()}),
+            'physicalStopOccurredAt',null,'evidence','provider_delete_confirmed')`;
+      const { rows } = await sql<{
+        reclamation: Record<string, unknown>;
+      }>`update resource_metering_resources
+        set reclamation=coalesce(reclamation,'{}'::jsonb)||${fields}
+        where id=${"compute:" + id} and split_part(provider_binding->>'sourceId',':',2)=${this.#sandboxDomainId}
+        returning reclamation`.execute(tx);
+      return rows[0]?.reclamation;
     });
   }
 

@@ -9,7 +9,7 @@ export const ResourceIdentitySchema = Type.Object(
     kind: ResourceKindSchema,
     resourceId: name,
     tenantId: UuidSchema,
-    workspaceId: UuidSchema,
+    workspaceId: Type.Union([UuidSchema, Type.Null()]),
   },
   { additionalProperties: false },
 );
@@ -35,6 +35,7 @@ const quantity = Type.Union([
 export const ResourceMeteringEventSchema = Type.Object(
   {
     version: Type.Literal(1),
+    basis: Type.Optional(Type.Literal("platform_service_minute_v1")),
     eventId: UuidSchema,
     resource: ResourceIdentitySchema,
     sourceId: name,
@@ -78,6 +79,7 @@ export function parseResourceMeteringBatch(value: unknown): { events: ResourceMe
       !Number.isFinite(Date.parse(event.to)) ||
       Date.parse(event.to) < Date.parse(event.from) ||
       event.resource.kind !== event.quantity.kind ||
+      (event.resource.kind === "workspace" && event.resource.workspaceId === null) ||
       (event.quality === "unconfirmed") !== (event.reason !== undefined)
     )
       throw new TypeError("Invalid resource receipt interval");

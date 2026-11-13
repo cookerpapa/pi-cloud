@@ -49,6 +49,7 @@ it("relays the organization-owned device DTO and refuses an implicit admin organ
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const body = request();
+    body.device.endpoint += `/targets/${body.device.targetId}`;
     const service = new ResourceBackendService({} as never, {
       url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
       token: "owned-fixture-token",

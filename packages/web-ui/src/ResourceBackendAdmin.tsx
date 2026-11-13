@@ -15,6 +15,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
   const [token, setToken] = useState("");
   const [nodeId, setNodeId] = useState("");
   const [deviceTenantId, setDeviceTenantId] = useState("");
+  const [computeBilling, setComputeBilling] = useState<"platform" | "external">("external");
   const [storageUrl, setStorageUrl] = useState("");
   const [storageToken, setStorageToken] = useState("");
   const [proxyHost, setProxyHost] = useState("");
@@ -109,6 +110,30 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
             <option value="draining">{zh ? "停止新建" : "Draining"}</option>
             <option value="disabled">{zh ? "禁用新建" : "Disabled"}</option>
           </select>
+          <select
+            aria-label={`${item.name} ${zh ? "新资源计费" : "New allocation billing"}`}
+            value={item.computeBilling}
+            disabled={busy}
+            onChange={(event) =>
+              void change(() =>
+                api.putResourceBackend({
+                  id: item.id,
+                  name: item.name,
+                  location: item.location,
+                  state: item.state,
+                  expectedRevision: item.revision,
+                  computeBilling: event.target.value as "platform" | "external",
+                }),
+              )
+            }
+          >
+            <option value="external">
+              {zh ? "自有算力 · 不计费" : "User-provided compute · no charge"}
+            </option>
+            <option value="platform">
+              {zh ? "平台算力 · 按套餐计量" : "Platform compute · metered"}
+            </option>
+          </select>
         </div>
       ))}
       <form
@@ -118,7 +143,14 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
             if (kind === "device")
               await api.registerResourceDevice({
                 tenantId: deviceTenantId,
-                device: { targetId: nodeId, name, endpoint: url },
+                device: {
+                  targetId: nodeId,
+                  name,
+                  endpoint: url,
+                  ...(computeBilling === "platform"
+                    ? { computeService: { billing: "platform" as const } }
+                    : {}),
+                },
               });
             else {
               const configuration: ResourceBackendConfiguration = {
@@ -157,6 +189,7 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
                 location,
                 expectedRevision: 0,
                 state: "active",
+                computeBilling,
                 configuration,
               });
             }
@@ -169,7 +202,13 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
       >
         <label>
           <span>{zh ? "类型" : "Type"}</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+          <select
+            value={kind}
+            onChange={(e) => {
+              setKind(e.target.value as typeof kind);
+              setComputeBilling("external");
+            }}
+          >
             <option value="boxlite">BoxLite</option>
             <option value="cubesandbox">Cube</option>
             <option value="device">
@@ -178,6 +217,26 @@ export function ResourceBackendAdmin({ api }: { api: PiCloudApi }) {
           </select>
         </label>
         {field(zh ? "名称" : "Name", name, setName)}
+        <label>
+          <span>{zh ? "计算计费" : "Compute billing"}</span>
+          <select
+            value={computeBilling}
+            onChange={(event) => setComputeBilling(event.target.value as "platform" | "external")}
+          >
+            <option value="external">
+              {zh ? "自有算力 · 不计费" : "User-provided compute · no charge"}
+            </option>
+            <option value="platform">
+              {kind === "device"
+                ? zh
+                  ? "平台 Android 算力"
+                  : "Platform Android compute"
+                : zh
+                  ? "平台算力 · 按套餐计量"
+                  : "Platform compute · metered"}
+            </option>
+          </select>
+        </label>
         {kind === "device" &&
           field(zh ? "所属组织 ID" : "Organization ID", deviceTenantId, setDeviceTenantId)}
         {kind !== "device" && (
