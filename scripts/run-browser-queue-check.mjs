@@ -124,10 +124,25 @@ try {
   await server.listen();
   const port = server.httpServer.address().port;
   await withChromePage({ width: 1000, height: 800 }, async (page) => {
+    await page.send("Page.addScriptToEvaluateOnNewDocument", {
+      source:
+        "window.fixtureErrors=[];addEventListener('error',e=>fixtureErrors.push(e.message));addEventListener('unhandledrejection',e=>fixtureErrors.push(String(e.reason)));",
+    });
     await page.navigate(`http://127.0.0.1:${port}/queue.html`);
-    await page.waitFor(
-      "window.fixtureReady && document.querySelectorAll('.pending-input-row').length===3",
-    );
+    try {
+      await page.waitFor(
+        "window.fixtureReady && document.querySelectorAll('.pending-input-row').length===3",
+      );
+    } catch (error) {
+      console.error(
+        JSON.stringify(
+          await page.evaluate(
+            "({ready:window.fixtureReady,errors:window.fixtureErrors,text:document.body.innerText.slice(0,1000)})",
+          ),
+        ),
+      );
+      throw error;
+    }
     const initialReads = await page.evaluate("window.queueReads");
     await page.wait(4500);
     assert.equal(
