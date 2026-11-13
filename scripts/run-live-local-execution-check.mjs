@@ -290,9 +290,33 @@ try {
   assert.equal(await readFile(resolve(directory, "project/once.txt"), "utf8"), "ONCE\n");
   assert.equal(await readFile(resolve(directory, "project/note.txt"), "utf8"), "after");
   assert(counters[1].events > 0);
+  report.readers = counters;
+  report.onePhysicalEffect = true;
+  // Run settlement can precede its final PG projection. Read canonical history
+  // after ordered writer retirement, as the other native acceptance drivers do.
+  await until(
+    async () =>
+      !(
+        await sql`select 1 from session_leases l join sessions s
+    on s.tenant_id=l.tenant_id and s.pi_session_id=l.pi_session_id
+    where s.id=${session.sessionId}::uuid and s.tenant_id=${tenant.tenantId}::uuid and l.released_at is null limit 1`.execute(
+          db,
+        )
+      ).rows.length,
+    "canonical writer retirement",
+  );
   const history = await nativeHistory(db, { tenantId: tenant.tenantId, runId: run.runId });
   const messages = nativeMessages(history);
   const results = messages.filter((message) => message.role === "toolResult");
+  report.toolOutcomes = results.map((message) => ({
+    name: message.toolName,
+    isError: message.isError === true,
+    text: (message.content ?? [])
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+      .slice(0, 2048),
+  }));
   for (const name of ["local_write", "local_edit", "local_read", "local_bash"])
     assert(
       results.some((message) => message.toolName === name && !message.isError),
@@ -304,11 +328,13 @@ try {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+  report.answer = answer.slice(-4096);
+  report.usage = runUsage(history);
+  await save();
   assert(
     answer.includes("LOCAL_OK") && /red|红/i.test(answer),
     "The model did not confirm the local image and completion",
   );
-  report.answer = answer.slice(-4096);
   const {
     rows: [counts],
   } = await sql`select
@@ -317,10 +343,7 @@ try {
     db,
   );
   assert.deepEqual(counts, { vms: 0, charges: 0 });
-  report.readers = counters;
-  report.onePhysicalEffect = true;
   report.noCloudComputeOrCharge = true;
-  report.usage = runUsage(history);
   report.accepted = true;
 } catch (error) {
   failure = error;
