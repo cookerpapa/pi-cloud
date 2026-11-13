@@ -87,6 +87,16 @@ export async function createSandboxSessionRuntime(options: {
       ),
       secret: options.managementToken,
     });
+    const deviceCompletion = process.env.PI_CLOUD_DEVICE_COMPLETION_URL
+      ? new ToolCompletionIssuer({
+          url: process.env.PI_CLOUD_DEVICE_COMPLETION_URL,
+          ca: completion.options.ca,
+          secret: options.managementToken,
+          ...(process.env.PI_CLOUD_DEVICE_COMPLETION_ADDRESS
+            ? { address: process.env.PI_CLOUD_DEVICE_COMPLETION_ADDRESS }
+            : {}),
+        })
+      : undefined;
     const bindings = new PostgresSandboxBindings(
       options.publicationDatabase,
       config.sandboxDomainId,
@@ -455,6 +465,7 @@ export async function createSandboxSessionRuntime(options: {
     await server.listen();
     return {
       completion,
+      deviceCompletion,
       retention,
       sessionActivity,
       dispatcher,

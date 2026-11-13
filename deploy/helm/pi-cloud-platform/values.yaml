@@ -358,6 +358,12 @@ toolCompletion:
   replicas: 2
   tlsSecretName: pi-cloud-tool-completion-tls
   baseUrl: https://tool-completion:4320/v1/completions
+  public:
+    enabled: false
+    address: ""
+    url: ""
+    nodePort: 30432
+    clientCidrs: [127.0.0.1/32, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
   observationBaseUrl: http://session-runtime:3000
   guestCidrs: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
   resources:

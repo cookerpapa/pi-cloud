@@ -320,6 +320,9 @@ export async function startSessionRuntime(): Promise<void> {
       transport: executorTransport,
       publish: (topic, reply) => sandboxControl!.publishReply(topic, reply),
       completion: sandboxControl.completion,
+      ...(sandboxControl.deviceCompletion
+        ? { deviceCompletion: sandboxControl.deviceCompletion }
+        : {}),
     });
     executorCleanupTimer = setInterval(() => {
       executorCleanup ??= executionTargets

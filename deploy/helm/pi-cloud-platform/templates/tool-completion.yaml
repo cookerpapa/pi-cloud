@@ -89,6 +89,16 @@ metadata: { name: tool-completion }
 spec:
   selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-completion }
   ports: [{ name: http, port: 4320, targetPort: http }]
+{{- if .Values.toolCompletion.public.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata: { name: tool-completion-public }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: tool-completion }
+  ports: [{ name: https, port: 4320, targetPort: http, nodePort: {{ .Values.toolCompletion.public.nodePort }} }]
+{{- end }}
 {{- if .Values.networkPolicy.enabled }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -104,6 +114,11 @@ spec:
             matchLabels: { {{ .Values.networkPolicy.trustedNamespaceLabel.key }}: {{ .Values.networkPolicy.trustedNamespaceLabel.value | quote }} }
         {{- range .Values.toolCompletion.guestCidrs }}
         - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+        {{- if .Values.toolCompletion.public.enabled }}
+        {{- range .Values.toolCompletion.public.clientCidrs }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
         {{- end }}
       ports: [{ protocol: TCP, port: 4320 }]
   egress:

@@ -3,10 +3,7 @@ import { createHash } from "node:crypto";
 import { sql } from "kysely";
 import { newIdempotencyKey } from "@pi-cloud/session-client";
 import { streamSessionEvents } from "@pi-cloud/session-client";
-import {
-  createInitialSessionView,
-  sessionViewReducer,
-} from "@pi-cloud/session-client";
+import { createInitialSessionView, sessionViewReducer } from "@pi-cloud/session-client";
 import { crashOwnedWorker } from "./owned-worker-crash.mjs";
 import { kubectl, podFor, serviceAddress, signalService } from "./production-kubernetes.mjs";
 import { nativeHistory, nativeMessages } from "./native-session-history.mjs";

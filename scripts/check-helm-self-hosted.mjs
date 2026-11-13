@@ -143,11 +143,16 @@ try {
   const management = find("Deployment", "pi-cloud-control-plane");
   const cp = find("Deployment", "pi-cloud-session-runtime");
   const metering = find("Deployment", "pi-cloud-metering");
-  assert(
-    find("NetworkPolicy", "pi-cloud-metering").spec.egress.some((rule) =>
-      rule.ports?.some((port) => port.protocol === "TCP" && port.port === 3000),
-    ),
-    "Local lifecycle collection must reach the declared Cube API service port",
+  assert.deepEqual(
+    [
+      ...new Set(
+        find("NetworkPolicy", "pi-cloud-metering").spec.egress.flatMap((rule) =>
+          (rule.ports ?? []).map((port) => port.port),
+        ),
+      ),
+    ].sort((a, b) => a - b),
+    [53, 5432],
+    "Service-minute settlement only needs DNS and PostgreSQL, not a provider API",
   );
   const api = find("Deployment", "pi-cloud-session-api");
   const completion = find("Deployment", "pi-cloud-tool-completion");

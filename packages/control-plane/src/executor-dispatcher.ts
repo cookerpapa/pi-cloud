@@ -25,6 +25,7 @@ export class ExecutorDispatcher {
       transport: ExecutorTransport;
       publish(topic: string, reply: ToolReply): Promise<void>;
       completion: { issue(grant: ToolCompletionGrant): Promise<ToolCompletionDestination> };
+      deviceCompletion?: { issue(grant: ToolCompletionGrant): Promise<ToolCompletionDestination> };
     },
   ) {}
   async consume(
@@ -77,7 +78,17 @@ export class ExecutorDispatcher {
     }
     let attempted = false;
     try {
-      const completion = await this.options.completion.issue({
+      const issuer = new URL(row.endpoint).pathname.startsWith("/targets/")
+        ? this.options.deviceCompletion
+        : this.options.completion;
+      if (!issuer)
+        throw new ExecutorTransportFailure({
+          code: "device_completion_unavailable",
+          effect: "not_started",
+          message:
+            "Configure a reachable HTTPS completion endpoint before dispatching to outbound devices.",
+        });
+      const completion = await issuer.issue({
         operationId: fact.operationId,
         expiresAt: fact.replyRecovery.deadlineAt,
         context: {

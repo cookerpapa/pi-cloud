@@ -754,7 +754,7 @@
     "metering": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["replicas", "resources", "sourcePorts"],
+      "required": ["replicas", "resources"],
       "properties": {
         "replicas": {
           "type": "integer",
@@ -762,15 +762,6 @@
         },
         "resources": {
           "type": "object"
-        },
-        "sourcePorts": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "uniqueItems": true
         }
       }
     },
@@ -814,7 +805,8 @@
         "baseUrl",
         "resources",
         "observationBaseUrl",
-        "guestCidrs"
+        "guestCidrs",
+        "public"
       ],
       "properties": {
         "replicas": {
@@ -843,6 +835,37 @@
             "minLength": 1
           },
           "uniqueItems": true
+        },
+        "public": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "address", "url", "nodePort", "clientCidrs"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "address": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^(|https://[^\\s/]+/v1/completions)$"
+            },
+            "nodePort": {
+              "type": "integer",
+              "minimum": 30000,
+              "maximum": 32767
+            },
+            "clientCidrs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          }
         }
       }
     }

@@ -200,7 +200,10 @@ export class DeviceExecutionManager {
           isError = true;
           return error.result ?? { content: [{ type: "text" as const, text: error.message }] };
         });
-      signal.throwIfAborted();
+      // Fixed Linux Tools settle their own process/file operation and retain
+      // bounded error output. Android input acknowledgement cannot prove that
+      // an interrupted UI action completed, so it retains UNKNOWN semantics.
+      if (this.options.kind === "android") signal.throwIfAborted();
       reply = {
         type: "executor.result",
         result: { toolName: call.toolName, toolCallId: call.nativeCallId, result, isError },

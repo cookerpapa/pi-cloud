@@ -77,7 +77,24 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       },
       sessionRuntime: { replicas: 1, autoscaling: { enabled: false } },
       sessionApi: { replicas: 1, autoscaling: { enabled: false } },
-      toolCompletion: { replicas: 1 },
+      toolCompletion: {
+        replicas: 1,
+        ...(e.PI_CLOUD_DEVICE_COMPLETION_ADDRESS
+          ? {
+              public: {
+                enabled: true,
+                address: e.PI_CLOUD_DEVICE_COMPLETION_ADDRESS,
+                nodePort: n("PI_CLOUD_DEVICE_COMPLETION_PORT", 30432),
+                url:
+                  e.PI_CLOUD_DEVICE_COMPLETION_URL ??
+                  `https://tool-completion:${n("PI_CLOUD_DEVICE_COMPLETION_PORT", 30432)}/v1/completions`,
+                clientCidrs: e.PI_CLOUD_DEVICE_COMPLETION_CLIENT_CIDRS
+                  ? JSON.parse(e.PI_CLOUD_DEVICE_COMPLETION_CLIENT_CIDRS)
+                  : ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+              },
+            }
+          : {}),
+      },
       controlPlane: {
         replicas: 1,
         defaultWorkspaceCapacityGiB: n("PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB", 32),
@@ -153,7 +170,7 @@ export function selfHostedValues({ environment: e, runtime, cluster, template, i
       networkPolicy: {
         trustedTcpPorts: [
           80, 8333, 8317, 443, 3000, 3001, 3129, 4100, 4300, 4318, 4500, 4510, 5432, 6379, 9092,
-          9464, 9465, 9466, 8089, 12345, 12346,
+          9464, 9465, 9466, 8089, 8090, 12345, 12346,
         ],
         externalEgressCidrs: [`${cluster.nodeAddress ?? "10.255.255.254"}/32`],
       },

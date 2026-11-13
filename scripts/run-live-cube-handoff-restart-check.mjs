@@ -11,10 +11,7 @@ import { resolve } from "node:path";
 import { createHash, randomUUID, randomInt } from "node:crypto";
 import sharp from "sharp";
 import { streamSessionEvents } from "@pi-cloud/session-client";
-import {
-  createInitialSessionView,
-  sessionViewReducer,
-} from "@pi-cloud/session-client";
+import { createInitialSessionView, sessionViewReducer } from "@pi-cloud/session-client";
 import { createDatabase } from "../packages/database/src/index.ts";
 import { SandboxControlClient } from "../packages/sandbox-control/src/sandbox-control-client.ts";
 import { sql } from "kysely";

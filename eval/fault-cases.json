@@ -115,20 +115,6 @@
       "invariant": "Provider history gaps remain explicit."
     },
     {
-      "id": "native-observation-unpriced",
-      "workspace": "@pi-cloud/accounting",
-      "file": "test/cube-native-observations.postgres.test.ts",
-      "test": "keeps native sampled time unpriced and attributes delete evidence after active bindings are gone",
-      "invariant": "Best-effort samples never invent confirmed monetary amounts."
-    },
-    {
-      "id": "native-observation-empty-page-cursor",
-      "workspace": "@pi-cloud/accounting",
-      "file": "test/cube-native-observations.postgres.test.ts",
-      "test": "atomically advances an opaque scan cursor even when missing quantities produce no priced events",
-      "invariant": "Empty observation pages retain atomic cursor fencing."
-    },
-    {
       "id": "managed-native-expiry-disabled",
       "workspace": "@pi-cloud/sandbox-control",
       "file": "test/cubesandbox-runtime-client.test.ts",
@@ -725,7 +711,7 @@
     },
     {
       "id": "interrupted-framed-snapshot",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/sse.test.ts",
       "test": "discards an interrupted snapshot and applies only the complete replacement",
       "invariant": "A partial snapshot never appears in the browser or leaks into the replacement snapshot."
@@ -1656,14 +1642,14 @@
     },
     {
       "id": "composer-ordinary-send-lost-ack",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/composer-submission.test.ts",
       "test": "turn retries a lost ACK but permits an intentional repeat after confirmation",
       "invariant": "An unchanged ordinary-send retry reuses the accepted input identity; a confirmed intentional repeat remains possible."
     },
     {
       "id": "composer-cross-action-lost-ack",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/composer-submission.test.ts",
       "test": "ends uncertain turn identity after the other action succeeds",
       "invariant": "A successful Steer ends the old ordinary intent; fresh identical input receives a new identity."
@@ -1733,21 +1719,21 @@
     },
     {
       "id": "returned-turn-identity",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/composer-submission.test.ts",
       "test": "retires only the returned turn identity, preserving an unrelated Session or newer intent",
       "invariant": "Returned input ends only its matching unresolved submission; new post-Stop input retains its key."
     },
     {
       "id": "returned-steer-identity",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/composer-submission.test.ts",
       "test": "retires only the returned steer identity, preserving an unrelated Session or newer intent",
       "invariant": "Returned input ends only its matching unresolved submission; new post-Stop input retains its key."
     },
     {
       "id": "returned-input-late-ack",
-      "workspace": "@pi-cloud/web-ui",
+      "workspace": "@pi-cloud/session-client",
       "file": "test/composer-submission.test.ts",
       "test": "a late acknowledgement of a returned input cannot clear its resubmission",
       "invariant": "A late ACK cannot erase the fresh returned-input submission identity."
@@ -2901,27 +2887,6 @@
       "invariant": "A replacement checks the original physical identity before a model call; pure chat does not allocate compute."
     },
     {
-      "id": "lifecycle-unknown-stop-time",
-      "workspace": "@pi-cloud/accounting",
-      "file": "test/lifecycle-interval.test.ts",
-      "test": "does not charge until discovery when a VM stopped earlier, and accepts an explicit physical end time",
-      "invariant": "Discovery time is not invented as physical stop time for a confirmed charge."
-    },
-    {
-      "id": "lifecycle-clock-rollback",
-      "workspace": "@pi-cloud/accounting",
-      "file": "test/lifecycle-interval.test.ts",
-      "test": "keeps paused checkpoints without invoice rows and never prices a wall-clock interval twice",
-      "invariant": "Clock rollback cannot price an interval twice and paused snapshots do not accrue compute."
-    },
-    {
-      "id": "lifecycle-source-fairness",
-      "workspace": "@pi-cloud/accounting",
-      "file": "test/lifecycle-scheduling.test.ts",
-      "test": "gives untouched sources a turn while other nodes continuously catch up",
-      "invariant": "Continuously busy source histories cannot starve untouched nodes."
-    },
-    {
       "id": "pending-reply-retention-floor",
       "workspace": "@pi-cloud/runtime-core",
       "file": "test/tool-reply-retention.test.ts",
@@ -3025,6 +2990,55 @@
       "file": "test/allocation-admission.test.ts",
       "test": "unknown deletion keeps command admission closed while only deletion is retried",
       "invariant": "Uncertain deletion never reopens command admission; retry targets only the original physical cleanup."
+    },
+    {
+      "id": "service-observation-gap",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/service-minutes.postgres.test.ts",
+      "test": "withholds observation gaps and closes interruption at the last confirmation",
+      "invariant": "An unobserved gap never becomes a priced service interval."
+    },
+    {
+      "id": "service-metering-restart",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/service-minutes.postgres.test.ts",
+      "test": "retains management facts while metering is stopped and carries partial minutes across resume",
+      "invariant": "Collector outage and retries preserve source facts and do not charge paused time."
+    },
+    {
+      "id": "service-clock-rollback",
+      "workspace": "@pi-cloud/accounting",
+      "file": "test/service-minutes.postgres.test.ts",
+      "test": "closes an authoritative stop after clock rollback without rebilling earlier time",
+      "invariant": "Clock rollback neither revives a closed period nor bills the same interval twice."
+    },
+    {
+      "id": "service-byo-exclusion",
+      "workspace": "@pi-cloud/control-plane",
+      "file": "test/managed-device-service.postgres.test.ts",
+      "test": "requires explicit managed Android enrollment and never bills an ordinary registered device",
+      "invariant": "Only an explicit managed service contract can create device compute charges."
+    },
+    {
+      "id": "local-link-no-replay",
+      "workspace": "@pi-cloud/device-link",
+      "file": "test/link.test.ts",
+      "test": "keeps execution and original completion independent of the outbound link, without replay",
+      "invariant": "Reconnecting transport does not repeat an accepted external effect or replace its completion destination."
+    },
+    {
+      "id": "local-operation-cancel",
+      "workspace": "@pi-cloud/device-link",
+      "file": "test/link.test.ts",
+      "test": "cancels only the selected local operation and retains its settled error output",
+      "invariant": "Cancellation leaves independent operations alive and preserves settled native output."
+    },
+    {
+      "id": "session-reader-independence",
+      "workspace": "@pi-cloud/session-client",
+      "file": "test/sse.test.ts",
+      "test": "uses the same authenticated client in Node and keeps another reader alive after disconnect",
+      "invariant": "Closing one chat reader neither stops the agent nor another reader."
     }
   ]
 }

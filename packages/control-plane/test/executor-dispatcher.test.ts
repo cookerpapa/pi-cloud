@@ -82,6 +82,21 @@ function fixture() {
 }
 
 describe("Android dispatch through the existing committed Session consumer", () => {
+  it("requires a device-reachable completion route before sending an outbound command", async () => {
+    const f = fixture();
+    f.row.endpoint = `http://device-link:8090/targets/${f.row.target_id}`;
+    await f.dispatcher.consume(f.record);
+    expect(f.transport.submit).not.toHaveBeenCalled();
+    expect(f.publish.mock.calls[0]?.[1]).toMatchObject({
+      failure: { code: "device_completion_unavailable", effect: "not_started" },
+    });
+    const dispatcher = new ExecutorDispatcher({
+      ...f.dispatcher.options,
+      deviceCompletion: f.completion,
+    });
+    await dispatcher.consume(f.record);
+    expect(f.transport.submit).toHaveBeenCalledOnce();
+  });
   it("does not start device work when its original completion deadline cannot be granted", async () => {
     const f = fixture();
     f.completion.issue.mockRejectedValue(new Error("original deadline expired"));

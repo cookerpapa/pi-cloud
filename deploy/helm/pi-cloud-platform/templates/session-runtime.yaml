@@ -70,6 +70,10 @@ spec:
             - { name: NODE_ENV, value: production }
             - { name: PI_CLOUD_TOOL_COMPLETION_URL, value: {{ .Values.toolCompletion.baseUrl | quote }} }
             - { name: PI_CLOUD_COMPLETION_CA_FILE, value: /run/pi-cloud-completion/ca.crt }
+            {{- if .Values.toolCompletion.public.enabled }}
+            - { name: PI_CLOUD_DEVICE_COMPLETION_URL, value: {{ required "Supply the external completion URL" .Values.toolCompletion.public.url | quote }} }
+            - { name: PI_CLOUD_DEVICE_COMPLETION_ADDRESS, value: {{ required "Supply a reachable completion IP" .Values.toolCompletion.public.address | quote }} }
+            {{- end }}
             - { name: PI_CLOUD_DEFAULT_WORKSPACE_CAPACITY_GIB, value: {{ .Values.controlPlane.defaultWorkspaceCapacityGiB | quote }} }
             - { name: PI_CLOUD_MODEL_CATALOG_FILE, value: /run/pi-cloud-models/model-catalog.json }
             - { name: HOST, value: 0.0.0.0 }

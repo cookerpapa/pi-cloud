@@ -58,7 +58,11 @@ try {
     "source",
     "state",
   ]);
-  assert.equal(guest.env.length, 1);
+  for (const name of ["PI_CLOUD_ANDROID_CPUS", "PI_CLOUD_ANDROID_MEMORY_MIB"]) {
+    const declared = guest.env.find((entry) => entry.name === name);
+    assert(declared, `Android runtime needs its declared ${name}`);
+    assert.equal(executor.env.find((entry) => entry.name === name)?.value, declared.value);
+  }
   for (const c of pod.containers) assert.equal(c.resources.limits, undefined);
   assert(!yaml.includes("docker.sock"));
   assert(!yaml.includes("hostPort:"));

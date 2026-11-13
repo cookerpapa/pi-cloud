@@ -52,6 +52,21 @@ only for a loopback development connection. This transport has a single gateway
 replica in the initial operator integration; replication needs explicit device
 connection routing, not a claim of fleet HA.
 
+Configure a device-reachable HTTPS result endpoint as well as WSS. Set
+`PI_CLOUD_DEVICE_COMPLETION_ADDRESS` to a verified routable IP and optionally
+`PI_CLOUD_DEVICE_COMPLETION_PORT` (default 30432) in the deployment configuration.
+The matched chart exposes the existing completion service through a NodePort;
+it does not add a completion queue or result store. The default TLS server name
+remains `tool-completion`, with the existing CA supplied in the scoped capability;
+the explicit address controls where the device connects. Custom
+`PI_CLOUD_DEVICE_COMPLETION_URL` must match the deployed certificate and use
+`/v1/completions`. `PI_CLOUD_DEVICE_COMPLETION_CLIENT_CIDRS` is a JSON array for
+the authenticated ingress. Private-network defaults do not assert Internet reachability.
+Configure external routing/firewall/TLS as appropriate and retain an old endpoint
+while its accepted operations can still complete. Outbound dispatch without this
+configuration fails before sending a command, rather than running it with an
+unreachable cluster-only callback.
+
 Provision one random UUID and a random token of at least 32 characters for the
 device. The private `secrets/device-link-devices.json` is a map from UUID to token;
 its matching Kubernetes Secret is `pi-cloud-device-link-credentials` with the
