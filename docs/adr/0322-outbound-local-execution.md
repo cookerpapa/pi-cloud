@@ -1,6 +1,6 @@
 # ADR-0322: Outbound local execution with the existing destination contract
 
-Date: 2026-11-13. Status: accepted; implementation in progress. Issue: #38.
+Date: 2026-11-13. Status: implemented and live-verified on 2026-11-14. Issue: #38.
 
 The owner authorizes local execution with cloud-only Pi loops. The first
 supported local environment is explicit Linux execution in Bubblewrap 0.9.0;
@@ -64,3 +64,5 @@ ownership. Run a real local Linux target against the cloud Session path and an
 independent chat client. Check clean-checkout startup and document the Linux-only
 boundary. Removing a target requires existing binding closure; never interpret
 a disconnected gateway as proof to delete user files or release managed resources.
+
+Delivery: [shared clients, local execution and service minutes](../reports/client-service-delivery-20261114.md).

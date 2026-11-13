@@ -1,6 +1,6 @@
 # ADR-0321: Shared Session clients with cloud-owned execution
 
-Date: 2026-11-13. Status: accepted; implementation in progress. Issue: #38.
+Date: 2026-11-13. Status: implemented and live-verified on 2026-11-14. Issue: #38.
 
 The owner keeps the Pi Harness in trusted cloud Workers. A chat client and a
 device executor are independent roles, even when one desktop application ships
@@ -45,3 +45,5 @@ Cover simultaneous readers, incomplete stream frames, snapshot reconnection,
 canonical/live deduplication, bounded history, lost submission acknowledgements,
 native queue edits/Stop and closing a client while work continues. Public APIs,
 fencing and the sole Session writer remain unchanged.
+
+Delivery: [shared clients, local execution and service minutes](../reports/client-service-delivery-20261114.md).

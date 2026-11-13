@@ -1,11 +1,14 @@
 # Implementation roadmap
 
-## Cloud clients and sandbox service accounting — in progress
+## Cloud clients and sandbox service accounting — delivered
 
-Implement #38 through a shared Session client and explicit local execution with
-cloud-owned Pi loops (ADR-0321). Follow with #39's provider-independent service
-minutes, BYO exemption and reclamation evidence. Verify and publish complete
-slices; heavy suites and real provider acceptance remain serial.
+Issues #38 and #39 are implemented, published and
+[verified](reports/client-service-delivery-20261114.md) under ADR-0321–0323.
+Web/Node clients share Session transport and state; explicit local Linux tools
+retain cloud Pi loops and original-result recovery. Cube, BoxLite and explicitly
+managed Android produce platform service-minute receipts; BYO remains exempt.
+ADR-0324 fixes registered template publication during matched recovery. Heavy
+checks ran serially, with original assets and operating limits preserved.
 
 ## Decoupling and dynamic resource backends — delivered
 
@@ -16,7 +19,7 @@ consolidated Skill surface, role-specific configuration/image inputs and measure
 component/metadata publication. Worker continuation, native cancellation, images,
 schedules, Cube/Box retained files and Android device recovery were exercised
 serially with original assets preserved. Unverified hosted/multi-node guarantees
-and the original staging-locator follow-up remain explicit in BACKLOG.
+remain explicit in BACKLOG; the obsolete empty staging locator has since been removed.
 
 ## Alternate runtime production integration — deployed
 

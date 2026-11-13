@@ -20,6 +20,16 @@ platform credential. Upstream OAuth/API credentials remain in CLIProxyAPI's
 private deployment Volume. The Worker has no Cube API credential; sandbox
 management and the independent completion receiver have no model credential.
 
+The explicit local Linux integration uses a different boundary: Bubblewrap mounts
+only the selected project, fixed runtime files and temporary storage. The host
+home/root, Docker socket and platform credentials are not exposed to its tools.
+It uses the user's host network and does not claim KVM-equivalent isolation.
+Its outbound connector holds a device-scoped link token separate from the local
+receiver credential. The gateway forwards existing executor requests without a
+durable command queue or reconnect replay; results use scoped HTTPS completion.
+Disconnecting or unregistering a BYO device does not authorize deleting its files.
+The cloud Worker remains the only Pi Harness host. See [local execution](LOCAL_EXECUTION.md).
+
 ### Tenant and stale-Worker isolation
 
 Every product read/write includes tenant ownership. PG issues one immutable
@@ -47,7 +57,7 @@ trusted processes; they are not cryptographic proof of a record's origin.
 ### Durable authorities
 
 PostgreSQL owns Runs and canonical Pi Sessions; Kafka owns the bounded
-AcceptedFact log; the persistent Cube Volume owns Workspace bytes. Worker and
+AcceptedFact log; the configured Workspace persistence backend owns Workspace bytes. Worker and
 Gateway caches are rebuildable. There is no competing workflow or checkpoint
 head.
 

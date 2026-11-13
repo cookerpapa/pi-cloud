@@ -1,26 +1,26 @@
 # Maintained backlog
 
-## Shared clients, local execution and service accounting — in progress
+## Shared clients, local execution and service accounting — delivered
 
-- [ ] #38 / ADR-0321: shared Session transport/state, explicit outbound Linux
-  execution, failure acceptance and publication. No local Harness migration.
-- [x] #38 client extraction: web and Node share HTTP/SSE/state/input identities;
-  two readers and disconnect behavior pass alongside 30 client and 219 web checks.
-  The combined feature's publication remains pending.
-- [x] #38 source: outbound scoped device link, shared receiver and explicit Linux
-  namespace execution. Native file/image/shell/background/cancellation checks and
-  Android/Linux PG binding recovery pass; deployment acceptance remains pending.
-- [ ] #39 / ADR-0323: platform service minutes, BYO exemption, managed Android
-  lifecycle evidence and lightweight reclamation timestamps; independent accounting.
-- [x] #39 source: PG service periods, complete-minute settlement, coalesced passive
-  observations, explicit managed Android enrollment and separate reclamation facts.
-  Targeted SQL/receiver tests pass; full verification and publication remain pending.
-- Heavy verification and provider acceptance run serially. WSL memory and
-  BoxLite's documented host-isolation configuration are outside this work.
-- [ ] Live publication repair / ADR-0324: synchronize deployment-owned registered
-  templates before recovery; retire confirmed early Cube creations without
-  discarding ownership or Workspace bytes. Validate the original machines and
-  the explicit BoxLite publication.
+- [x] #38 / ADR-0321–0322: shared web/Node Session client and explicit outbound
+  Linux execution with cloud-owned Pi loops. Two clients, local files/images/Bash,
+  Worker replacement and original-result recovery passed on the live deployment.
+- [x] #39 / ADR-0323: platform service minutes, BYO exemption, managed Android
+  enrollment and independent minute settlement. Real Cube, BoxLite and Android
+  receipts, interruption boundaries and withdrawal were verified serially.
+- [x] Lightweight reclamation logs distinguish accepted closure, provider dispatch
+  and positive deletion confirmation; no physical stop timestamp is invented.
+- [x] ADR-0324: publish deployment-owned registered templates before recovery;
+  preserve early Cube creation receipts through confirmed cleanup. Original
+  machines and the explicit BoxLite publication were verified.
+- [x] Matched/scoped publication, source and failure checks, retained images,
+  Android Worker/receiver/VM recovery and original-asset preservation.
+
+[Delivery evidence and limits](reports/client-service-delivery-20261114.md).
+Core publication is `local-image-reply-20261113`, schema 224, with independently
+recorded role artifacts. Device link, BoxLite and Android keep separate releases.
+WSL memory and BoxLite's host-isolation profile were not changed. Optional test
+nodes are stopped and temporary Worker memory settings are restored.
 
 ## Decoupling and resource integration — delivered
 
@@ -47,17 +47,19 @@ and Android userdata were preserved.
 - [x] #37: Worker/File Gateway source subsets, ten-role import manifests and
   actual built-image startup/model/Tool/continuation/shutdown paths verified.
 
-Current publication is `decoupled-metadata-20261113`, schema 222. Component images
+That delivery published `decoupled-metadata-20261113`, schema 222. Component images
 keep separate verified revisions; unchanged provider/native images retain their
 original evidence. Optional Box/Android nodes are stopped, and temporary Worker
 memory settings used for the constrained-host Android experiment are restored.
 
 ## Operational follow-up
 
-- [ ] One original upload-area locator retains a stale guest inode after VM
-  recreation. Its sweeper conservatively defers cleanup. Design any repair around
-  verified Workspace/area identity; do not rebind unknown paths or delete uncertain
-  bytes. The original files were left unchanged and new upload/retention checks pass.
+- [x] Remove the owner-approved stale upload-area locator after checking the
+  exact Workspace/area identity and confirming its directory was empty. Original
+  Workspace source/image files remain unchanged.
+- [ ] Four obsolete Cube templates still return native deletion timeouts. The
+  bounded retention helper preserves their cleanup records and current templates;
+  investigate through the maintained metadata/physical-cleanup procedure.
 - [ ] Multi-node/hosted storage and stronger BoxLite host isolation remain separate
   acceptance work; registration alone does not provide those guarantees.
 

@@ -86,7 +86,7 @@ Registry removal is not an implicit cleanup operation. The administrator first
 stops new allocation, releases resources through their normal API and confirms
 physical cleanup. Missing health or registration activity is never that proof.
 
-## Android and placement
+## Devices and placement
 
 Android uses the existing device-target authority, not a Linux volume/VM facade.
 The administrator registers an already-running compatible device executor using
@@ -99,6 +99,12 @@ registration code. This creates no emulator, Workspace or device access schedule
 The Resources page lists registered devices and can connect/disconnect an idle
 conversation using the existing Session revision checks. A listed registration
 does not claim the device is online. Device state retains its own lifetime.
+
+An explicitly connected local Linux receiver uses the same registration and
+binding APIs with its verified Linux capabilities. Its endpoint is the private
+outbound device gateway, and its selected local project remains on the user's
+computer. Registering it creates no cloud VM or Workspace copy. See
+[local setup](LOCAL_EXECUTION.md); this does not imply Windows/macOS support.
 
 Local Workspace storage is still local. Identical path names on different nodes
 are not the same pool; attachment verifies the pool/generation from ADR-0318.

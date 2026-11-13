@@ -1,6 +1,6 @@
 # ADR-0324: Registered templates during matched Guest publication
 
-Date: 2026-11-13. Status: accepted; implementation in progress.
+Date: 2026-11-13. Status: implemented and live-verified on 2026-11-14.
 
 Live acceptance of #38/#39 exposed a publication gap: the operator updated its
 native template file, while the registered primary backend retained the previous
@@ -45,3 +45,5 @@ foreign/custom backends, known early receipts, changed receipt identities, unkno
 creates and deletion failures. Run the repaired cold publication, confirm both
 original machines recover with the new Guest and retain their files, and verify
 the explicit BoxLite publication before its live service-minute acceptance.
+
+Delivery: [shared clients, local execution and service minutes](../reports/client-service-delivery-20261114.md).

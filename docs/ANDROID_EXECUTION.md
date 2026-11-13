@@ -2,12 +2,14 @@
 
 Status: integrated operator target under ADR-0313, with
 [real six-tool, image, Worker/receiver recovery and VM-restart acceptance](reports/alternate-runtimes-20261112.md).
-The current core uses schema 222, Session topic v21 and executor protocol 2.
+The current core uses schema 224, Session topic v21 and executor protocol 2.
 The [November 13 delivery](reports/decoupling-delivery-20261113.md) adds administrator
 registration for an explicit organization and resource-page device binding, and
 revalidates tools, images, Worker/receiver recovery and retained userdata.
-The current device artifact is `android-20261112-r3`; initial October acceptance
-is recorded separately in [the historical delivery report](reports/android-execution-delivery-20261026.md).
+The [November 14 delivery](reports/client-service-delivery-20261114.md) publishes
+`client-android-20261114-r1`, verifies explicit service-minute enrollment and its
+withdrawal, and repeats six-tool/image, Worker/receiver and VM-restart acceptance.
+Initial October acceptance is recorded separately in [the historical delivery report](reports/android-execution-delivery-20261026.md).
 The dedicated cloud-phone picker remains hidden.
 
 The October 27 owner decision withdraws the cloud-phone picker/screen controls

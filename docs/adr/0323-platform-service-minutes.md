@@ -1,6 +1,6 @@
 # ADR-0323: Platform service minutes and reclamation evidence
 
-Date: 2026-11-13. Status: accepted; implementation in progress. Issue: #39.
+Date: 2026-11-13. Status: implemented and live-verified on 2026-11-14. Issue: #39.
 
 The owner sells provisioned sandbox service, with minute-level settlement, and
 exempts user-provided compute. This supersedes ADR-0309's compute pricing rule
@@ -98,3 +98,5 @@ use, stale observations, collector restart, duplicate delivery, minute/rate
 boundaries, renewed/expired deadlines and delayed/failed cleanup. Verify logs
 without secret contents and actual retained physical files. Production tariff
 activation/payment collection are not introduced by this change.
+
+Delivery: [shared clients, local execution and service minutes](../reports/client-service-delivery-20261114.md).

@@ -1,5 +1,9 @@
 # Delivery and research evidence
 
+- [Shared clients, local execution and platform service minutes](client-service-delivery-20261114.md):
+  #38/#39, cloud-owned Pi loops, outbound Linux tools, independent minute settlement,
+  real Cube/BoxLite/Android receipts, recovery, publication repairs and preserved assets.
+
 - [Decoupling, resource backends and scoped release delivery](decoupling-delivery-20261113.md):
   #30/#31/#33–#37, independent local storage, dynamic registry, two Skill tools,
   role-owned configuration/artifacts, actual single-component and zero-restart

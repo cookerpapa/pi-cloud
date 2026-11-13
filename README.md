@@ -18,7 +18,7 @@ restarting platform services; users select them on the resource page. Existing
 Android devices can be registered for an organization and bound to idle Sessions.
 There is no automatic provider fallback or emulator-provisioning UI. See the
 [backend contract](docs/RESOURCE_BACKENDS.md) and
-[current delivery evidence](docs/reports/decoupling-delivery-20261113.md).
+[current delivery evidence](docs/reports/client-service-delivery-20261114.md).
 
 ## What it does
 

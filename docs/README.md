@@ -66,7 +66,8 @@ Git preserves their implementation history.
 The remaining product/contributor guides are [Web direction](WEB_UI_DIRECTION.md),
 [release policy](RELEASE_PROCESS.md) and [collaboration discipline](VIBE_CODING_PLAYBOOK.md).
 
-Latest delivery and validation: [Decoupling, resource backends and scoped releases](reports/decoupling-delivery-20261113.md).
+Latest delivery and validation: [Shared clients, local execution and service minutes](reports/client-service-delivery-20261114.md).
+Previous delivery: [Decoupling, resource backends and scoped releases](reports/decoupling-delivery-20261113.md).
 Previous validation: [Integrated BoxLite / Android acceptance](reports/alternate-runtimes-20261112.md).
 Latest maintenance: [Obsolete Cube metadata cleanup](reports/cube-metadata-cleanup-20261111.md).
 Serving runtime delivery: [Platform-owned elastic expiry](reports/platform-idle-expiry-20261111.md).

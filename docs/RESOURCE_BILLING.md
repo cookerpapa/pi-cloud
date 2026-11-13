@@ -1,8 +1,8 @@
 # Resource usage and statements
 
 [ADR-0323](adr/0323-platform-service-minutes.md) defines platform-provided service
-minutes independently of physical-uptime observations. The source implementation
-is tracked in #39; publication/acceptance status remains in BACKLOG. Statements
+minutes independently of physical-uptime observations. Issue #39 is published with
+[real Cube, BoxLite and managed Android acceptance](reports/client-service-delivery-20261114.md). Statements
 remain informational: payment collection and production tariffs are disabled.
 
 ## Compute service

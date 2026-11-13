@@ -272,6 +272,16 @@ clients (ADR-0321). DOM layout and platform-local drafts remain application-owne
 Disconnecting a reader does not stop a Run or create another Session consumer.
 See [Session clients](SESSION_CLIENT.md).
 
+An explicitly registered local Linux target uses the separate outbound device
+link from ADR-0322. Its fixed receiver executes file/shell Tools in the selected
+project through Bubblewrap, while the Pi Harness stays in the cloud Worker.
+The gateway forwards existing admission/cancellation messages; it has no durable
+command queue and does not replay commands after reconnect. Results use scoped
+HTTPS completion and the original Kafka reply destination. Device registration
+and chat subscriptions are independent. Local projects are neither synchronized
+to a cloud Workspace nor enrolled in managed VM expiry or compute billing.
+See [local execution](LOCAL_EXECUTION.md) for the actual isolation and network limits.
+
 The browser combines paged canonical history with snapshot-first SSE. Native
 commit coverage prevents a complete PG message and its earlier live fragments
 from being rendered twice. Text/Tool display descriptions reference the native

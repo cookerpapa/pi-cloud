@@ -2,8 +2,9 @@
 
 Issue #38 / ADR-0322 adds an explicitly connected local Linux project while the
 Pi Harness remains in cloud Workers. This is an operator integration, not a
-desktop application or a Windows/macOS executor. Publication/live acceptance is
-tracked separately from source verification in BACKLOG.
+desktop application or a Windows/macOS executor. It is published and
+[live-verified](reports/client-service-delivery-20261114.md), including two readers,
+local images and original-result recovery after Worker replacement.
 
 The same Session can be read through the [shared client](SESSION_CLIENT.md) or
 the web application. Closing a chat connection does not stop the local service.
