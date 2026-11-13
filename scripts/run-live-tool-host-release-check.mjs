@@ -44,6 +44,7 @@ execFileSync(
 );
 await mkdir(directory, { recursive: true, mode: 0o700 });
 const report = { at: new Date().toISOString(), accepted: false, cleanupConfirmed: false };
+const imageCheck = process.env.PI_CLOUD_LIVE_TOOL_HOST_IMAGE_CHECK === "1";
 const save = () =>
   writeFile(resolve(directory, "report.json"), JSON.stringify(report, null, 2) + "\n", {
     mode: 0o600,
@@ -170,7 +171,7 @@ while [ ! -f '${path}' ]; do sleep 0.2; done
 cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   run = await api.acceptTurn(
     session.sessionId,
-    `Do exactly these steps without delegation or search. First call bash with timeout 300 seconds and command exactly this JSON string: ${JSON.stringify(command)}. The operator will upload the gate file; wait for this same Bash to finish. Then call preview for port 5173 and reply CONTROL_RELEASE_CONTINUED plus its application link.`,
+    `Do exactly these steps without delegation or search. First call bash with timeout 300 seconds and command exactly this JSON string: ${JSON.stringify(command)}. The operator will upload the gate file; wait for this same Bash to finish. Then call preview for port 5173.${imageCheck ? " Next call generate_image exactly once with prompt: A simple flat blue circle centered on a plain white background, no text. No reference images; transparent_background=false. If it fails, report that failure without retrying." : ""} Reply CONTROL_RELEASE_CONTINUED plus the application link.`,
     newIdempotencyKey("control-release"),
     "low",
   );
@@ -228,6 +229,11 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
   );
   const oldPreview = beforeTools.find((t) => t.name === "preview");
   assert(oldPreview);
+  if (imageCheck)
+    assert(
+      beforeTools.some((t) => t.name === "generate_image"),
+      "Image service is not configured",
+    );
   assert.notEqual(
     oldPreview.description,
     previewToolDefinition.description,
@@ -357,6 +363,19 @@ cat '${path}'; echo CONTROL_RELEASE_TOOL_DONE`;
     ),
   );
   assert(results.some((m) => m.toolName === "preview" && !m.isError));
+  if (imageCheck) {
+    const generated = results.filter((m) => m.toolName === "generate_image");
+    assert.equal(generated.length, 1, "Image generation must execute once");
+    if (generated[0].isError)
+      report.imageFailure = JSON.stringify(generated[0].content).slice(0, 2000);
+    await save();
+    assert(!generated[0].isError, "Image generation did not return a confirmed result");
+    assert(
+      generated[0].content.some((part) => part.type === "image"),
+      "Generated image was not retained in the native result",
+    );
+    report.imageGeneration = { oneCall: true, retainedNativeImage: true };
+  }
   assert.equal(
     getCurrentTools(messages).find((t) => t.name === "preview")?.description,
     previewToolDefinition.description,
