@@ -1,5 +1,15 @@
 # Maintained backlog
 
+## HTTP MCP tool integration — planned
+
+- [ ] [#40](https://github.com/cookerpapa/pi-managed-agents/issues/40): evaluate
+  Pi's standalone MCP client and integrate HTTP tools through native Pi proxies,
+  the existing Session dispatch path and the execution-side Tool host. Extend
+  scoped catalog publication and retain authorization, original reply/deadline
+  recovery, cancellation and UNKNOWN semantics. Planning only; implementation
+  and deployment are not yet authorized. Multiple Harnesses and a platform STDIO
+  path are outside this slice.
+
 ## Managed Agents project positioning — documented
 
 - [x] Explain the implemented separation of conversation clients, cloud Agent
