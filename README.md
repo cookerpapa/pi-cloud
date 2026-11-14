@@ -29,7 +29,8 @@ There is no automatic provider fallback or emulator-provisioning UI. See the
 [current delivery evidence](docs/reports/client-service-delivery-20261114.md).
 
 > **Open to opportunities:** The maintainer is looking for engineering roles in
-> Agent Runtime, Harness or Managed Agents infrastructure. For relevant opportunities,
+> Agent Runtime, Harness or Managed Agents infrastructure, based in **Guangzhou,
+> Shenzhen or Shanghai**, or **remote**. For relevant opportunities,
 > [open an issue](https://github.com/cookerpapa/pi-managed-agents/issues/new) with a public job link.
 
 ## A runtime for Coding Agents and Personal Agents

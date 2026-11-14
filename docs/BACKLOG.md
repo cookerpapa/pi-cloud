@@ -15,7 +15,8 @@
 - [x] Explain the implemented separation of conversation clients, cloud Agent
   loops and execution environments, and its use as infrastructure for Coding Agent
   and Personal Agent products. Keep future personal-memory/product UI work explicit.
-- [x] Add a brief maintainer job-interest note without personal contact details.
+- [x] Add a brief maintainer job-interest note with Guangzhou, Shenzhen, Shanghai
+  and remote preferences, without personal contact details.
 - [x] Add short Star and contribution invitations near the top of the README,
   with Issue and pull-request entry points.
 
