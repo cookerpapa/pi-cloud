@@ -1,5 +1,12 @@
 # Implementation roadmap
 
+## HTTP MCP tool integration — in progress
+
+Implement #40 under ADR-0325 using Pi's standalone HTTP MCP client in the Tool
+host, scoped catalogs and existing native execution/reply semantics. The external
+client SDK is recorded separately as low-priority #41. Agent configuration
+publishing and a new Workspace-free conversation mode are not current work.
+
 ## Cloud clients and sandbox service accounting — delivered
 
 Issues #38 and #39 are implemented, published and

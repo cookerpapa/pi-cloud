@@ -1,5 +1,8 @@
 # Current architecture decisions
 
+[ADR-0325](0325-http-mcp-tools.md) adds scoped HTTP MCP tools through Pi-native
+proxies and the execution-owned Tool host, retaining original-reply recovery (#40).
+
 [ADR-0324](0324-registered-templates-and-matched-publication.md) advances registered
 deployment templates before recovery and preserves known native creation receipts.
 

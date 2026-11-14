@@ -1,14 +1,24 @@
 # Maintained backlog
 
-## HTTP MCP tool integration — planned
+## HTTP MCP tool integration — in progress
 
 - [ ] [#40](https://github.com/cookerpapa/pi-managed-agents/issues/40): evaluate
   Pi's standalone MCP client and integrate HTTP tools through native Pi proxies,
   the existing Session dispatch path and the execution-side Tool host. Extend
   scoped catalog publication and retain authorization, original reply/deadline
-  recovery, cancellation and UNKNOWN semantics. Planning only; implementation
-  and deployment are not yet authorized. Multiple Harnesses and a platform STDIO
-  path are outside this slice.
+  recovery, cancellation and UNKNOWN semantics. Implementation was authorized on
+  2026-11-14; ADR-0325 records the boundary and initial authenticated HTTP scope.
+  Multiple Harnesses and a platform STDIO path are outside this slice.
+- [x] Initial Pi MCP 1.0 HTTP discovery/call/Bearer/cancellation/lost-reply probe.
+- [ ] Scoped connection management, catalog delivery, execution, original-result
+  recovery and required serial publication/live acceptance.
+
+## External client SDK — low priority / deferred
+
+- [ ] [#41](https://github.com/cookerpapa/pi-managed-agents/issues/41): package the
+  shared Session client for standalone JavaScript/TypeScript applications, with
+  public contracts and runnable examples. MCP #40 takes priority. This does not
+  introduce Agent configuration publishing or require Workspace-free Sessions.
 
 ## Managed Agents project positioning — documented
 
